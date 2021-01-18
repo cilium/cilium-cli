@@ -1,53 +1,93 @@
-name: Kind
+name: kind
 
 on:
   pull_request: {}
   push:
     branches:
       - master
-env:
-  KIND_VERSION: v0.9.0
-  KIND_CONFIG: .github/kind-config.yaml
-  TIMEOUT: 2m
-  LOG_TIME: 30m
 
 jobs:
-  installation-and-connectivitiy:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-20.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
+      - uses: actions/checkout@v2
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/go/bin
+          key: ${{ runner.os }}-gomod-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-gomod-
+
+      - name: Get event cache key
+        id: get-event-cache-key
+        run: .github/workflows/get-event-cache-key.sh
+      - name: Use unique key to cache the binary for each GitHub event
+        uses: actions/cache@v2
+        with:
+          path: cilium
+          key: ${{ steps.get-event-cache-key.outputs.key }}
 
       - name: Build cilium CLI binary
-        run: |
-          cd cmd/cilium
-          go build
+        run: go build ./cmd/cilium
 
-      - name: Create kind cluster
-        uses: helm/kind-action@v1.0.0
-        with:
-          version: ${{ env.KIND_VERSION }}
-          config: ${{ env.KIND_CONFIG }}
+    outputs:
+      event-cache-key: ${{ steps.get-event-cache-key.outputs.key }}
+  basic-installation-and-connectivitiy:
+      runs-on: ubuntu-20.04
+      needs: build
+      strategy:
+        matrix:
+          kube_version: [1.18, 1.19]
+      steps:
+        - uses: actions/checkout@v2
+        - uses: actions/cache@v2
+          with:
+            path: |
+              ~/go/pkg/mod
+              ~/go/bin
+            key: ${{ runner.os }}-gomod-${{ hashFiles('**/go.sum') }}
+            restore-keys: ${{ runner.os }}-gomod-
 
-      - name: Install cilium
-        run: |
-          cmd/cilium/cilium install
+        - name: Restore cached binary
+          uses: actions/cache@v2
+          with:
+            key: ${{ needs.build.outputs.event-cache-key }}
+            path: cilium
 
-          kubectl wait -n kube-system --for=condition=Ready --all pod --timeout=5m
-          # To make sure that cilium CRD is available (default timeout is 5m)
-          # https://github.com/cilium/cilium/blob/master/operator/crd.go#L34
-          kubectl wait --for condition=Established crd/ciliumnetworkpolicies.cilium.io --timeout=5m
+        - name: Create Kubernetes cluster (${{ matrix.kube_version }})
+          uses: docker://docker.io/cilium/kube-test:35e73180328e7a2a5679a14527d6826eb60a6574
+          with:
+            entrypoint: scripts/test-gha-kind-create-cluster.sh
+            args: ${{ matrix.kube_version }} standard-github-actions basic-test
 
-      - name: cilium connectivity test
-        run: |
-          cmd/cilium/cilium connectivity test --hubble=false
+        - name: Install cilium
+          env:
+            KUBECONFIG: "kubeconfig"
+          run: |
+            ./cilium install
 
-      - name: enable relay
-        run: |
-          cmd/cilium/cilium hubble enable
+            kubectl wait pods --namespace=kube-system --for=condition=Ready --all --timeout=5m
+            # To make sure that cilium CRD is available (default timeout is 5m)
+            # https://github.com/cilium/cilium/blob/master/operator/crd.go#L34
+            kubectl wait crd/ciliumnetworkpolicies.cilium.io --for=condition=Established --timeout=5m
 
-          kubectl wait -n kube-system --for=condition=Ready --all pod --timeout=5m
+        - name: cilium connectivity test
+          env:
+            KUBECONFIG: "kubeconfig"
+          run: |
+            ./cilium connectivity test --hubble=false
 
-      - name: cilium status with relay
-        run: |
-          cmd/cilium/cilium status --wait
+        - name: enable relay
+          env:
+            KUBECONFIG: "kubeconfig"
+          run: |
+            ./cilium hubble enable
+
+            kubectl wait pods --namespace=kube-system --for=condition=Ready --all --timeout=5m
+
+        - name: cilium status with relay
+          env:
+            KUBECONFIG: "kubeconfig"
+          run: |
+            ./cilium status --wait
