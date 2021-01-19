@@ -1,4 +1,4 @@
-name: Multicluster
+name: kind (multi-cluster)
 
 on:
   pull_request: {}
