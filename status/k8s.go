@@ -16,6 +16,7 @@ package status
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -32,6 +33,10 @@ const (
 	ciliumDaemonSetName    = "cilium"
 	operatorDeploymentName = "cilium-operator"
 	relayDeploymentName    = "hubble-relay"
+)
+
+var (
+	errImagePullFailed = errors.New("image pull failed")
 )
 
 var retryInterval = 2 * time.Second
@@ -204,6 +209,10 @@ func (k *K8sStatusCollector) podStatus(ctx context.Context, status *Status, name
 	phaseCount, imageCount := MapCount{}, MapCount{}
 
 	for _, pod := range pods.Items {
+		if k.didImagePullFail(&pod) {
+			return errImagePullFailed
+		}
+
 		phaseCount[string(pod.Status.Phase)]++
 
 		switch pod.Status.Phase {
@@ -274,7 +283,7 @@ retry:
 	if s != nil {
 		mostRecentStatus = s
 	}
-	if (err != nil || !k.statusIsReady(s)) && k.params.Wait {
+	if ((err != nil && !errors.Is(err, errImagePullFailed)) || !k.statusIsReady(s)) && k.params.Wait {
 		time.Sleep(2 * time.Second)
 		goto retry
 	}
@@ -298,7 +307,10 @@ func (k *K8sStatusCollector) status(ctx context.Context) (*Status, error) {
 			status.CiliumStatus[pod.Name] = s
 		}
 	})
-	if err != nil {
+	if err != nil && errors.Is(err, errImagePullFailed) {
+		status.CollectionError(err)
+		return status, err
+	} else if err != nil {
 		status.CollectionError(err)
 	}
 
@@ -350,4 +362,18 @@ func (k *K8sStatusCollector) status(ctx context.Context) (*Status, error) {
 	}
 
 	return status, nil
+}
+
+// didImagePullFail checks the pod's init containers' statuses for signs that
+// the image pull failed.
+func (k *K8sStatusCollector) didImagePullFail(pod *corev1.Pod) bool {
+	for _, initContainers := range pod.Status.InitContainerStatuses {
+		if waiting := initContainers.State.Waiting; waiting != nil &&
+			(waiting.Reason == "ImagePullBackOff" ||
+				waiting.Reason == "ErrImagePull") {
+			return true
+		}
+	}
+
+	return false
 }
