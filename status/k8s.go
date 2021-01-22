@@ -16,6 +16,7 @@ package status
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -32,6 +33,10 @@ const (
 	ciliumDaemonSetName    = "cilium"
 	operatorDeploymentName = "cilium-operator"
 	relayDeploymentName    = "hubble-relay"
+)
+
+var (
+	errImagePullFailed = errors.New("pod image pull failed")
 )
 
 var retryInterval = 2 * time.Second
@@ -204,6 +209,10 @@ func (k *K8sStatusCollector) podStatus(ctx context.Context, status *Status, name
 	phaseCount, imageCount := MapCount{}, MapCount{}
 
 	for _, pod := range pods.Items {
+		if k.didImagePullFail(&pod) {
+			status.AddAggregatedError(name, pod.Name, errImagePullFailed)
+		}
+
 		phaseCount[string(pod.Status.Phase)]++
 
 		switch pod.Status.Phase {
@@ -256,7 +265,10 @@ func (k *K8sStatusCollector) statusIsReady(s *Status) bool {
 }
 
 func (k *K8sStatusCollector) Status(ctx context.Context) (*Status, error) {
-	var mostRecentStatus *Status
+	var (
+		mostRecentStatus  *Status
+		imagePullFailures int
+	)
 
 	ctx, cancel := context.WithTimeout(ctx, k.params.waitTimeout())
 	defer cancel()
@@ -273,6 +285,13 @@ retry:
 	// fails, we can still display the most recent status
 	if s != nil {
 		mostRecentStatus = s
+
+		if mostRecentStatus.isImagePullFailure() {
+			imagePullFailures++
+		}
+		if imagePullFailures > 2 {
+			return mostRecentStatus, errImagePullFailed
+		}
 	}
 	if (err != nil || !k.statusIsReady(s)) && k.params.Wait {
 		time.Sleep(retryInterval)
@@ -350,4 +369,24 @@ func (k *K8sStatusCollector) status(ctx context.Context) (*Status, error) {
 	}
 
 	return status, nil
+}
+
+// didImagePullFail checks the pod's first init container's or first normal
+// container's status for signs that the image pull failed. The check must be
+// done for the first container we find because all the containers will be
+// stuck in "pending" state, until the first container becomes ready.
+func (*K8sStatusCollector) didImagePullFail(pod *corev1.Pod) bool {
+	if initC := pod.Status.InitContainerStatuses; len(initC) > 0 {
+		if waiting := initC[0].State.Waiting; waiting != nil &&
+			(waiting.Reason == "ImagePullBackOff" || waiting.Reason == "ErrImagePull") {
+			return true
+		}
+	} else if c := pod.Status.ContainerStatuses; len(c) > 0 {
+		if waiting := c[0].State.Waiting; waiting != nil &&
+			(waiting.Reason == "ImagePullBackOff" || waiting.Reason == "ErrImagePull") {
+			return true
+		}
+	}
+
+	return false
 }

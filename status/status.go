@@ -16,6 +16,7 @@ package status
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 	"text/tabwriter"
@@ -225,6 +226,27 @@ func (s *Status) statusSummary(name string) (text string) {
 	}
 
 	return
+}
+
+// isImagePullFailure checks whether there has been any image pull failures in
+// any pod inside a deployment. Deployment can either be a Deployment or
+// Daemonset object. If any pod is found to have an image pull failure, then
+// this function return true.
+func (s *Status) isImagePullFailure() bool {
+	for deployment, errorMap := range s.Errors {
+		for podName, count := range errorMap {
+			if deployment == podName {
+				continue // Skip over the overall status of the deployment, we only care for pods.
+			}
+			for _, err := range count.Errors {
+				if errors.Is(err, errImagePullFailed) {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
 }
 
 func formatPhaseCount(m MapCount) string {
