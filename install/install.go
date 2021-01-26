@@ -969,6 +969,11 @@ type AzureParameters struct {
 	ClientSecret      string
 }
 
+const (
+	DeploymentModeDirect = "native"
+	DeploymentModeHelm   = "helm"
+)
+
 type InstallParameters struct {
 	Namespace            string
 	Writer               io.Writer
@@ -992,6 +997,7 @@ type InstallParameters struct {
 	NodeEncryption       bool
 	ConfigOverwrites     []string
 	configOverwrites     map[string]string
+	DeploymentMode       string
 }
 
 func (p *InstallParameters) validate() error {
@@ -1361,49 +1367,98 @@ func (k *K8sInstaller) restartUnmanagedPods(ctx context.Context) error {
 
 }
 
-func (k *K8sInstaller) Install(ctx context.Context) error {
-	if err := k.autodetectAndValidate(ctx); err != nil {
-		return err
+func (k *K8sInstaller) deploy(ctx context.Context) error {
+	switch k.params.DeploymentMode {
+	case DeploymentModeDirect:
+		return k.deployResources(ctx)
+	case DeploymentModeHelm:
+		return k.printHelmOptions(ctx)
+	default:
+		return fmt.Errorf("unknown deployment mode %q", k.params.DeploymentMode)
+	}
+}
+
+func (k *K8sInstaller) printHelmOptions(ctx context.Context) error {
+	var options []string
+
+	if len(k.params.ConfigOverwrites) > 0 {
+		return fmt.Errorf("Config overwrites are not supported in Helm deployment mode. Use helm options")
+	}
+
+	options = append(options, "--namespace "+k.params.Namespace)
+	options = append(options, "--version "+k.params.Version)
+	options = append(options, "--set cluster.name="+k.params.ClusterName)
+	options = append(options, "--set ipam.mode="+k.params.IPAM)
+	options = append(options, "--set kubeProxyReplacement="+k.params.KubeProxyReplacement)
+
+	if k.params.ClusterID != 0 {
+		options = append(options, fmt.Sprintf("--set cluster.id=%d", k.params.ClusterID))
 	}
 
 	switch k.flavor.Kind {
-	case k8s.KindEKS:
-		if _, err := k.client.GetDaemonSet(ctx, "kube-system", "aws-node", metav1.GetOptions{}); err == nil {
-			k.Log("🔥 Deleting aws-node DaemonSet...")
-			if err := k.client.DeleteDaemonSet(ctx, "kube-system", "aws-node", metav1.DeleteOptions{}); err != nil {
-				return err
-			}
-		}
-	case k8s.KindGKE:
-		if k.params.NativeRoutingCIDR == "" {
-			cidr, err := k.gkeNativeRoutingCIDR(ctx, k.client.ContextName())
-			if err != nil {
-				k.Log("❌ Unable to auto-detect GKE native routing CIDR. Is \"gcloud\" installed?")
-				k.Log("ℹ️  You can set the native routing CIDR manually with --native-routing-cidr")
-				return err
-			}
-			k.params.NativeRoutingCIDR = cidr
-		}
+	case k8s.KindEKS, k8s.KindGKE, k8s.KindAKS:
+		options = append(options, "--set nodeinit.enabled=true")
+	}
 
-		if err := k.deployResourceQuotas(ctx); err != nil {
-			return err
+	switch k.params.DatapathMode {
+	case DatapathTunnel:
+		t := k.params.TunnelType
+		if t == "" {
+			t = defaults.TunnelType
 		}
+		options = append(options, "--set tunnel="+t)
 
-	case k8s.KindAKS:
-		if k.params.Azure.ResourceGroupName == "" {
-			k.Log("❌ Azure resoure group is required, please specify --azure-resource-group")
-			return fmt.Errorf("missing Azure resource group name")
-		}
+	case DatapathAwsENI:
+		options = append(options, "--set tunnel=disabled")
+		options = append(options, "--set eni=true")
+		// TODO(tgraf) Is this really sane?
+		options = append(options, "--set egressMasqueradeInterfaces=eth0")
 
-		if err := k.createAzureServicePrincipal(ctx); err != nil {
-			return err
+	case DatapathGKE:
+		options = append(options, "--set tunnel=disabled")
+		options = append(options, "--set nodeinit.reconfigureKubelet=true")
+		options = append(options, "--set nodeinit.removeCbrBridge=true")
+		options = append(options, "--set cni.binPath=/home/kubernetes/bin")
+		options = append(options, "--set gke.enabled=true")
+
+	case DatapathAzure:
+		options = append(options, "--set tunnel=disabled")
+		options = append(options, "--set azure.enabled=true")
+		options = append(options, "--set azure.enabled=true")
+		options = append(options, "--set masquerade=false")
+		options = append(options, "--set azure.resourceGroup="+k.params.Azure.ResourceGroupName)
+		options = append(options, "--set azure.subscriptionID="+k.params.Azure.SubscriptionID)
+		options = append(options, "--set azure.tenantID="+k.params.Azure.TenantID)
+		options = append(options, "--set azure.clientID="+k.params.Azure.ClientID)
+		options = append(options, "--set azure.clientSecret="+k.params.Azure.ClientSecret)
+	}
+
+	if k.params.Encryption {
+		options = append(options, "--set encryption.enabled=true")
+
+		if k.params.NodeEncryption {
+			options = append(options, "--set encryption.nodeEncryption=true")
 		}
 	}
 
-	if err := k.installCerts(ctx); err != nil {
-		return err
+	if k.params.NativeRoutingCIDR != "" {
+		options = append(options, "--set nativeRoutingCIDR="+k.params.NativeRoutingCIDR)
 	}
 
+	if k.params.OperatorImage != "" {
+		options = append(options, "--set operator.image="+k.params.OperatorImage)
+	}
+
+	if k.params.AgentImage != "" {
+		options = append(options, "--set image="+k.params.AgentImage)
+	}
+
+	k.Log("Helm options: %s", strings.Join(options, " "))
+
+	return nil
+}
+
+func (k *K8sInstaller) deployResources(ctx context.Context) error {
 	k.Log("🚀 Creating Service accounts...")
 	if _, err := k.client.CreateServiceAccount(ctx, k.params.Namespace, k8s.NewServiceAccount(defaults.AgentServiceAccountName), metav1.CreateOptions{}); err != nil {
 		return err
@@ -1456,6 +1511,56 @@ func (k *K8sInstaller) Install(ctx context.Context) error {
 
 	k.Log("🚀 Creating Operator Deployment...")
 	if _, err := k.client.CreateDeployment(ctx, k.params.Namespace, k.generateOperatorDeployment(), metav1.CreateOptions{}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (k *K8sInstaller) Install(ctx context.Context) error {
+	if err := k.autodetectAndValidate(ctx); err != nil {
+		return err
+	}
+
+	switch k.flavor.Kind {
+	case k8s.KindEKS:
+		if _, err := k.client.GetDaemonSet(ctx, "kube-system", "aws-node", metav1.GetOptions{}); err == nil {
+			k.Log("🔥 Deleting aws-node DaemonSet...")
+			if err := k.client.DeleteDaemonSet(ctx, "kube-system", "aws-node", metav1.DeleteOptions{}); err != nil {
+				return err
+			}
+		}
+	case k8s.KindGKE:
+		if k.params.NativeRoutingCIDR == "" {
+			cidr, err := k.gkeNativeRoutingCIDR(ctx, k.client.ContextName())
+			if err != nil {
+				k.Log("❌ Unable to auto-detect GKE native routing CIDR. Is \"gcloud\" installed?")
+				k.Log("ℹ️  You can set the native routing CIDR manually with --native-routing-cidr")
+				return err
+			}
+			k.params.NativeRoutingCIDR = cidr
+		}
+
+		if err := k.deployResourceQuotas(ctx); err != nil {
+			return err
+		}
+
+	case k8s.KindAKS:
+		if k.params.Azure.ResourceGroupName == "" {
+			k.Log("❌ Azure resoure group is required, please specify --azure-resource-group")
+			return fmt.Errorf("missing Azure resource group name")
+		}
+
+		if err := k.createAzureServicePrincipal(ctx); err != nil {
+			return err
+		}
+	}
+
+	if err := k.installCerts(ctx); err != nil {
+		return err
+	}
+
+	if err := k.deploy(ctx); err != nil {
 		return err
 	}
 

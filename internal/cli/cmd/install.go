@@ -69,6 +69,7 @@ cilium install --context kind-cluster1 --cluster-id 1 --cluster-name cluster1
 	cmd.Flags().BoolVar(&params.Encryption, "encryption", false, "Enable encryption of all workloads traffic")
 	cmd.Flags().BoolVar(&params.NodeEncryption, "node-encryption", false, "Enable encryption of all node to node traffic")
 	cmd.Flags().StringSliceVar(&params.ConfigOverwrites, "config", []string{}, "Set ConfigMap entries (key=value)")
+	cmd.Flags().StringVar(&params.DeploymentMode, "deployment-mode", install.DeploymentModeDirect, "Deployment method { direct | helm }")
 
 	cmd.Flags().StringVar(&params.Azure.ResourceGroupName, "azure-resource-group", "", "Azure resource group name the cluster is in")
 	cmd.Flags().StringVar(&params.Azure.TenantID, "azure-tenant-id", "", "Azure tenant ID")
