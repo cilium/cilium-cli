@@ -275,7 +275,7 @@ retry:
 		mostRecentStatus = s
 	}
 	if (err != nil || !k.statusIsReady(s)) && k.params.Wait {
-		time.Sleep(2 * time.Second)
+		time.Sleep(retryInterval)
 		goto retry
 	}
 
