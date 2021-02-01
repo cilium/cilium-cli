@@ -42,7 +42,7 @@ var (
 		},
 	}
 
-	clusterNameValidation = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])$`)
+	clusterNameValidation = regexp.MustCompile(`^[a-z0-9]([-.a-z0-9]*[a-z0-9])$`)
 )
 
 func (p InstallParameters) checkDisabled(name string) bool {
@@ -149,11 +149,6 @@ func (k *K8sInstaller) autodetectAndValidate(ctx context.Context) error {
 		if k.params.DatapathMode != "" {
 			k.Log("🔮 Auto-detected datapath mode: %s", k.params.DatapathMode)
 		}
-	}
-
-	if strings.Contains(k.params.ClusterName, ".") {
-		k.Log("❌ Cluster name %q cannot contain dots", k.params.ClusterName)
-		return fmt.Errorf("invalid cluster name, dots are not allowed")
 	}
 
 	if !clusterNameValidation.MatchString(k.params.ClusterName) {
