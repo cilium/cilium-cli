@@ -78,6 +78,9 @@ cilium install --context kind-cluster1 --cluster-id 1 --cluster-name cluster1
 	cmd.Flags().StringVar(&params.Azure.ClientID, "azure-client-id", "", "Azure client (application) ID")
 	cmd.Flags().StringVar(&params.Azure.ClientSecret, "azure-client-secret", "", "Azure client secret")
 
+	cmd.Flags().StringVar(&params.K8sFlavor, "k8s-flavor", "",
+		"K8s flavor of the cluster to install Cilium in, this will override autodetect { kind | minikube | gke | aks | eks }")
+
 	return cmd
 }
 
@@ -100,6 +103,8 @@ func newCmdUninstall() *cobra.Command {
 	cmd.Flags().StringVarP(&params.Namespace, "namespace", "n", "kube-system", "Namespace to uninstall Cilium from")
 	cmd.Flags().StringVar(&contextName, "context", "", "Kubernetes configuration context")
 	cmd.Flags().BoolVar(&params.Wait, "wait", false, "Wait for uninstallation to have completed")
+	cmd.Flags().StringVar(&params.K8sFlavor, "k8s-flavor", "",
+		"K8s flavor of the cluster to install Cilium in, this will override autodetect { kind | minikube | gke | aks | eks }")
 
 	return cmd
 }

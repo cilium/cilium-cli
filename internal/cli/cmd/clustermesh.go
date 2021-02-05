@@ -63,6 +63,8 @@ func newCmdClusterMeshEnable() *cobra.Command {
 	cmd.Flags().StringVar(&params.ApiserverImage, "apiserver-image", "", "Container image for clustermesh-apiserver")
 	cmd.Flags().BoolVar(&params.CreateCA, "create-ca", false, "Automatically create CA if needed")
 	cmd.Flags().StringVar(&contextName, "context", "", "Kubernetes configuration context")
+	cmd.Flags().StringVar(&params.K8sFlavor, "k8s-flavor", "",
+		"K8s flavor of the cluster to install Cilium in, this will override autodetect { kind | minikube | gke | aks | eks }")
 
 	return cmd
 }
@@ -87,6 +89,8 @@ func newCmdClusterMeshDisable() *cobra.Command {
 
 	cmd.Flags().StringVarP(&params.Namespace, "namespace", "n", "kube-system", "Namespace Cilium is running in")
 	cmd.Flags().StringVar(&contextName, "context", "", "Kubernetes configuration context")
+	cmd.Flags().StringVar(&params.K8sFlavor, "k8s-flavor", "",
+		"K8s flavor of the cluster to install Cilium in, this will override autodetect { kind | minikube | gke | aks | eks }")
 
 	return cmd
 }
@@ -114,6 +118,8 @@ func newCmdClusterMeshConnect() *cobra.Command {
 	cmd.Flags().StringVar(&params.DestinationContext, "destination-context", "", "Kubernetes configuration context of destination cluster")
 	cmd.Flags().StringSliceVar(&params.DestinationEndpoints, "destination-endpoint", []string{}, "IP of ClusterMesh service of destination cluster")
 	cmd.Flags().StringSliceVar(&params.SourceEndpoints, "source-endpoint", []string{}, "IP of ClusterMesh service of source cluster")
+	cmd.Flags().StringVar(&params.K8sFlavor, "k8s-flavor", "",
+		"K8s flavor of the cluster to install Cilium in, this will override autodetect { kind | minikube | gke | aks | eks }")
 
 	return cmd
 }
@@ -139,6 +145,8 @@ func newCmdClusterMeshDisconnect() *cobra.Command {
 	cmd.Flags().StringVarP(&params.Namespace, "namespace", "n", "kube-system", "Namespace Cilium is running in")
 	cmd.Flags().StringVar(&contextName, "context", "", "Kubernetes configuration context")
 	cmd.Flags().StringVar(&params.DestinationContext, "destination-context", "", "Kubernetes configuration context of destination cluster")
+	cmd.Flags().StringVar(&params.K8sFlavor, "k8s-flavor", "",
+		"K8s flavor of the cluster to install Cilium in, this will override autodetect { kind | minikube | gke | aks | eks }")
 
 	return cmd
 }
@@ -166,6 +174,8 @@ func newCmdClusterMeshStatus() *cobra.Command {
 	cmd.Flags().BoolVar(&params.Wait, "wait", false, "Wait until status is successful")
 	cmd.Flags().DurationVar(&params.WaitDuration, "wait-duration", 15*time.Minute, "Maximum time to wait")
 	cmd.Flags().BoolVar(&params.SkipServiceCheck, "skip-service-check", false, "Do not require service IP of remote cluster to be available")
+	cmd.Flags().StringVar(&params.K8sFlavor, "k8s-flavor", "",
+		"K8s flavor of the cluster to install Cilium in, this will override autodetect { kind | minikube | gke | aks | eks }")
 
 	return cmd
 }

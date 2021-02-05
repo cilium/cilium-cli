@@ -941,6 +941,7 @@ type k8sInstallerImplementation interface {
 	CreateResourceQuota(ctx context.Context, namespace string, r *corev1.ResourceQuota, opts metav1.CreateOptions) (*corev1.ResourceQuota, error)
 	DeleteResourceQuota(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error
 	AutodetectFlavor(ctx context.Context) (k8s.Flavor, error)
+	GetFlavor(kindName string) k8s.Flavor
 	ContextName() (name string)
 	CiliumStatus(ctx context.Context, namespace, pod string) (*models.StatusResponse, error)
 	ListCiliumEndpoints(ctx context.Context, namespace string, opts metav1.ListOptions) (*ciliumv2.CiliumEndpointList, error)
@@ -972,6 +973,7 @@ type AzureParameters struct {
 type InstallParameters struct {
 	Namespace            string
 	Writer               io.Writer
+	K8sFlavor            string
 	ClusterName          string
 	DisableChecks        []string
 	Version              string

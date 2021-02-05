@@ -363,6 +363,29 @@ func (c *Client) AutodetectFlavor(ctx context.Context) (f Flavor, err error) {
 	return
 }
 
+func (c *Client) GetFlavor(kindName string) Flavor {
+	f := Flavor{
+		ClusterName: c.ClusterName(),
+	}
+
+	switch kindName {
+	case "minikube":
+		f.Kind = KindMinikube
+	case "kind":
+		f.Kind = KindKind
+	case "eks":
+		f.Kind = KindEKS
+	case "gke":
+		f.Kind = KindGKE
+	case "aks":
+		f.Kind = KindAKS
+	default:
+		f.Kind = KindUnknown
+	}
+
+	return f
+}
+
 func (c *Client) CreateResourceQuota(ctx context.Context, namespace string, rq *corev1.ResourceQuota, opts metav1.CreateOptions) (*corev1.ResourceQuota, error) {
 	return c.Clientset.CoreV1().ResourceQuotas(namespace).Create(ctx, rq, opts)
 }
