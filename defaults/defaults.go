@@ -73,6 +73,8 @@ const (
 
 	ConnectivityCheckNamespace = "cilium-test"
 
+	AzureServicePrincipalName = "cilium-operator"
+
 	ConfigMapName = "cilium-config"
 	Version       = "v1.9.4"
 

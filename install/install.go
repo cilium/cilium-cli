@@ -967,6 +967,7 @@ type AzureParameters struct {
 	ResourceGroup     string
 	ClientID          string
 	ClientSecret      string
+	PrincipalName     string
 }
 
 type InstallParameters struct {

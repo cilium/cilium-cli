@@ -19,6 +19,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/cilium/cilium-cli/defaults"
 	"github.com/cilium/cilium-cli/install"
 
 	"github.com/spf13/cobra"
@@ -77,6 +78,7 @@ cilium install --context kind-cluster1 --cluster-id 1 --cluster-name cluster1
 	cmd.Flags().StringVar(&params.Azure.TenantID, "azure-tenant-id", "", "Azure tenant ID")
 	cmd.Flags().StringVar(&params.Azure.ClientID, "azure-client-id", "", "Azure client (application) ID")
 	cmd.Flags().StringVar(&params.Azure.ClientSecret, "azure-client-secret", "", "Azure client secret")
+	cmd.Flags().StringVar(&params.Azure.PrincipalName, "azure-service-principal-name", defaults.AzureServicePrincipalName, "Azure Service Principal name")
 
 	return cmd
 }
