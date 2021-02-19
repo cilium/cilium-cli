@@ -52,7 +52,7 @@ jobs:
 
       - name: Install cilium
         run: |
-          cilium install --cluster-name ${{ env.clusterName }} --azure-resource-group cilium-ci --azure-tenant-id ${{ secrets.AZURE_TENANT_ID}} --azure-client-id ${{ secrets.AZURE_CLIENT_ID }} --azure-client-secret ${{ secrets.AZURE_CLIENT_SECRET }} --config monitor-aggregation=none
+          cilium install --cluster-name ${{ env.clusterName }} --azure-resource-group cilium-ci --azure-service-principal-name ${{ env.clusterName }} --config monitor-aggregation=none
 
       - name: Enable relay
         run: |
@@ -81,6 +81,8 @@ jobs:
           curl -sLO https://github.com/cilium/cilium-sysdump/releases/latest/download/cilium-sysdump.zip
           python cilium-sysdump.zip --output cilium-sysdump-out
           az aks delete --yes --name ${{ env.clusterName }} --resource-group cilium-ci
+          ID=$(az ad sp list --filter "displayname eq '${{ env.clusterName }}'" | jq -r '.[].appId')
+          az ad sp delete --id $ID
 
       - name: Upload Artifacts
         if: ${{ always() }}
