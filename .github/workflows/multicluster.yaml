@@ -92,17 +92,11 @@ jobs:
           CONTEXT2=$(kubectl config view | grep ${{ env.clusterName2 }} | head -1 | awk '{print $2}')
           cilium --context $CONTEXT2 clustermesh status --wait --wait-duration 5m
 
-      - name: Relay Port Forward
-        run: |
-          CONTEXT1=$(kubectl config view | grep ${{ env.clusterName1 }} | head -1 | awk '{print $2}')
-          kubectl --context $CONTEXT1 port-forward -n kube-system deployment/hubble-relay 4245:4245&
-          sleep 5s
-
       - name: Connectivity test
         run: |
           CONTEXT1=$(kubectl config view | grep ${{ env.clusterName1 }} | head -1 | awk '{print $2}')
           CONTEXT2=$(kubectl config view | grep ${{ env.clusterName2 }} | head -1 | awk '{print $2}')
-          cilium --context $CONTEXT1 connectivity test --multi-cluster $CONTEXT2 --test '!pod-to-nodeport' --test '!pod-to-local-nodeport'
+          cilium --context $CONTEXT1 connectivity test --multi-cluster $CONTEXT2 --test '!pod-to-nodeport' --test '!pod-to-local-nodeport' --flow-validation disabled
 
       - name: Cleanup
         if: ${{ always() }}
