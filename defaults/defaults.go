@@ -85,6 +85,9 @@ const (
 
 	FlowWaitTimeout   = 5 * time.Second
 	FlowRetryInterval = 500 * time.Millisecond
+
+	ConfigMapKeyMonitorAggregation      = "monitor-aggregation"
+	ConfigMapValueMonitorAggregatonNone = "none"
 )
 
 var OperatorLabels = map[string]string{
