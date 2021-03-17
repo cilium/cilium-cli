@@ -49,12 +49,16 @@ func (t *PodToHost) Run(ctx context.Context, c check.TestContext) {
 			_, err := client.K8sClient.ExecInPod(ctx, client.Pod.Namespace, client.Pod.Name, check.ClientDeploymentName, cmd)
 			if err != nil {
 				run.Failure("ping command failed: %s", err)
+			} else {
+				run.Success("ping command %q succeeded", cmd)
 			}
 
-			run.ValidateFlows(ctx, client.Name(), client.Pod.Status.PodIP, []filters.Pair{
-				{Filter: filters.Drop(), Expect: false, Msg: "Found drop"},
-				{Filter: filters.And(filters.IP(client.Pod.Status.PodIP, hostIP), filters.ICMP(8)), Expect: true, Msg: "ICMP request"},
-				{Filter: filters.And(filters.IP(hostIP, client.Pod.Status.PodIP), filters.ICMP(0)), Expect: true, Msg: "ICMP response"},
+			run.ValidateFlows(ctx, client.Name(), client.Pod.Status.PodIP, filters.FlowSetRequirement{
+				First: filters.FlowRequirement{Filter: filters.And(filters.IP(client.Pod.Status.PodIP, hostIP), filters.ICMP(8)), Msg: "ICMP request"},
+				Last:  filters.FlowRequirement{Filter: filters.And(filters.IP(hostIP, client.Pod.Status.PodIP), filters.ICMP(0)), Msg: "ICMP response"},
+				Except: []filters.FlowRequirement{
+					{Filter: filters.Drop(), Msg: "Drop"},
+				},
 			})
 
 			run.End()
