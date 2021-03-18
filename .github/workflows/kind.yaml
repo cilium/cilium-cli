@@ -38,16 +38,9 @@ jobs:
         run: |
           cilium install --config monitor-aggregation=none
 
-          kubectl wait -n kube-system --for=condition=Ready --all pod --timeout=5m
-          # To make sure that cilium CRD is available (default timeout is 5m)
-          # https://github.com/cilium/cilium/blob/master/operator/crd.go#L34
-          kubectl wait --for condition=Established crd/ciliumnetworkpolicies.cilium.io --timeout=5m
-
       - name: Enable Relay
         run: |
           cilium hubble enable
-
-          kubectl wait -n kube-system --for=condition=Ready --all pod --timeout=5m
 
       - name: Status
         run: |
@@ -60,7 +53,7 @@ jobs:
 
       - name: Connectivity Test
         run: |
-          cilium connectivity test
+          cilium connectivity test --print-flows
 
       - name: Uninstall cilium
         run: |
@@ -68,15 +61,25 @@ jobs:
 
       - name: Install Cilium with Encryption
         run: |
-          cilium install --encryption
+          cilium install --encryption --config monitor-aggregation=none
+
+      - name: Enable Relay
+        run: |
+          cilium hubble enable
 
       - name: Status
         run: |
           cilium status --wait
 
+      - name: Relay Port Forward
+        run: |
+          # Bind to a different port to avoid port in use errors
+          kubectl port-forward -n kube-system deployment/hubble-relay 4246:4245&
+          sleep 5s
+
       - name: Connectivity test
         run: |
-          cilium connectivity test
+          cilium connectivity test --expect-encryption --print-flows --hubble-server localhost:4246
 
       - name: Cleanup
         if: ${{ always() }}
