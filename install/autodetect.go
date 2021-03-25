@@ -55,31 +55,52 @@ func (p InstallParameters) checkDisabled(name string) bool {
 }
 
 func (k *K8sUninstaller) autodetect(ctx context.Context) error {
-	f, err := k.client.AutodetectFlavor(ctx)
-	if err != nil {
-		return err
+	var (
+		f   k8s.Flavor
+		err error
+	)
+	if k.params.K8sFlavor == "" {
+		f, err = k.client.AutodetectFlavor(ctx)
+		if err != nil {
+			return err
+		}
+
+		if f.Kind != k8s.KindUnknown {
+			k.Log("🔮 Auto-detected Kubernetes kind: %s", f.Kind)
+		}
+	} else {
+		f = k.client.GetFlavor(k.params.K8sFlavor)
+		if f.Kind != k8s.KindUnknown {
+			k.Log("🔮 Provided Kubernetes kind: %s", f.Kind)
+		}
 	}
 
 	k.flavor = f
-
-	if f.Kind != k8s.KindUnknown {
-		k.Log("🔮 Auto-detected Kubernetes kind: %s", f.Kind)
-	}
-
 	return nil
 }
 
 func (k *K8sInstaller) autodetectAndValidate(ctx context.Context) error {
-	f, err := k.client.AutodetectFlavor(ctx)
-	if err != nil {
-		return err
+	var (
+		f   k8s.Flavor
+		err error
+	)
+	if k.params.K8sFlavor == "" {
+		f, err = k.client.AutodetectFlavor(ctx)
+		if err != nil {
+			return err
+		}
+
+		if f.Kind != k8s.KindUnknown {
+			k.Log("🔮 Auto-detected Kubernetes kind: %s", f.Kind)
+		}
+	} else {
+		f = k.client.GetFlavor(k.params.K8sFlavor)
+		if f.Kind != k8s.KindUnknown {
+			k.Log("🔮 Provided Kubernetes kind: %s", f.Kind)
+		}
 	}
 
 	k.flavor = f
-
-	if f.Kind != k8s.KindUnknown {
-		k.Log("🔮 Auto-detected Kubernetes kind: %s", f.Kind)
-	}
 
 	if len(validationChecks[k.flavor.Kind]) > 0 {
 		k.Log("✨ Running %q validation checks", f.Kind)

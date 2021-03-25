@@ -32,6 +32,7 @@ type UninstallParameters struct {
 	Namespace string
 	Writer    io.Writer
 	Wait      bool
+	K8sFlavor string
 }
 
 type K8sUninstaller struct {

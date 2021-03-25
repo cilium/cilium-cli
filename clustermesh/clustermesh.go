@@ -415,6 +415,7 @@ type k8sClusterMeshImplementation interface {
 	ListNodes(ctx context.Context, options metav1.ListOptions) (*corev1.NodeList, error)
 	ListPods(ctx context.Context, namespace string, options metav1.ListOptions) (*corev1.PodList, error)
 	AutodetectFlavor(ctx context.Context) (k8s.Flavor, error)
+	GetFlavor(kindName string) k8s.Flavor
 	CiliumStatus(ctx context.Context, namespace, pod string) (*models.StatusResponse, error)
 	ClusterName() string
 }
@@ -441,6 +442,7 @@ type Parameters struct {
 	ApiserverImage       string
 	CreateCA             bool
 	Writer               io.Writer
+	K8sFlavor            string
 }
 
 func (p Parameters) waitTimeout() time.Duration {
@@ -464,10 +466,19 @@ func (k *K8sClusterMesh) Log(format string, a ...interface{}) {
 }
 
 func (k *K8sClusterMesh) Validate(ctx context.Context) error {
-	f, err := k.client.AutodetectFlavor(ctx)
-	if err != nil {
-		return err
+	var (
+		f   k8s.Flavor
+		err error
+	)
+	if k.params.K8sFlavor == "" {
+		f, err = k.client.AutodetectFlavor(ctx)
+		if err != nil {
+			return err
+		}
+	} else {
+		f = k.client.GetFlavor(k.params.K8sFlavor)
 	}
+
 	k.flavor = f
 
 	var failures int
