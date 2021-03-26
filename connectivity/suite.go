@@ -21,9 +21,26 @@ import (
 	"github.com/cilium/cilium-cli/connectivity/tests"
 )
 
+var (
+	//l3Policies = check.PolicyContext{}
+)
+
 func Run(ctx context.Context, k *check.K8sConnectivityCheck) error {
 	return k.Run(ctx,
+		// This should fail, failures not yet handled properly:
+		(&tests.PodToPod{Variant: "-client-egress-only-dns-SHOULD-FAIL"}).WithPolicy(clientEgressOnlyDNSPolicyYaml),
+		// Policy installed with 'WithPolicy()' is automatically removed, so this should succeed:
 		&tests.PodToPod{},
+		// This policy allows port 8080 from client to echo, so this should succeed
+		(&tests.PodToPod{Variant: "-client-egress-to-echo"}).WithPolicy(clientEgressToEchoPolicyYaml),
+		// This should also succeed, no policy applied
+		&tests.PodToPod{Variant: "-2"},
+		// Apply policy that is kept around until explicitly removed
+		&check.CiliumNetworkPolicy{Title: "client-egress-only-dns", Policy: clientEgressOnlyDNSPolicyYaml},
+		&tests.PodToPod{Variant: "-client-egress-only-dns-SHOULD-FAIL-too"},
+		&check.CiliumNetworkPolicy{}, // delete all applied policies
+		// This should also succeed, no policy applied
+		&tests.PodToPod{Variant: "-3"},
 		&tests.PodToService{},
 		&tests.PodToNodePort{},
 		&tests.PodToLocalNodePort{},
@@ -31,3 +48,53 @@ func Run(ctx context.Context, k *check.K8sConnectivityCheck) error {
 		&tests.PodToHost{},
 	)
 }
+
+var (
+	clientEgressOnlyDNSPolicyYaml = `
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  namespace: cilium-test
+  name: client-egress-only-dns
+spec:
+  endpointSelector:
+    matchLabels:
+      kind: client
+  egress:
+  - toPorts:
+    - ports:
+      - port: "53"
+        protocol: ANY
+    toEndpoints:
+    - matchLabels:
+        k8s:io.kubernetes.pod.namespace: kube-system
+        k8s:k8s-app: kube-dns
+`
+	clientEgressToEchoPolicyYaml = `apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  namespace: cilium-test
+  name: client-egress-to-echo
+spec:
+  endpointSelector:
+    matchLabels:
+      kind: client
+  egress:
+  - toPorts:
+    - ports:
+      - port: "8080"
+        protocol: TCP
+    toEndpoints:
+    - matchLabels:
+        k8s:io.kubernetes.pod.namespace: cilium-test
+        k8s:kind: echo
+  - toPorts:
+    - ports:
+      - port: "53"
+        protocol: ANY
+    toEndpoints:
+    - matchLabels:
+        k8s:io.kubernetes.pod.namespace: kube-system
+        k8s:k8s-app: kube-dns
+`
+)

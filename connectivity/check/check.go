@@ -168,6 +168,16 @@ type k8sConnectivityImplementation interface {
 	ExecInPod(ctx context.Context, namespace, pod, container string, command []string) (bytes.Buffer, error)
 	ExecInPodWithStderr(ctx context.Context, namespace, pod, container string, command []string) (bytes.Buffer, bytes.Buffer, error)
 	ClusterName() (name string)
+	ListCiliumNetworkPolicies(ctx context.Context, namespace string, opts metav1.ListOptions) (*ciliumv2.CiliumNetworkPolicyList, error)
+	GetCiliumNetworkPolicy(ctx context.Context, namespace, name string, opts metav1.GetOptions) (*ciliumv2.CiliumNetworkPolicy, error)
+	CreateCiliumNetworkPolicy(ctx context.Context, cnp *ciliumv2.CiliumNetworkPolicy, opts metav1.CreateOptions) (*ciliumv2.CiliumNetworkPolicy, error)
+	UpdateCiliumNetworkPolicy(ctx context.Context, cnp *ciliumv2.CiliumNetworkPolicy, opts metav1.UpdateOptions) (*ciliumv2.CiliumNetworkPolicy, error)
+	DeleteCiliumNetworkPolicy(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error
+	ListCiliumClusterwideNetworkPolicies(ctx context.Context, opts metav1.ListOptions) (*ciliumv2.CiliumClusterwideNetworkPolicyList, error)
+	GetCiliumClusterwideNetworkPolicy(ctx context.Context, name string, opts metav1.GetOptions) (*ciliumv2.CiliumClusterwideNetworkPolicy, error)
+	CreateCiliumClusterwideNetworkPolicy(ctx context.Context, ccnp *ciliumv2.CiliumClusterwideNetworkPolicy, opts metav1.CreateOptions) (*ciliumv2.CiliumClusterwideNetworkPolicy, error)
+	UpdateCiliumClusterwideNetworkPolicy(ctx context.Context, ccnp *ciliumv2.CiliumClusterwideNetworkPolicy, opts metav1.UpdateOptions) (*ciliumv2.CiliumClusterwideNetworkPolicy, error)
+	DeleteCiliumClusterwideNetworkPolicy(ctx context.Context, name string, opts metav1.DeleteOptions) error
 }
 
 // PodContext is a pod acting as a peer in a connectivity test
@@ -238,6 +248,15 @@ type TestContext interface {
 
 	// EchoServices returns a map of all deployed echo services
 	EchoServices() map[string]ServiceContext
+
+	// ApplyPolicyYaml applies the given policy to the test context, returns the number of failures
+	ApplyPolicyYaml(ctx context.Context, yaml string) int
+
+	// ApplyCNP applies the given CNP to the test context, returns the number of failures
+	ApplyCNP(ctx context.Context, cnp *ciliumv2.CiliumNetworkPolicy) int
+
+	// DeleteCNP deleted the given CNP from the test context
+	DeleteCNP(ctx context.Context, cnp *ciliumv2.CiliumNetworkPolicy)
 
 	// Log is used to log a status update
 	Log(format string, a ...interface{})
@@ -516,6 +535,7 @@ type K8sConnectivityCheck struct {
 	echoPods        map[string]PodContext
 	clientPods      map[string]PodContext
 	echoServices    map[string]ServiceContext
+	policies        map[string]*ciliumv2.CiliumNetworkPolicy
 	results         TestResults
 }
 
@@ -1102,6 +1122,8 @@ func (k *K8sConnectivityCheck) validateDeployment(ctx context.Context) error {
 	for serviceName := range k.echoServices {
 		k.waitForService(ctx, k.client, serviceName)
 	}
+
+	k.policies = map[string]*ciliumv2.CiliumNetworkPolicy{}
 
 	return nil
 }

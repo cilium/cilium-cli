@@ -23,17 +23,28 @@ import (
 	"github.com/cilium/cilium-cli/connectivity/filters"
 )
 
-type PodToPod struct{}
+type PodToPod struct{
+	Variant string
+
+	wp check.WithPolicy
+}
 
 func (t *PodToPod) Name() string {
-	return "pod-to-pod"
+	return "pod-to-pod" + t.Variant
 }
 
 func (t *PodToPod) Run(ctx context.Context, c check.TestContext) {
+	policyFailures, cleanup := t.wp.Apply(ctx, c)
+	defer cleanup()
 	for _, client := range c.ClientPods() {
 		for _, echo := range c.EchoPods() {
 			destination := net.JoinHostPort(echo.Pod.Status.PodIP, strconv.Itoa(8080))
 			run := check.NewTestRun(t.Name(), c, client, echo)
+
+			// Record policy apply failure on each test run
+			if policyFailures > 0 {
+				run.Failure("Policy apply failed")
+			}
 
 			_, err := client.K8sClient.ExecInPod(ctx, client.Pod.Namespace, client.Pod.Name, check.ClientDeploymentName, curlCommand(destination))
 			if err != nil {
@@ -62,4 +73,9 @@ func (t *PodToPod) Run(ctx context.Context, c check.TestContext) {
 			run.End()
 		}
 	}
+}
+
+func (t *PodToPod) WithPolicy(yaml string) *PodToPod {
+	t.wp.Parse(yaml)
+	return t
 }
