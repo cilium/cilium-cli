@@ -259,6 +259,10 @@ type TestContext interface {
 
 	// Report is called to report the outcome of a test
 	Report(r TestResult)
+
+	// ExpectEncryption returns true if all traffic across nodes is
+	// expected to be encrypted
+	ExpectEncryption() bool
 }
 
 // TestRun is the state of an individual test run
@@ -331,6 +335,11 @@ func (t *TestRun) printFlows(pod string, f *flowsSet) {
 	printer := hubprinter.New(hubprinter.Compact())
 	defer printer.Close()
 	for _, flow := range f.flows {
+		if t.context.ExpectEncryption() {
+			if e := flow.GetFlow(); e.GetIP().Encrypted {
+				fmt.Printf("🔒 ")
+			}
+		}
 		if err := printer.WriteProtoFlow(flow); err != nil {
 			t.context.Log("Unable to print flow: %s", err)
 		}
@@ -413,6 +422,26 @@ func (t *TestRun) ValidateFlows(ctx context.Context, pod, podIP string, filterPa
 			}
 			msg := fmt.Sprintf("%s %s for pod %s", p.Msg, msgSuffix, pod)
 			goodLog = append(goodLog, "✅ "+msg)
+		}
+	}
+
+	if t.context.ExpectEncryption() {
+		encryptedFlows := 0
+		for _, f := range flows.flows {
+			flow := f.GetFlow()
+			if flow.GetIP().Encrypted {
+				encryptedFlows++
+			} else {
+				printer := hubprinter.New(hubprinter.Compact())
+				src, dst := printer.GetHostNames(flow)
+
+				//lint:ignore SA1019 Summary is deprecated but there is no real alternative yet
+				t.Failure("Unencrypted flow found for pod %s: %s -> %s %s %s (%s)", pod, src, dst, hubprinter.GetFlowType(flow), flow.Verdict.String(), flow.Summary)
+			}
+		}
+
+		if encryptedFlows > 0 {
+			t.context.Log("✅ %d encrypted flows found for pod %s", encryptedFlows, pod)
 		}
 	}
 }
@@ -680,6 +709,7 @@ type Parameters struct {
 	PostTestSleepDuration   time.Duration
 	FlowSettleSleepDuration time.Duration
 	FlowValidation          string
+	ExpectEncryption        bool
 	Writer                  io.Writer
 }
 
@@ -1143,6 +1173,10 @@ func (k *K8sConnectivityCheck) FlowSettleSleepDuration() time.Duration {
 
 func (k *K8sConnectivityCheck) PostTestSleepDuration() time.Duration {
 	return k.params.PostTestSleepDuration
+}
+
+func (k *K8sConnectivityCheck) ExpectEncryption() bool {
+	return k.params.ExpectEncryption
 }
 
 func (k *K8sConnectivityCheck) Report(r TestResult) {
