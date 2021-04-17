@@ -17,6 +17,7 @@ package cmd
 import (
 	"context"
 	"os"
+	"time"
 
 	"github.com/cilium/cilium-cli/defaults"
 	"github.com/cilium/cilium-cli/hubble"
@@ -65,6 +66,8 @@ func newCmdHubbleEnable() *cobra.Command {
 	cmd.Flags().StringVar(&params.RelayServiceType, "relay-service-type", "ClusterIP", "Type of Kubernetes service to expose Hubble Relay")
 	cmd.Flags().BoolVar(&params.CreateCA, "create-ca", false, "Automatically create CA if needed")
 	cmd.Flags().StringVar(&contextName, "context", "", "Kubernetes configuration context")
+	cmd.Flags().BoolVar(&params.Wait, "wait", true, "Wait for status to report success (no errors)")
+	cmd.Flags().DurationVar(&params.WaitDuration, "wait-duration", 15*time.Minute, "Maximum time to wait for status")
 
 	return cmd
 }

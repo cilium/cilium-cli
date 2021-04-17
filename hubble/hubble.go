@@ -19,9 +19,12 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/cilium/cilium-cli/defaults"
 	"github.com/cilium/cilium-cli/internal/certs"
+	"github.com/cilium/cilium-cli/status"
+	"github.com/cilium/cilium/api/v1/models"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -59,6 +62,9 @@ type k8sHubbleImplementation interface {
 	CreateService(ctx context.Context, namespace string, service *corev1.Service, opts metav1.CreateOptions) (*corev1.Service, error)
 	DeleteService(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error
 	DeletePodCollection(ctx context.Context, namespace string, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error
+	CiliumStatus(ctx context.Context, namespace, pod string) (*models.StatusResponse, error)
+	GetDaemonSet(ctx context.Context, namespace, name string, options metav1.GetOptions) (*appsv1.DaemonSet, error)
+	ListPods(ctx context.Context, namespace string, options metav1.ListOptions) (*corev1.PodList, error)
 }
 
 type K8sHubble struct {
@@ -76,6 +82,8 @@ type Parameters struct {
 	PortForward      int
 	CreateCA         bool
 	Writer           io.Writer
+	Wait             bool
+	WaitDuration     time.Duration
 }
 
 func NewK8sHubble(client k8sHubbleImplementation, p Parameters) *K8sHubble {
@@ -209,6 +217,7 @@ func (k *K8sHubble) enableHubble(ctx context.Context) error {
 
 func (k *K8sHubble) Enable(ctx context.Context) error {
 	err := k.certManager.LoadCAFromK8s(ctx)
+
 	if err != nil {
 		if !k.params.CreateCA {
 			k.Log("❌ Cilium CA not found: %s", err)
@@ -231,11 +240,40 @@ func (k *K8sHubble) Enable(ctx context.Context) error {
 		return err
 	}
 
+	warningFreePods := []string{defaults.AgentDaemonSetName}
 	if k.params.Relay {
 		if err := k.enableRelay(ctx); err != nil {
 			return err
 		}
+		warningFreePods = append(warningFreePods, defaults.RelayDeploymentName)
 	}
 
-	return nil
+	if k.params.UI {
+		if err := k.enableUI(ctx); err != nil {
+			return err
+		}
+		warningFreePods = append(warningFreePods, defaults.HubbleUIDeploymentName)
+	}
+
+	if k.params.Wait {
+		k.Log("⌛ Waiting for Hubble to be enabled...")
+		collector, err := status.NewK8sStatusCollector(ctx, k.client, status.K8sStatusParameters{
+			Namespace:       k.params.Namespace,
+			Wait:            true,
+			WaitDuration:    k.params.WaitDuration,
+			WarningFreePods: warningFreePods,
+		})
+		if err != nil {
+			return err
+		}
+
+		s, err := collector.Status(ctx)
+		if err != nil {
+			if s != nil {
+				fmt.Println(s.Format())
+			}
+			return err
+		}
+	}
+      return nil
 }
