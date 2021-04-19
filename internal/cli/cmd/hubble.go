@@ -65,6 +65,7 @@ func newCmdHubbleEnable() *cobra.Command {
 	cmd.Flags().StringVar(&params.RelayVersion, "relay-version", defaults.Version, "Version of Relay to deploy")
 	cmd.Flags().StringVar(&params.RelayServiceType, "relay-service-type", "ClusterIP", "Type of Kubernetes service to expose Hubble Relay")
 	cmd.Flags().BoolVar(&params.UI, "ui", false, "Enable Hubble UI")
+	cmd.Flags().BoolVar(&params.CLI, "cli", false, "Enable Hubble CLI")
 	cmd.Flags().BoolVar(&params.CreateCA, "create-ca", false, "Automatically create CA if needed")
 	cmd.Flags().StringVar(&contextName, "context", "", "Kubernetes configuration context")
 

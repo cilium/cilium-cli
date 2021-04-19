@@ -59,6 +59,8 @@ const (
 	HubbleUIConfigMapName      = "hubble-ui-envoy"
 	HubbleUIDeploymentName     = "hubble-ui"
 
+	HubbleCLIDeploymentName = "hubble-cli"
+
 	ClusterMeshDeploymentName             = "clustermesh-apiserver"
 	ClusterMeshServiceAccountName         = "clustermesh-apiserver"
 	ClusterMeshClusterRoleName            = "clustermesh-apiserver"
@@ -107,6 +109,11 @@ var (
 	// HubbleUIDeploymentLabels are the labels set on the Hubble UI Deployment by default.
 	HubbleUIDeploymentLabels = map[string]string{
 		"k8s-app": "hubble-ui",
+	}
+
+	// HubbleCLIDeploymentLabels are the labels set on the Hubble CLI Deployment by default.
+	HubbleCLIDeploymentLabels = map[string]string{
+		"k8s-app": "hubble-cli",
 	}
 
 	// ClusterMeshDeploymentLabels are the labels set on the clustermesh API server by default.

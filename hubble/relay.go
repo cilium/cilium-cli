@@ -251,6 +251,10 @@ func (k *K8sHubble) relayImage() string {
 }
 
 func (k *K8sHubble) disableRelay(ctx context.Context) error {
+	// XXX: should we also disable Hubble UI here?
+	if err := k.disableHubbleCLI(ctx); err != nil {
+		return err
+	}
 	k.Log("🔥 Deleting Relay...")
 	k.client.DeleteService(ctx, k.params.Namespace, defaults.RelayServiceName, metav1.DeleteOptions{})
 	k.client.DeleteDeployment(ctx, k.params.Namespace, defaults.RelayDeploymentName, metav1.DeleteOptions{})
@@ -274,8 +278,6 @@ func (k *K8sHubble) enableRelay(ctx context.Context) error {
 	if err := k.createRelayCertificates(ctx); err != nil {
 		return err
 	}
-
-	//	k.Log("✨ Generating certificates...")
 
 	k.Log("✨ Deploying Relay...")
 	if _, err := k.client.CreateConfigMap(ctx, k.params.Namespace, k.generateRelayConfigMap(), metav1.CreateOptions{}); err != nil {
