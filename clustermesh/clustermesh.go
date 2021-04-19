@@ -583,6 +583,7 @@ func (k *K8sClusterMesh) Enable(ctx context.Context) error {
 }
 
 type accessInformation struct {
+	ServiceNames         []string
 	ServiceIPs           []string
 	ServicePort          int
 	ClusterID            string
@@ -597,7 +598,12 @@ type accessInformation struct {
 
 func (ai *accessInformation) etcdConfiguration() string {
 	cfg := "endpoints:\n"
-	cfg += "- https://" + ai.ClusterName + ".mesh.cilium.io:" + fmt.Sprintf("%d", ai.ServicePort) + "\n"
+	for _, name := range ai.ServiceNames {
+		cfg += fmt.Sprintf("- https://%s:%d\n", name, ai.ServicePort)
+	}
+	if len(ai.ServiceIPs) > 0 {
+		cfg += "- https://" + ai.ClusterName + ".mesh.cilium.io:" + fmt.Sprintf("%d", ai.ServicePort) + "\n"
+	}
 	cfg += "trusted-ca-file: /var/lib/cilium/clustermesh/" + ai.ClusterName + caSuffix + "\n"
 	cfg += "key-file: /var/lib/cilium/clustermesh/" + ai.ClusterName + keySuffix + "\n"
 	cfg += "cert-file: /var/lib/cilium/clustermesh/" + ai.ClusterName + certSuffix + "\n"
@@ -684,6 +690,7 @@ func (k *K8sClusterMesh) extractAccessInformation(ctx context.Context, client k8
 		ClientCert:           clientCert,
 		ExternalWorkloadKey:  externalWorkloadKey,
 		ExternalWorkloadCert: externalWorkloadCert,
+		ServiceNames:         []string{},
 		ServiceIPs:           []string{},
 		Tunnel:               cm.Data[configNameTunnel],
 	}
@@ -774,7 +781,7 @@ func (k *K8sClusterMesh) extractAccessInformation(ctx context.Context, client k8
 
 		for _, ingressStatus := range svc.Status.LoadBalancer.Ingress {
 			if ingressStatus.Hostname != "" {
-				return nil, fmt.Errorf("hostname based load-balancers are not supported yet")
+				ai.ServiceNames = append(ai.ServiceNames, ingressStatus.Hostname)
 			}
 
 			if ingressStatus.IP != "" {
@@ -784,6 +791,10 @@ func (k *K8sClusterMesh) extractAccessInformation(ctx context.Context, client k8
 	}
 
 	switch {
+	case len(ai.ServiceNames) > 0:
+		if verbose {
+			k.Log("ℹ️  Found ClusterMesh service names: %s", ai.ServiceNames)
+		}
 	case len(ai.ServiceIPs) > 0:
 		if verbose {
 			k.Log("ℹ️  Found ClusterMesh service IPs: %s", ai.ServiceIPs)
@@ -1149,6 +1160,9 @@ func (k *K8sClusterMesh) Status(ctx context.Context, log bool) (*Status, error) 
 
 	if log {
 		k.Log("✅ Cluster access information is available:")
+		for _, name := range s.AccessInformation.ServiceNames {
+			k.Log("  - %s:%d", name, s.AccessInformation.ServicePort)
+		}
 		for _, ip := range s.AccessInformation.ServiceIPs {
 			k.Log("  - %s:%d", ip, s.AccessInformation.ServicePort)
 		}
@@ -1164,9 +1178,9 @@ func (k *K8sClusterMesh) Status(ctx context.Context, log bool) (*Status, error) 
 	}
 
 	if s.Service.Spec.Type == corev1.ServiceTypeLoadBalancer {
-		if len(s.AccessInformation.ServiceIPs) == 0 {
+		if len(s.AccessInformation.ServiceIPs) == 0 && len(s.AccessInformation.ServiceNames) == 0 {
 			if log {
-				k.Log("❌ Service is of type LoadBalancer but has no IPs assigned")
+				k.Log("❌ Service is of type LoadBalancer but has no IPs or names assigned")
 			}
 			return nil, fmt.Errorf("no IP available to reach cluster")
 		}
@@ -1327,29 +1341,62 @@ if [ -z "$CLUSTER_ADDR" ] ; then
 fi
 
 port='@(6553[0-5]|655[0-2][0-9]|65[0-4][0-9][0-9]|6[0-4][0-9][0-9][0-9]|[1-5][0-9][0-9][0-9][0-9]|[1-9][0-9][0-9][0-9]|[1-9][0-9][0-9]|[1-9][0-9]|[1-9])'
+noncolon='+(!(:))'
 byte='@(25[0-5]|2[0-4][0-9]|[1][0-9][0-9]|[1-9][0-9]|[0-9])'
 ipv4="$byte\.$byte\.$byte\.$byte"
+hex='[0-9a-fA-F]'
+nibble="@($hex|$hex$hex|$hex$hex$hex|$hex$hex$hex$hex)"
+ipv6="@(+($nibble:)$nibble|+($nibble:)+(:$nibble)|:+(:$nibble)|+($nibble:):|::)"
+fqdn='+([_a-zA-Z-])*([_a-zA-Z0-9-])+(.+([_a-zA-Z0-9-]))'
 
-# Default port is for a HostPort service
 case "$CLUSTER_ADDR" in
-    \[+([0-9a-fA-F:])\]:$port)
+    \[$ipv6\]:$port)
 	CLUSTER_PORT=${CLUSTER_ADDR##\[*\]:}
 	CLUSTER_IP=${CLUSTER_ADDR#\[}
 	CLUSTER_IP=${CLUSTER_IP%%\]:*}
 	;;
-    [^[]$ipv4:$port)
+    \[$ipv6\]:$noncolon)
+	echo "Malformed port in CLUSTER_ADDR: $CLUSTER_ADDR"
+	exit 1
+	;;
+    $ipv4:$port)
 	CLUSTER_PORT=${CLUSTER_ADDR##*:}
 	CLUSTER_IP=${CLUSTER_ADDR%%:*}
 	;;
-    *:*)
-	echo "Malformed CLUSTER_ADDR: $CLUSTER_ADDR"
+    $ipv4:$noncolon)
+	echo "Malformed port in CLUSTER_ADDR: $CLUSTER_ADDR"
 	exit 1
 	;;
-    *)
+    $fqdn:$port)
+	CLUSTER_PORT=${CLUSTER_ADDR##*:}
+	CLUSTER_SERVICE_NAME=${CLUSTER_ADDR%%:*}
+	;;
+    $fqdn:$noncolon)
+	echo "Malformed port in CLUSTER_ADDR: $CLUSTER_ADDR"
+	exit 1
+	;;
+    @($ipv6|$ipv4))
 	CLUSTER_PORT=2379
 	CLUSTER_IP=$CLUSTER_ADDR
 	;;
+    $fqdn)
+	CLUSTER_PORT=2379
+	CLUSTER_SERVICE_NAME=$CLUSTER_ADDR
+	;;
+    *)
+	echo "Malformed address CLUSTER_ADDR: $CLUSTER_ADDR"
+	exit 1
+	;;
 esac
+
+if [ -n "$CLUSTER_IP" ] ; then
+    ETCD_ENDPOINT=https://clustermesh-apiserver.cilium.io:$CLUSTER_PORT
+elif [ -n "$CLUSTER_SERVICE_NAME" ] ; then
+    ETCD_ENDPOINT=https://$CLUSTER_SERVICE_NAME:$CLUSTER_PORT
+else
+    echo "Invalid Cluster_ADDR: $CLUSTER_ADDR"
+    exit 1
+fi
 
 ${SUDO} mkdir -p /var/lib/cilium/etcd
 ${SUDO} tee /var/lib/cilium/etcd/ca.crt <<EOF >/dev/null
@@ -1364,7 +1411,7 @@ trusted-ca-file: /var/lib/cilium/etcd/ca.crt
 cert-file: /var/lib/cilium/etcd/tls.crt
 key-file: /var/lib/cilium/etcd/tls.key
 endpoints:
-- https://clustermesh-apiserver.cilium.io:$CLUSTER_PORT
+- $ETCD_ENDPOINT
 EOF
 
 CILIUM_OPTS=" --join-cluster --enable-host-reachable-services --enable-endpoint-health-checking=false"
@@ -1384,7 +1431,9 @@ DOCKER_OPTS+=" --volume /boot:/boot"
 DOCKER_OPTS+=" --volume /lib/modules:/lib/modules"
 DOCKER_OPTS+=" --volume /sys/fs/bpf:/sys/fs/bpf"
 DOCKER_OPTS+=" --volume /run/xtables.lock:/run/xtables.lock"
-DOCKER_OPTS+=" --add-host clustermesh-apiserver.cilium.io:$CLUSTER_IP"
+if [ -n "$CLUSTER_IP" ] ; then
+    DOCKER_OPTS+=" --add-host clustermesh-apiserver.cilium.io:$CLUSTER_IP"
+fi
 
 if [ -n "$(${SUDO} docker ps -a -q -f name=cilium)" ]; then
     echo "Shutting down running Cilium agent"
@@ -1477,7 +1526,18 @@ func (k *K8sClusterMesh) WriteExternalWorkloadInstallScript(ctx context.Context,
 		return fmt.Errorf("datapath not using vxlan, please install Cilium with '--config tunnel=vxlan'")
 	}
 
-	clusterAddr := fmt.Sprintf("%s:%d", ai.ServiceIPs[0], ai.ServicePort)
+	var clusterAddr string
+	switch {
+	case len(ai.ServiceNames) > 0:
+		clusterAddr = ai.ServiceNames[0]
+	case len(ai.ServiceIPs) > 0:
+		clusterAddr = ai.ServiceIPs[0]
+	default:
+		k.Log("❌ Service is of type LoadBalancer but has no IPs or names assigned")
+		return fmt.Errorf("no IP or name available to reach cluster")
+	}
+
+	clusterAddr += fmt.Sprintf(":%d", ai.ServicePort)
 	k.Log("✅ Using clustermesh-apiserver service address: %s", clusterAddr)
 
 	fmt.Fprintf(writer, installScriptFmt,
