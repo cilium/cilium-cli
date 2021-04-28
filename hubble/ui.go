@@ -184,7 +184,7 @@ func (k *K8sHubble) generateHubbleUIDeployment() *appsv1.Deployment {
 					Containers: []corev1.Container{
 						{
 							Name:            "frontend",
-							Image:           "quay.io/cilium/hubble-ui:latest",
+							Image:           "quay.io/cilium/hubble-ui:-ci",
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							Ports: []corev1.ContainerPort{
 								{
@@ -195,7 +195,7 @@ func (k *K8sHubble) generateHubbleUIDeployment() *appsv1.Deployment {
 						},
 						{
 							Name:            "backend",
-							Image:           "quay.io/cilium/hubble-ui-backend:latest",
+							Image:           "quay.io/cilium/hubble-ui-backend:-ci",
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							Env: []corev1.EnvVar{
 								{Name: "EVENTS_SERVER_PORT", Value: "8090"},
