@@ -164,11 +164,7 @@ etcdctl auth enable;
 exit`}
 
 func (k *K8sClusterMesh) apiserverImage() string {
-	if k.params.ApiserverImage != "" {
-		return k.params.ApiserverImage
-	}
-
-	return defaults.ClusterMeshApiserverImage
+	return utils.BuildImagePath(k.params.ApiserverImage, defaults.ClusterMeshApiserverImage, k.params.ApiserverVersion, defaults.Version)
 }
 
 func (k *K8sClusterMesh) generateDeployment() *appsv1.Deployment {
@@ -451,12 +447,22 @@ type Parameters struct {
 	SourceEndpoints      []string
 	SkipServiceCheck     bool
 	ApiserverImage       string
+	ApiserverVersion     string
 	CreateCA             bool
 	Writer               io.Writer
 	Labels               map[string]string
 	IPv4AllocCIDR        string
 	IPv6AllocCIDR        string
 	All                  bool
+}
+
+func (p Parameters) validateParams() error {
+	if p.ApiserverImage != "" {
+		return nil
+	} else if !utils.CheckVersion(p.ApiserverVersion) && p.ApiserverVersion != "" {
+		return fmt.Errorf("invalid syntax %q for image tag", p.ApiserverVersion)
+	}
+	return nil
 }
 
 func (p Parameters) waitTimeout() time.Duration {
@@ -539,6 +545,9 @@ func (p Parameters) validateForEnable() error {
 }
 
 func (k *K8sClusterMesh) Enable(ctx context.Context) error {
+	if err := k.params.validateParams(); err != nil {
+		return err
+	}
 	if err := k.params.validateForEnable(); err != nil {
 		return err
 	}

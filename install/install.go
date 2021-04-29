@@ -1061,6 +1061,11 @@ func (p *InstallParameters) validate() error {
 
 		p.configOverwrites[t[0]] = t[1]
 	}
+	if p.AgentImage != "" || p.OperatorImage != "" {
+		return nil
+	} else if !utils.CheckVersion(p.Version) && p.Version != "" {
+		return fmt.Errorf("invalid syntax %q for image tag", p.Version)
+	}
 
 	return nil
 }
@@ -1106,8 +1111,8 @@ func (k *K8sInstaller) fqOperatorImage() string {
 	case DatapathAzure:
 		defaultImage = defaults.OperatorImageAzure
 	}
-
 	return utils.BuildImagePath(k.params.OperatorImage, defaultImage, k.params.Version, defaults.Version)
+
 }
 
 func (k *K8sInstaller) operatorCommand() []string {

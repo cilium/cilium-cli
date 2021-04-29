@@ -17,20 +17,29 @@ package utils
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/cilium/cilium-cli/defaults"
 )
+
+func CheckVersion(version string) bool {
+	var check = regexp.MustCompile(`(0|[1-9][0-9])*.?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[a-zA-Z0-9]+)*\.*(0|[1-9][0-9]*)?`).MatchString
+	return check(version)
+}
 
 func BuildImagePath(userImage, defaultImage, userVersion, defaultVersion string) string {
 	if userImage == "" {
 		userImage = defaultImage
 	}
 
-	if userVersion == "" {
+	switch {
+	case userVersion == "":
 		userVersion = defaultVersion
+	case !strings.HasPrefix(userVersion, "v"):
+		userVersion = "v" + userVersion
 	}
-
 	return userImage + ":" + userVersion
 }
 
