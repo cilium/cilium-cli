@@ -86,6 +86,9 @@ const (
 
 	ConnectivityCheckNamespace = "cilium-test"
 
+	ConnectivityCheckAlpineCurlImage = "quay.io/cilium/alpine-curl:v1.2.0@sha256:bf2f87bb761821bf57b792d45edfd3a46cf5cca4c57da3fa3fc2abcb13b89dd3"
+	ConnectivityCheckJSONMockImage   = "quay.io/cilium/json-mock:v1.3.0@sha256:2729064827fa9dbfface8d3df424feb6c792a0ba07117b844349635c93c06d2b"
+
 	ConfigMapName = "cilium-config"
 	Version       = "v1.9.6"
 
