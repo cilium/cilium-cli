@@ -17,10 +17,10 @@ package install
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"github.com/cilium/cilium-cli/defaults"
+	"github.com/cilium/cilium-cli/internal/utils"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -43,10 +43,9 @@ func (k *K8sInstaller) gkeNativeRoutingCIDR(ctx context.Context, contextName str
 	}
 
 	args := []string{"container", "clusters", "describe", parts[3], "--zone", parts[2], "--format", "value(clusterIpv4Cidr)"}
-	result := exec.Command("gcloud", args...)
-	bytes, err := result.Output()
+	bytes, err := utils.Exec(k.Log, "gcloud", args...)
 	if err != nil {
-		return "", fmt.Errorf("unable to execute gcloud %s to extract native routing CIDR: %w", args, err)
+		return "", err
 	}
 
 	cidr := strings.TrimSuffix(string(bytes), "\n")

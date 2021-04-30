@@ -17,6 +17,8 @@ package utils
 import (
 	"context"
 	"fmt"
+	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/cilium/cilium-cli/defaults"
@@ -105,4 +107,18 @@ func (w *WaitObserver) Retry(err error) error {
 	}
 
 	return nil
+}
+
+func Exec(log func(format string, a ...interface{}), command string, args ...string) ([]byte, error) {
+	c := exec.Command(command, args...)
+	bytes, err := c.CombinedOutput()
+	if err != nil {
+		log("❌ Unable to execute %s %s:", command, strings.Join(args, " "))
+		if len(bytes) > 0 {
+			log("%s", string(bytes))
+		}
+		return []byte{}, fmt.Errorf("unable to execute \"%s %s\": %w", command, strings.Join(args, " "), err)
+	}
+
+	return bytes, err
 }
