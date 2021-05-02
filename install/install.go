@@ -33,6 +33,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -1504,28 +1505,40 @@ func (k *K8sInstaller) Install(ctx context.Context) error {
 
 	k.Log("🚀 Creating Service accounts...")
 	if _, err := k.client.CreateServiceAccount(ctx, k.params.Namespace, k8s.NewServiceAccount(defaults.AgentServiceAccountName), metav1.CreateOptions{}); err != nil {
-		return err
+		if ok := errors.IsAlreadyExists(err); !ok {
+			return err
+		}
 	}
 
 	if _, err := k.client.CreateServiceAccount(ctx, k.params.Namespace, k8s.NewServiceAccount(defaults.OperatorServiceAccountName), metav1.CreateOptions{}); err != nil {
-		return err
+		if ok := errors.IsAlreadyExists(err); !ok {
+			return err
+		}
 	}
 
 	k.Log("🚀 Creating Cluster roles...")
 	if _, err := k.client.CreateClusterRole(ctx, ciliumClusterRole, metav1.CreateOptions{}); err != nil {
-		return err
+		if ok := errors.IsAlreadyExists(err); !ok {
+			return err
+		}
 	}
 
 	if _, err := k.client.CreateClusterRoleBinding(ctx, k8s.NewClusterRoleBinding(defaults.AgentClusterRoleName, k.params.Namespace, defaults.AgentServiceAccountName), metav1.CreateOptions{}); err != nil {
-		return err
+		if ok := errors.IsAlreadyExists(err); !ok {
+			return err
+		}
 	}
 
 	if _, err := k.client.CreateClusterRole(ctx, operatorClusterRole, metav1.CreateOptions{}); err != nil {
-		return err
+		if ok := errors.IsAlreadyExists(err); !ok {
+			return err
+		}
 	}
 
 	if _, err := k.client.CreateClusterRoleBinding(ctx, k8s.NewClusterRoleBinding(defaults.OperatorClusterRoleName, k.params.Namespace, defaults.OperatorServiceAccountName), metav1.CreateOptions{}); err != nil {
-		return err
+		if ok := errors.IsAlreadyExists(err); !ok {
+			return err
+		}
 	}
 
 	if k.params.Encryption == encryptionIPsec {
@@ -1541,7 +1554,9 @@ func (k *K8sInstaller) Install(ctx context.Context) error {
 	}
 
 	if _, err := k.client.CreateConfigMap(ctx, k.params.Namespace, configMap, metav1.CreateOptions{}); err != nil {
-		return err
+		if ok := errors.IsAlreadyExists(err); !ok {
+			return err
+		}
 	}
 
 	switch k.flavor.Kind {
@@ -1554,12 +1569,16 @@ func (k *K8sInstaller) Install(ctx context.Context) error {
 
 	k.Log("🚀 Creating Agent DaemonSet...")
 	if _, err := k.client.CreateDaemonSet(ctx, k.params.Namespace, k.generateAgentDaemonSet(), metav1.CreateOptions{}); err != nil {
-		return err
+		if ok := errors.IsAlreadyExists(err); !ok {
+			return err
+		}
 	}
 
 	k.Log("🚀 Creating Operator Deployment...")
 	if _, err := k.client.CreateDeployment(ctx, k.params.Namespace, k.generateOperatorDeployment(), metav1.CreateOptions{}); err != nil {
-		return err
+		if ok := errors.IsAlreadyExists(err); !ok {
+			return err
+		}
 	}
 
 	if k.params.Wait {
