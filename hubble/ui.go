@@ -33,7 +33,7 @@ import (
 var (
 	hubbleUIReplicas   = int32(1)
 	hubbleUIPortIntstr = intstr.FromInt(8081)
-	hubbleUIUser       = int64(10001)
+	hubbleUIUser       = int64(1001)
 )
 
 var hubbleUIClusterRole = &rbacv1.ClusterRole{
@@ -100,31 +100,34 @@ func (k *K8sHubble) generateHubbleUIConfigMap() *corev1.ConfigMap {
       filter_chains:
         - filters:
             - name: envoy.filters.network.http_connection_manager
-              config:
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 codec_type: auto
                 stat_prefix: ingress_http
                 route_config:
                   name: local_route
                   virtual_hosts:
                     - name: local_service
-                      domains: ['*']
+                      domains: ["*"]
                       routes:
                         - match:
-                            prefix: '/api/'
+                            prefix: "/api/"
                           route:
                             cluster: backend
-                            max_grpc_timeout: 0s
-                            prefix_rewrite: '/'
+                            prefix_rewrite: "/"
+                            timeout: 0s
+                            max_stream_duration:
+                              grpc_timeout_header_max: 0s
                         - match:
-                            prefix: '/'
+                            prefix: "/"
                           route:
                             cluster: frontend
                       cors:
                         allow_origin_string_match:
-                          - prefix: '*'
+                          - prefix: "*"
                         allow_methods: GET, PUT, DELETE, POST, OPTIONS
                         allow_headers: keep-alive,user-agent,cache-control,content-type,content-transfer-encoding,x-accept-content-transfer-encoding,x-accept-response-streaming,x-user-agent,x-grpc-web,grpc-timeout
-                        max_age: '1728000'
+                        max_age: "1728000"
                         expose_headers: grpc-status,grpc-message
                 http_filters:
                   - name: envoy.filters.http.grpc_web
@@ -135,19 +138,30 @@ func (k *K8sHubble) generateHubbleUIConfigMap() *corev1.ConfigMap {
       connect_timeout: 0.25s
       type: strict_dns
       lb_policy: round_robin
-      hosts:
-        - socket_address:
-            address: 127.0.0.1
-            port_value: 8080
+      load_assignment:
+        cluster_name: frontend
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 8080
     - name: backend
       connect_timeout: 0.25s
       type: logical_dns
       lb_policy: round_robin
       http2_protocol_options: {}
-      hosts:
-        - socket_address:
-            address: 127.0.0.1
-            port_value: 8090`,
+      load_assignment:
+        cluster_name: backend
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 8090
+`,
 		},
 	}
 }
@@ -184,7 +198,7 @@ func (k *K8sHubble) generateHubbleUIDeployment() *appsv1.Deployment {
 					Containers: []corev1.Container{
 						{
 							Name:            "frontend",
-							Image:           "quay.io/cilium/hubble-ui:latest",
+							Image:           "quay.io/cilium/hubble-ui:v0.7.9@sha256:e0e461c680ccd083ac24fe4f9e19e675422485f04d8720635ec41f2ba9e5562c",
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							Ports: []corev1.ContainerPort{
 								{
@@ -195,7 +209,7 @@ func (k *K8sHubble) generateHubbleUIDeployment() *appsv1.Deployment {
 						},
 						{
 							Name:            "backend",
-							Image:           "quay.io/cilium/hubble-ui-backend:latest",
+							Image:           "quay.io/cilium/hubble-ui-backend:v0.7.9@sha256:632c938ef6ff30e3a080c59b734afb1fb7493689275443faa1435f7141aabe76",
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							Env: []corev1.EnvVar{
 								{Name: "EVENTS_SERVER_PORT", Value: "8090"},
@@ -210,7 +224,7 @@ func (k *K8sHubble) generateHubbleUIDeployment() *appsv1.Deployment {
 						},
 						{
 							Name:            "proxy",
-							Image:           "docker.io/envoyproxy/envoy:v1.14.5",
+							Image:           "docker.io/envoyproxy/envoy:v1.18.2@sha256:e8b37c1d75787dd1e712ff389b0d37337dc8a174a63bed9c34ba73359dc67da7",
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							Command:         []string{"envoy"},
 							Args:            []string{"-c", "/etc/envoy.yaml", "-l", "info"},
@@ -299,30 +313,34 @@ func (k *K8sHubble) enableUI(ctx context.Context) error {
 	return nil
 }
 
-func (k *K8sHubble) UIPortForwardCommand(ctx context.Context) error {
+func (p *Parameters) UIPortForwardCommand(ctx context.Context) error {
 	cmd := "kubectl"
 	args := []string{
 		"port-forward",
-		"-n", k.params.Namespace,
+		"-n", p.Namespace,
 		"svc/hubble-ui",
 		"--address", "0.0.0.0",
 		"--address", "::",
-		fmt.Sprintf("%d:80", k.params.UIPortForward)}
+		fmt.Sprintf("%d:80", p.UIPortForward)}
+
+	if p.Context != "" {
+		args = append([]string{"--context", p.Context}, args...)
+	}
 
 	c := exec.Command(cmd, args...)
-	c.Stdout = k.params.Writer
-	c.Stderr = k.params.Writer
+	c.Stdout = p.Writer
+	c.Stderr = p.Writer
 
 	go func() {
 		time.Sleep(5 * time.Second)
-		url := fmt.Sprintf("http://localhost:%d", k.params.UIPortForward)
+		url := fmt.Sprintf("http://localhost:%d", p.UIPortForward)
 
 		c := exec.Command("open", url)
-		c.Stdout = k.params.Writer
-		c.Stderr = k.params.Writer
+		c.Stdout = p.Writer
+		c.Stderr = p.Writer
 		if err := c.Run(); err != nil {
-			k.Log("⚠️  Unable to execute command %s %v: %s", cmd, args, err)
-			k.Log("ℹ️  Opening the following URL in your browser:" + url)
+			p.Log("⚠️  Unable to execute command %s %v: %s", cmd, args, err)
+			p.Log("ℹ️  Opening the following URL in your browser:" + url)
 		}
 	}()
 

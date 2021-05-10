@@ -799,8 +799,14 @@ func (t *TestRun) GetIngressRequirements(p FlowParameters) *filters.FlowSetRequi
 		}
 	case TCP:
 		if t.expectedIngress.Drop {
-			// Ingress drops not supported yet
-			t.Failure("Unimplemented expected TCP ingress result %s", t.expectedIngress.String())
+			ingress = &filters.FlowSetRequirement{
+				First: filters.FlowRequirement{Filter: filters.And(ipRequest, tcpRequest, filters.SYN()), Msg: "SYN"},
+				Last:  filters.FlowRequirement{Filter: filters.And(ipRequest, tcpRequest, filters.Drop()), Msg: "Drop"},
+				Except: []filters.FlowRequirement{
+					{Filter: filters.And(ipResponse, tcpResponse, filters.SYNACK()), Msg: "SYN-ACK"},
+					{Filter: filters.And(filters.Or(filters.And(ipRequest, tcpRequest), filters.And(ipResponse, tcpResponse)), filters.FIN()), Msg: "FIN"},
+				},
+			}
 		} else {
 			ingress = &filters.FlowSetRequirement{
 				First: filters.FlowRequirement{Filter: filters.And(ipRequest, tcpRequest, filters.SYN()), Msg: "SYN"},
@@ -938,6 +944,9 @@ type ConnectivityTest interface {
 	// Name must return the name of the test
 	Name() string
 
+	// PolicyOnly returns true if there is policy setup but no traffic scenario with this test
+	PolicyOnly() bool
+
 	// Run is called to run the connectivity test
 	Run(ctx context.Context, c TestContext)
 }
@@ -985,6 +994,7 @@ type K8sConnectivityCheck struct {
 	hubbleClient       observer.ObserverClient
 	params             Parameters
 	clients            *deploymentClients
+	ciliumPods         map[string]PodContext
 	echoPods           map[string]PodContext
 	clientPods         map[string]PodContext
 	echoServices       map[string]ServiceContext
@@ -1162,6 +1172,7 @@ type Parameters struct {
 	AllFlows              bool
 	Writer                io.Writer
 	Verbose               bool
+	PauseOnFail           bool
 }
 
 func (p Parameters) ciliumEndpointTimeout() time.Duration {
@@ -1236,13 +1247,13 @@ func (k *K8sConnectivityCheck) deploymentList() (srcList []string, dstList []str
 }
 
 type deploymentClients struct {
-	dstInOtherCluster bool
-	src               k8sConnectivityImplementation
-	dst               k8sConnectivityImplementation
+	src k8sConnectivityImplementation
+	dst k8sConnectivityImplementation
 }
 
+// clients return a slice of unique k8s clients to use
 func (d *deploymentClients) clients() []k8sConnectivityImplementation {
-	if d.dstInOtherCluster {
+	if d.src != d.dst {
 		return []k8sConnectivityImplementation{d.src, d.dst}
 	}
 	return []k8sConnectivityImplementation{d.src}
@@ -1269,6 +1280,10 @@ func (k *K8sConnectivityCheck) initClients(ctx context.Context) (*deploymentClie
 
 	if a, _ := k.logAggregationMode(ctx, c.src); a != defaults.ConfigMapValueMonitorAggregatonNone {
 		k.flowAggregation = true
+	}
+
+	if k.params.MultiCluster != "" && k.params.SingleNode {
+		return nil, fmt.Errorf("single-node test can not be enabled with multi-cluster test")
 	}
 
 	// In single-cluster environment, automatically detect a single-node
@@ -1309,14 +1324,13 @@ func (k *K8sConnectivityCheck) initClients(ctx context.Context) (*deploymentClie
 			k.Log("ℹ️  Single node environment detected, enabling single node connectivity test")
 			k.params.SingleNode = true
 		}
-	} else {
+	} else if k.params.MultiCluster != "" {
 		dst, err := k8s.NewClient(k.params.MultiCluster, "")
 		if err != nil {
 			return nil, fmt.Errorf("unable to create Kubernetes client for remote cluster %q: %w", k.params.MultiCluster, err)
 		}
 
 		c.dst = dst
-		c.dstInOtherCluster = true
 
 		if a, _ := k.logAggregationMode(ctx, c.dst); a != defaults.ConfigMapValueMonitorAggregatonNone {
 			k.flowAggregation = true
@@ -1395,7 +1409,7 @@ func (k *K8sConnectivityCheck) deploy(ctx context.Context) error {
 			Name:   echoSameNodeDeploymentName,
 			Kind:   kindEchoName,
 			Port:   8080,
-			Image:  "quay.io/cilium/json-mock:1.2",
+			Image:  defaults.ConnectivityCheckJSONMockImage,
 			Labels: map[string]string{"other": "echo"},
 			Affinity: &corev1.Affinity{
 				PodAffinity: &corev1.PodAffinity{
@@ -1427,7 +1441,7 @@ func (k *K8sConnectivityCheck) deploy(ctx context.Context) error {
 			Name:    ClientDeploymentName,
 			Kind:    kindClientName,
 			Port:    8080,
-			Image:   "quay.io/cilium/alpine-curl:1.1",
+			Image:   defaults.ConnectivityCheckAlpineCurlImage,
 			Command: []string{"/bin/ash", "-c", "sleep 10000000"},
 		})
 		_, err = k.clients.src.CreateDeployment(ctx, k.params.TestNamespace, clientDeployment, metav1.CreateOptions{})
@@ -1444,7 +1458,7 @@ func (k *K8sConnectivityCheck) deploy(ctx context.Context) error {
 			Name:    Client2DeploymentName,
 			Kind:    kindClientName,
 			Port:    8080,
-			Image:   "quay.io/cilium/alpine-curl:1.1",
+			Image:   defaults.ConnectivityCheckAlpineCurlImage,
 			Command: []string{"/bin/ash", "-c", "sleep 10000000"},
 			Labels:  map[string]string{"other": "client"},
 		})
@@ -1478,7 +1492,7 @@ func (k *K8sConnectivityCheck) deploy(ctx context.Context) error {
 				Name:  echoOtherNodeDeploymentName,
 				Kind:  kindEchoName,
 				Port:  8080,
-				Image: "quay.io/cilium/json-mock:1.2",
+				Image: defaults.ConnectivityCheckJSONMockImage,
 				Affinity: &corev1.Affinity{
 					PodAntiAffinity: &corev1.PodAntiAffinity{
 						RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
@@ -1577,6 +1591,21 @@ func (k *K8sConnectivityCheck) validateDeployment(ctx context.Context) error {
 	}
 	if err := k.waitForDeploymentsReady(ctx, k.clients.dst, dstDeployments); err != nil {
 		return err
+	}
+
+	k.ciliumPods = map[string]PodContext{}
+	for _, client := range k.clients.clients() {
+		ciliumPods, err := client.ListPods(ctx, k.ciliumNamespace, metav1.ListOptions{LabelSelector: "k8s-app=cilium"})
+		if err != nil {
+			return fmt.Errorf("unable to list Cilium pods: %s", err)
+		}
+		for _, ciliumPod := range ciliumPods.Items {
+			// TODO: Can Cilium pod names collide across clusters?
+			k.ciliumPods[ciliumPod.Name] = PodContext{
+				K8sClient: client,
+				Pod:       ciliumPod.DeepCopy(),
+			}
+		}
 	}
 
 	clientPods, err := k.client.ListPods(ctx, k.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindClientName})
@@ -1731,6 +1760,11 @@ func (k *K8sConnectivityCheck) Report(r TestResult) {
 		r.Failures++
 	}
 	k.results[r.Name] = r
+
+	if r.Failures > 0 && k.params.PauseOnFail {
+		fmt.Println("Pausing after test failure, press the Enter key to continue:")
+		fmt.Scanln()
+	}
 }
 
 func (k *K8sConnectivityCheck) Run(ctx context.Context, tests ...ConnectivityTest) error {
@@ -1757,11 +1791,9 @@ func (k *K8sConnectivityCheck) Run(ctx context.Context, tests ...ConnectivityTes
 	}
 
 	for _, test := range tests {
-		if !k.params.testEnabled(test.Name()) {
-			continue
+		if test.PolicyOnly() || k.params.testEnabled(test.Name()) {
+			test.Run(ctx, k)
 		}
-
-		test.Run(ctx, k)
 	}
 
 	k.Header("📋 Test Report")

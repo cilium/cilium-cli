@@ -25,6 +25,7 @@ import (
 
 	"github.com/cloudflare/cfssl/config"
 	"github.com/cloudflare/cfssl/csr"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -53,11 +54,12 @@ func (k *K8sInstaller) createHubbleServerCertificate(ctx context.Context) error 
 	}
 
 	data := map[string][]byte{
-		defaults.HubbleServerSecretCertName: cert,
-		defaults.HubbleServerSecretKeyName:  key,
+		corev1.TLSCertKey:         cert,
+		corev1.TLSPrivateKeyKey:   key,
+		defaults.CASecretCertName: k.certManager.CACertBytes(),
 	}
 
-	_, err = k.client.CreateSecret(ctx, k.params.Namespace, k8s.NewSecret(defaults.HubbleServerSecretName, k.params.Namespace, data), metav1.CreateOptions{})
+	_, err = k.client.CreateSecret(ctx, k.params.Namespace, k8s.NewTLSSecret(defaults.HubbleServerSecretName, k.params.Namespace, data), metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("unable to create secret %s/%s: %w", k.params.Namespace, defaults.HubbleServerSecretName, err)
 	}
@@ -65,12 +67,18 @@ func (k *K8sInstaller) createHubbleServerCertificate(ctx context.Context) error 
 	return nil
 }
 
-func (k *K8sUninstaller) uninstallCerts(ctx context.Context) error {
-	if err := k.client.DeleteSecret(ctx, k.params.Namespace, defaults.HubbleServerSecretName, metav1.DeleteOptions{}); err != nil {
-		return fmt.Errorf("unable to delete secret %s/%s: %w", k.params.Namespace, defaults.HubbleServerSecretName, err)
+func (k *K8sUninstaller) uninstallCerts(ctx context.Context) (err error) {
+	if err = k.client.DeleteSecret(ctx, k.params.Namespace, defaults.HubbleServerSecretName, metav1.DeleteOptions{}); err != nil {
+		err = fmt.Errorf("unable to delete secret %s/%s: %w", k.params.Namespace, defaults.HubbleServerSecretName, err)
+	}
+	if err2 := k.client.DeleteSecret(ctx, k.params.Namespace, defaults.CASecretName, metav1.DeleteOptions{}); err2 != nil {
+		err2 = fmt.Errorf("unable to delete CA secret %s/%s: %w", k.params.Namespace, defaults.CASecretName, err2)
+		if err == nil {
+			err = err2
+		}
 	}
 
-	return nil
+	return err
 }
 
 func (k *K8sInstaller) installCerts(ctx context.Context) error {

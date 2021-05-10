@@ -37,10 +37,8 @@ const (
 	OperatorImageAWS           = "quay.io/cilium/operator-aws"
 	OperatorImageAzure         = "quay.io/cilium/operator-azure"
 
-	HubbleSocketPath           = "/var/run/cilium/hubble.sock"
-	HubbleServerSecretName     = "hubble-server-certs"
-	HubbleServerSecretCertName = "tls.crt"
-	HubbleServerSecretKeyName  = "tls.key"
+	HubbleSocketPath       = "/var/run/cilium/hubble.sock"
+	HubbleServerSecretName = "hubble-server-certs"
 
 	RelayDeploymentName       = "hubble-relay"
 	RelayClusterRoleName      = "hubble-relay"
@@ -53,11 +51,7 @@ const (
 	RelayServicePlaintextPort = 80
 	RelayServiceTLSPort       = 443
 	RelayServerSecretName     = "hubble-relay-server-certs"
-	RelayServerSecretCertName = "tls.crt"
-	RelayServerSecretKeyName  = "tls.key"
 	RelayClientSecretName     = "hubble-relay-client-certs"
-	RelayClientSecretCertName = "tls.crt"
-	RelayClientSecretKeyName  = "tls.key"
 
 	HubbleUIServiceName        = "hubble-ui"
 	HubbleUIClusterRoleName    = "hubble-ui"
@@ -77,6 +71,9 @@ const (
 	ClusterMeshExternalWorkloadSecretName = "clustermesh-apiserver-external-workload-certs"
 
 	ConnectivityCheckNamespace = "cilium-test"
+
+	ConnectivityCheckAlpineCurlImage = "quay.io/cilium/alpine-curl:v1.3.0@sha256:1d928912e5d9dc9994b038b5df7434790c4bb9bd64f60570d78c1dee13befc76"
+	ConnectivityCheckJSONMockImage   = "quay.io/cilium/json-mock:v1.3.0@sha256:2729064827fa9dbfface8d3df424feb6c792a0ba07117b844349635c93c06d2b"
 
 	ConfigMapName = "cilium-config"
 	Version       = "v1.9.6"
