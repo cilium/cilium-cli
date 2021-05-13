@@ -53,13 +53,10 @@ jobs:
       - name: Enable Relay
         run: |
           cilium hubble enable --ui
+          cilium status --wait --wait-duration=5m
 
           # This will fail if Hubble UI cannot come up
           kubectl wait -n kube-system --for=condition=Ready --all pod --timeout=5m
-
-      - name: Status
-        run: |
-          cilium status --wait
 
       - name: Relay Port Forward
         run: |
