@@ -16,7 +16,11 @@ package check
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cilium/cilium-cli/defaults"
@@ -451,7 +455,81 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 		}
 	}
 
+	for _, cp := range ct.ciliumPods {
+		err := ct.waitForIPCache(ctx, cp)
+		if err != nil {
+			return fmt.Errorf("Pod identities not available in Cilium ipcaches: %s", err)
+		}
+	}
+
 	return nil
+}
+
+func (ct *ConnectivityTest) waitForIPCache(ctx context.Context, pod Pod) error {
+	ct.Logf("⌛ [%s] Waiting for Cilium pod %s to have all the pod IPs in bpf ipcache...", ct.client.ClusterName(), pod.Name())
+
+	// Retry the IP cache lookup for the duration of the ipCacheTimeout().
+	ctx, cancel := context.WithTimeout(ctx, ct.params.ipCacheTimeout())
+	defer cancel()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout reached waiting for pod IDs in ipcache of Cilium pod %s", pod.Name())
+		default:
+		}
+
+		// Don't retry lookups more often than once per second.
+		r := time.After(time.Second)
+
+		// Warning: ExecInPod ignores ctx. Don't pass it here so we don't
+		// falsely expect the function to be able to be cancelled.
+		stdout, err := pod.K8sClient.ExecInPod(context.TODO(), pod.Pod.Namespace, pod.Pod.Name,
+			"cilium-agent", []string{"cilium", "bpf", "ipcache", "list", "-o", "json"})
+		if err == nil {
+			var ipCache IPCache
+			json.Unmarshal(stdout.Bytes(), &ipCache)
+			for _, client := range ct.clientPods {
+				// Any ID in the reserved range is considered invalid for a pod
+				if ipCache.findID(client.Pod.Status.PodIP) < 256 {
+					goto retry
+				}
+			}
+			for _, echo := range ct.echoPods {
+				// Any ID in the reserved range is considered invalid for a pod
+				if ipCache.findID(echo.Pod.Status.PodIP) < 256 {
+					goto retry
+				}
+			}
+			// All IDs found
+			return nil
+		}
+
+		ct.Debugf("Error listing ipcache for Cilium pod %s: %s", pod.Name(), err)
+	retry:
+		// Wait for the pace timer to avoid busy polling.
+		<-r
+	}
+}
+
+type IPCache map[string][]string
+
+func (c IPCache) findID(a string) int {
+	ip := net.ParseIP(a)
+	mask := "/32"
+	if ip.To4() == nil {
+		mask = "/128"
+	}
+	if v, ok := c[ip.String()+mask]; ok {
+		values := strings.Fields(v[0])
+		if len(values) > 1 {
+			if id, err := strconv.Atoi(values[0]); err == nil {
+				return id
+			}
+		}
+	}
+	// IP/ID not found
+	return -1
 }
 
 func (ct *ConnectivityTest) waitForDeployments(ctx context.Context, client *k8s.Client, deployments []string) error {
