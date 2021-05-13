@@ -17,7 +17,7 @@ env:
 jobs:
   installation-and-connectivity:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -92,6 +92,7 @@ jobs:
       - name: Cleanup
         if: ${{ always() }}
         run: |
+          sleep 3600
           cilium status
           cilium clustermesh status
           cilium clustermesh vm status
