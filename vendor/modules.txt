@@ -1,5 +1,8 @@
 # cloud.google.com/go v0.51.0
 cloud.google.com/go/compute/metadata
+# github.com/Azure/go-ansiterm v0.0.0-20170929234023-d6e3b3328b78
+github.com/Azure/go-ansiterm
+github.com/Azure/go-ansiterm/winterm
 # github.com/Azure/go-autorest v14.2.0+incompatible
 github.com/Azure/go-autorest
 # github.com/Azure/go-autorest/autorest v0.11.2
@@ -235,8 +238,13 @@ github.com/mailru/easyjson/jwriter
 github.com/matttproud/golang_protobuf_extensions/pbutil
 # github.com/miekg/dns v1.0.14 => github.com/cilium/dns v1.1.4-0.20190417235132-8e25ec9a0ff3
 github.com/miekg/dns
+# github.com/mitchellh/go-wordwrap v1.0.0
+github.com/mitchellh/go-wordwrap
 # github.com/mitchellh/mapstructure v1.3.3
 github.com/mitchellh/mapstructure
+# github.com/moby/term v0.0.0-20200312100748-672ec06f55cd
+github.com/moby/term
+github.com/moby/term/windows
 # github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
 github.com/modern-go/concurrent
 # github.com/modern-go/reflect2 v1.0.1
@@ -686,6 +694,10 @@ k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/workqueue
 # k8s.io/klog/v2 v2.2.0
 k8s.io/klog/v2
+# k8s.io/kubectl v0.19.10
+## explicit
+k8s.io/kubectl/pkg/util/interrupt
+k8s.io/kubectl/pkg/util/term
 # k8s.io/utils v0.0.0-20200729134348-d5654de09c73
 k8s.io/utils/integer
 # sigs.k8s.io/structured-merge-diff/v4 v4.0.3 => github.com/christarazi/structured-merge-diff/v4 v4.0.2-0.20200917183246-1cc601931628

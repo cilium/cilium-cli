@@ -188,7 +188,7 @@ type k8sConnectivityImplementation interface {
 	ListServices(ctx context.Context, namespace string, options metav1.ListOptions) (*corev1.ServiceList, error)
 	ListCiliumExternalWorkloads(ctx context.Context, options metav1.ListOptions) (*ciliumv2.CiliumExternalWorkloadList, error)
 	GetCiliumEndpoint(ctx context.Context, namespace, name string, opts metav1.GetOptions) (*ciliumv2.CiliumEndpoint, error)
-	ExecInPod(ctx context.Context, namespace, pod, container string, command []string) (bytes.Buffer, error)
+	ExecInPodStdoutOnly(ctx context.Context, namespace, pod, container string, command []string) (bytes.Buffer, error)
 	ExecInPodWithStderr(ctx context.Context, namespace, pod, container string, command []string) (bytes.Buffer, bytes.Buffer, error)
 	ClusterName() (name string)
 

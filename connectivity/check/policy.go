@@ -311,7 +311,7 @@ func (k *K8sConnectivityCheck) DeleteCNPs(ctx context.Context, cnps []*ciliumv2.
 
 // GetCiliumPolicyRevision returns the current policy revision in a Cilium pod
 func (k *K8sConnectivityCheck) GetCiliumPolicyRevision(ctx context.Context, pc PodContext) (int, error) {
-	stdout, err := pc.K8sClient.ExecInPod(ctx, pc.Pod.Namespace, pc.Pod.Name, "cilium-agent", []string{"cilium", "policy", "get", "-o", "jsonpath='{.revision}'"})
+	stdout, err := pc.K8sClient.ExecInPodStdoutOnly(ctx, pc.Pod.Namespace, pc.Pod.Name, "cilium-agent", []string{"cilium", "policy", "get", "-o", "jsonpath='{.revision}'"})
 	if err != nil {
 		return 0, err
 	}
@@ -326,7 +326,7 @@ func (k *K8sConnectivityCheck) GetCiliumPolicyRevision(ctx context.Context, pc P
 func (k *K8sConnectivityCheck) CiliumPolicyWaitForRevision(ctx context.Context, pc PodContext, rev int, timeout time.Duration) error {
 	revStr := strconv.Itoa(rev)
 	timeoutStr := strconv.Itoa(int(timeout.Seconds()))
-	_, err := pc.K8sClient.ExecInPod(ctx, pc.Pod.Namespace, pc.Pod.Name, "cilium-agent", []string{"cilium", "policy", "wait", revStr, "--max-wait-time", timeoutStr})
+	_, err := pc.K8sClient.ExecInPodStdoutOnly(ctx, pc.Pod.Namespace, pc.Pod.Name, "cilium-agent", []string{"cilium", "policy", "wait", revStr, "--max-wait-time", timeoutStr})
 	return err
 }
 
