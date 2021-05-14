@@ -227,12 +227,34 @@ func (c *Client) DeletePodCollection(ctx context.Context, namespace string, opts
 	return c.Clientset.CoreV1().Pods(namespace).DeleteCollection(ctx, opts, listOpts)
 }
 
+func (c *Client) GetPod(ctx context.Context, namespace, name string, opts metav1.GetOptions) (*corev1.Pod, error) {
+	return c.Clientset.CoreV1().Pods(namespace).Get(ctx, name, opts)
+}
+
 func (c *Client) ListPods(ctx context.Context, namespace string, options metav1.ListOptions) (*corev1.PodList, error) {
 	return c.Clientset.CoreV1().Pods(namespace).List(ctx, options)
 }
 
 func (c *Client) PodLogs(namespace, name string, opts *corev1.PodLogOptions) *rest.Request {
 	return c.Clientset.CoreV1().Pods(namespace).GetLogs(name, opts)
+}
+
+func (c *Client) DiscoverCiliumNamespace(ctx context.Context) (string, error) {
+	r, err := c.Clientset.AppsV1().DaemonSets(corev1.NamespaceAll).List(ctx, metav1.ListOptions{
+		LabelSelector: "k8s-app=cilium",
+		FieldSelector: "metadata.name=cilium",
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to discover Cilium namespace: %w", err)
+	}
+	n := make([]string, 0)
+	for _, d := range r.Items {
+		n = append(n, d.Namespace)
+	}
+	if len(n) != 1 {
+		return "", fmt.Errorf("failed to discover Cilium namespace: found %d matching candidates", len(n))
+	}
+	return n[0], nil
 }
 
 // separator for locating the start of the next log message. Sometimes
@@ -291,36 +313,38 @@ func (c *Client) ListServices(ctx context.Context, namespace string, options met
 	return c.Clientset.CoreV1().Services(namespace).List(ctx, options)
 }
 
-func (c *Client) ExecInPodWithStderr(ctx context.Context, namespace, pod, container string, command []string) (bytes.Buffer, bytes.Buffer, error) {
-	result, err := c.execInPod(ctx, ExecParameters{
-		Namespace: namespace,
-		Pod:       pod,
-		Container: container,
-		Command:   command,
+func (c *Client) ExecInPod(ctx context.Context, namespace, pod, container string, command []string, interactive bool) (bytes.Buffer, bytes.Buffer, error) {
+	stdout := bytes.Buffer{}
+	stderr := bytes.Buffer{}
+	err := c.execInPod(ctx, &ExecParameters{
+		Namespace:   namespace,
+		Pod:         pod,
+		Container:   container,
+		Command:     command,
+		Interactive: interactive,
+		Out:         &stdout,
+		Err:         &stderr,
 	})
-	return result.Stdout, result.Stderr, err
+	return stdout, stderr, err
 }
 
-func (c *Client) ExecInPod(ctx context.Context, namespace, pod, container string, command []string) (bytes.Buffer, error) {
-	result, err := c.execInPod(ctx, ExecParameters{
-		Namespace: namespace,
-		Pod:       pod,
-		Container: container,
-		Command:   command,
-	})
+func (c *Client) ExecInPodWithStderr(ctx context.Context, namespace, pod, container string, command []string) (bytes.Buffer, bytes.Buffer, error) {
+	return c.ExecInPod(ctx, namespace, pod, container, command, false)
+}
+
+func (c *Client) ExecInPodStdoutOnly(ctx context.Context, namespace, pod, container string, command []string) (bytes.Buffer, error) {
+	o, e, err := c.ExecInPod(ctx, namespace, pod, container, command, false)
 	if err != nil {
 		return bytes.Buffer{}, err
 	}
-
-	if errString := result.Stderr.String(); errString != "" {
+	if errString := e.String(); errString != "" {
 		return bytes.Buffer{}, fmt.Errorf("command failed: %s", errString)
 	}
-
-	return result.Stdout, nil
+	return o, nil
 }
 
 func (c *Client) CiliumStatus(ctx context.Context, namespace, pod string) (*models.StatusResponse, error) {
-	stdout, err := c.ExecInPod(ctx, namespace, pod, "cilium-agent", []string{"cilium", "status", "-o", "json"})
+	stdout, err := c.ExecInPodStdoutOnly(ctx, namespace, pod, "cilium-agent", []string{"cilium", "status", "-o", "json"})
 	if err != nil {
 		return nil, err
 	}
@@ -461,6 +485,10 @@ func (c *Client) GetCiliumEndpoint(ctx context.Context, namespace, name string, 
 
 func (c *Client) ListCiliumEndpoints(ctx context.Context, namespace string, options metav1.ListOptions) (*ciliumv2.CiliumEndpointList, error) {
 	return c.CiliumClientset.CiliumV2().CiliumEndpoints(namespace).List(ctx, options)
+}
+
+func (c *Client) GetNode(ctx context.Context, name string, opts metav1.GetOptions) (*corev1.Node, error) {
+	return c.Clientset.CoreV1().Nodes().Get(ctx, name, opts)
 }
 
 func (c *Client) ListNodes(ctx context.Context, options metav1.ListOptions) (*corev1.NodeList, error) {
