@@ -48,6 +48,7 @@ type deploymentParameters struct {
 	Affinity       *corev1.Affinity
 	ReadinessProbe *corev1.Probe
 	Labels         map[string]string
+	Annotations    map[string]string
 }
 
 func newDeployment(p deploymentParameters) *appsv1.Deployment {
@@ -103,6 +104,12 @@ func newDeployment(p deploymentParameters) *appsv1.Deployment {
 
 	for k, v := range p.Labels {
 		dep.Spec.Template.ObjectMeta.Labels[k] = v
+	}
+	if len(p.Annotations) > 0 {
+		dep.Spec.Template.ObjectMeta.Annotations = make(map[string]string, len(p.Annotations))
+		for k, v := range p.Annotations {
+			dep.Spec.Template.ObjectMeta.Annotations[k] = v
+		}
 	}
 
 	return dep
@@ -310,6 +317,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 					},
 				},
 				ReadinessProbe: newLocalReadinessProbe(8080, "/"),
+				Annotations:    map[string]string{"io.cilium.proxy-visibility": "<Ingress/8080/TCP/HTTP>"},
 			})
 
 			_, err = ct.clients.dst.CreateDeployment(ctx, ct.params.TestNamespace, echoOtherNodeDeployment, metav1.CreateOptions{})
