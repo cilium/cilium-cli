@@ -49,6 +49,7 @@ type deploymentParameters struct {
 	Affinity       *corev1.Affinity
 	ReadinessProbe *corev1.Probe
 	Labels         map[string]string
+	Annotations    map[string]string
 }
 
 func newDeployment(p deploymentParameters) *appsv1.Deployment {
@@ -72,6 +73,7 @@ func newDeployment(p deploymentParameters) *appsv1.Deployment {
 						"name": p.Name,
 						"kind": p.Kind,
 					},
+					Annotations: make(map[string]string, len(p.Annotations)),
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
@@ -109,6 +111,9 @@ func newDeployment(p deploymentParameters) *appsv1.Deployment {
 
 	for k, v := range p.Labels {
 		dep.Spec.Template.ObjectMeta.Labels[k] = v
+	}
+	for k, v := range p.Annotations {
+		dep.Spec.Template.ObjectMeta.Annotations[k] = v
 	}
 
 	return dep
@@ -246,11 +251,12 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 	if err != nil {
 		ct.Logf("✨ [%s] Deploying client deployment...", ct.clients.src.ClusterName())
 		clientDeployment := newDeployment(deploymentParameters{
-			Name:    ClientDeploymentName,
-			Kind:    kindClientName,
-			Port:    8080,
-			Image:   defaults.ConnectivityCheckAlpineCurlImage,
-			Command: []string{"/bin/ash", "-c", "sleep 10000000"},
+			Name:        ClientDeploymentName,
+			Kind:        kindClientName,
+			Port:        8080,
+			Image:       defaults.ConnectivityCheckAlpineCurlImage,
+			Command:     []string{"/bin/ash", "-c", "sleep 10000000"},
+			Annotations: map[string]string{"io.cilium.proxy-visibility": "<Egress/53/ANY/DNS>"},
 		})
 		_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, clientDeployment, metav1.CreateOptions{})
 		if err != nil {
@@ -263,12 +269,13 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 	if err != nil {
 		ct.Logf("✨ [%s] Deploying client2 deployment...", ct.clients.src.ClusterName())
 		clientDeployment := newDeployment(deploymentParameters{
-			Name:    Client2DeploymentName,
-			Kind:    kindClientName,
-			Port:    8080,
-			Image:   defaults.ConnectivityCheckAlpineCurlImage,
-			Command: []string{"/bin/ash", "-c", "sleep 10000000"},
-			Labels:  map[string]string{"other": "client"},
+			Name:        Client2DeploymentName,
+			Kind:        kindClientName,
+			Port:        8080,
+			Image:       defaults.ConnectivityCheckAlpineCurlImage,
+			Command:     []string{"/bin/ash", "-c", "sleep 10000000"},
+			Labels:      map[string]string{"other": "client"},
+			Annotations: map[string]string{"io.cilium.proxy-visibility": "<Egress/53/ANY/DNS>"},
 		})
 		_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, clientDeployment, metav1.CreateOptions{})
 		if err != nil {
