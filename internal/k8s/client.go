@@ -31,6 +31,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/api/policy/v1beta1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -228,6 +229,16 @@ func (c *Client) DeleteNamespace(ctx context.Context, namespace string, opts met
 
 func (c *Client) DeletePod(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error {
 	return c.Clientset.CoreV1().Pods(namespace).Delete(ctx, name, opts)
+}
+
+func (c *Client) EvictPod(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error {
+	return c.Clientset.PolicyV1beta1().Evictions(namespace).Evict(ctx, &v1beta1.Eviction{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		DeleteOptions: &opts,
+	})
 }
 
 func (c *Client) DeletePodCollection(ctx context.Context, namespace string, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error {
