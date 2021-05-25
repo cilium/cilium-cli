@@ -227,10 +227,6 @@ func (c *Client) DeleteNamespace(ctx context.Context, namespace string, opts met
 	return c.Clientset.CoreV1().Namespaces().Delete(ctx, namespace, opts)
 }
 
-func (c *Client) DeletePod(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error {
-	return c.Clientset.CoreV1().Pods(namespace).Delete(ctx, name, opts)
-}
-
 func (c *Client) EvictPod(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error {
 	return c.Clientset.PolicyV1beta1().Evictions(namespace).Evict(ctx, &v1beta1.Eviction{
 		ObjectMeta: metav1.ObjectMeta{

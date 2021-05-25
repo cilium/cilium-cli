@@ -990,7 +990,6 @@ type k8sInstallerImplementation interface {
 	CreateNamespace(ctx context.Context, namespace string, opts metav1.CreateOptions) (*corev1.Namespace, error)
 	GetNamespace(ctx context.Context, namespace string, options metav1.GetOptions) (*corev1.Namespace, error)
 	ListPods(ctx context.Context, namespace string, options metav1.ListOptions) (*corev1.PodList, error)
-	DeletePod(ctx context.Context, namespace, name string, options metav1.DeleteOptions) error
 	EvictPod(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error
 	ExecInPod(ctx context.Context, namespace, pod, container string, command []string) (bytes.Buffer, error)
 	CreateSecret(ctx context.Context, namespace string, secret *corev1.Secret, opts metav1.CreateOptions) (*corev1.Secret, error)
