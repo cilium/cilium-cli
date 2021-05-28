@@ -1446,7 +1446,7 @@ func (k *K8sInstaller) restartUnmanagedPods(ctx context.Context) error {
 		}
 	}
 
-	tail := func(pods []corev1.Pod) []corev1.Pod {
+	tail := func(pods []*corev1.Pod) []*corev1.Pod {
 		if len(pods) <= 1 {
 			pods = nil
 		} else {
@@ -1456,9 +1456,9 @@ func (k *K8sInstaller) restartUnmanagedPods(ctx context.Context) error {
 	}
 
 	// group pods by namespace to make evictions faster
-	nsToPods := make(map[string][]corev1.Pod)
-	for _, p := range pods.Items {
-		nsToPods[p.Namespace] = append(nsToPods[p.Namespace], p)
+	nsToPods := make(map[string][]*corev1.Pod)
+	for idx, p := range pods.Items {
+		nsToPods[p.Namespace] = append(nsToPods[p.Namespace], &pods.Items[idx])
 	}
 	var wg sync.WaitGroup
 	for ns, pods := range nsToPods {
