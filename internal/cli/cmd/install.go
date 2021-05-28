@@ -71,6 +71,8 @@ cilium install --context kind-cluster1 --cluster-id 1 --cluster-name cluster1
 	cmd.Flags().DurationVar(&params.CiliumReadyTimeout, "cilium-ready-timeout", 5*time.Minute,
 		"Timeout for Cilium to become ready before restarting unmanaged pods")
 	cmd.Flags().BoolVar(&params.Rollback, "rollback", true, "Roll back installed resources on failure")
+	cmd.Flags().StringVar(&params.CgroupHostRoot, "cgroup-hostRoot", "/run/cilium/cgroupv2", "Host path to mount cgroup2 filesystem")
+	cmd.Flags().StringVar(&params.CniBinPath, "cni-bin-path", "/home/kubernetes/bin", "Path for CNI binary files")
 
 	cmd.Flags().StringVar(&params.Azure.ResourceGroupName, "azure-resource-group", "", "Azure resource group name the cluster is in (required)")
 	cmd.Flags().StringVar(&params.Azure.AKSNodeResourceGroup, "azure-node-resource-group", "", "Azure node resource group name the cluster is in. Bypasses `--azure-resource-group` if provided.")

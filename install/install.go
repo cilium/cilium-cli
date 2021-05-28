@@ -531,6 +531,16 @@ func (k *K8sInstaller) generateAgentDaemonSet() *appsv1.DaemonSet {
 							},
 						},
 						{
+							// To keep state between restarts / upgrades on cgroup2 filesystem
+							Name: "cilium-cgroup",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Path: k.params.CgroupHostRoot,
+									Type: &hostPathDirectoryOrCreate,
+								},
+							},
+						},
+						{
 							// To install cilium cni plugin in the host
 							Name: "cni-path",
 							VolumeSource: corev1.VolumeSource{
@@ -648,6 +658,14 @@ func (k *K8sInstaller) generateAgentDaemonSet() *appsv1.DaemonSet {
 		})
 	}
 
+	// Check for duplicate mounts.
+	if strings.HasPrefix(k.params.CgroupHostRoot, "/run/cilium/") {
+		auxVolumeMounts = append(auxVolumeMounts, corev1.VolumeMount{
+			Name:      "cilium-cgroup",
+			MountPath: "/run/cilium/cgroupv2",
+		})
+	}
+
 	switch k.flavor.Kind {
 	case k8s.KindGKE:
 		nodeInitContainers = append(nodeInitContainers, corev1.Container{
@@ -702,6 +720,40 @@ func (k *K8sInstaller) generateAgentDaemonSet() *appsv1.DaemonSet {
 			},
 		},
 	})
+	// The statically linked Go program binary is invoked to avoid any
+	// dependency on utilities like sh and mount that can be missing on certain
+	// distros installed on the underlying host. Copy the binary to the
+	// same directory where we install cilium cni plugin so that exec permissions
+	// are available.
+	// More details - https://github.com/cilium/cilium/pull/16815/.
+	version := k.getCiliumVersion()
+	if version.GTE(versioncheck.MustVersion("1.10.3")) {
+		cgrpMountCmd := fmt.Sprintf(`cp /usr/bin/cilium-mount /hostbin/cilium-mount && nsenter --cgroup=/hostproc/1/ns/cgroup --mount=/hostproc/1/ns/mnt "${%s}/cilium-mount" %s; rm /hostbin/cilium-mount`,
+			k.params.CniBinPath, k.params.CgroupHostRoot)
+		cgrpContainer := corev1.Container{
+			Name:            "cgroup-mount",
+			Image:           k.fqAgentImage(),
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"sh", "-c", cgrpMountCmd},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "host-proc",
+					MountPath: "/hostproc",
+				},
+				{
+					Name:      "cni-path",
+					MountPath: "/hostbin",
+				},
+			},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("100m"),
+					corev1.ResourceMemory: resource.MustParse("100Mi"),
+				},
+			},
+		}
+		nodeInitContainers = append(nodeInitContainers, cgrpContainer)
+	}
 
 	auxVolumes = append(auxVolumes, corev1.Volume{
 		Name: "host-proc",
@@ -1047,6 +1099,8 @@ type Parameters struct {
 	ConfigOverwrites     []string
 	configOverwrites     map[string]string
 	Rollback             bool
+	CgroupHostRoot       string
+	CniBinPath           string
 
 	// CiliumReadyTimeout defines the wait timeout for Cilium to become ready
 	// after installing.
