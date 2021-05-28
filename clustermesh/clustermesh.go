@@ -492,16 +492,20 @@ func (k *K8sClusterMesh) GetClusterConfig(ctx context.Context) error {
 	}
 
 	clusterID := cm.Data[configNameClusterID]
-	if clusterID == "" || clusterID == "0" {
+	if clusterID == "" {
 		clusterID = "0"
 	}
 	k.clusterID = clusterID
 
 	clusterName := cm.Data[configNameClusterName]
-	if clusterName == "" || clusterName == "default" {
+	if clusterName == "" {
 		clusterName = "default"
 	}
 	k.clusterName = clusterName
+
+	if clusterID == "0" || clusterName == "default" {
+		k.Log("⚠️  Cluster not configured for clustermesh, use '--cluster-id' and '--cluster-name' with 'cilium install'. External workloads may still be configured.")
+	}
 
 	return nil
 }
@@ -651,14 +655,14 @@ func (k *K8sClusterMesh) extractAccessInformation(ctx context.Context, client k8
 		return nil, fmt.Errorf("unable to get secret %q to access clustermesh service: %s", defaults.ClusterMeshClientSecretName, err)
 	}
 
-	clientKey, ok := meshSecret.Data[defaults.ClusterMeshClientSecretKeyName]
+	clientKey, ok := meshSecret.Data[corev1.TLSPrivateKeyKey]
 	if !ok {
-		return nil, fmt.Errorf("secret %q does not contain key %q", defaults.ClusterMeshClientSecretName, defaults.ClusterMeshClientSecretKeyName)
+		return nil, fmt.Errorf("secret %q does not contain key %q", defaults.ClusterMeshClientSecretName, corev1.TLSPrivateKeyKey)
 	}
 
-	clientCert, ok := meshSecret.Data[defaults.ClusterMeshClientSecretCertName]
+	clientCert, ok := meshSecret.Data[corev1.TLSCertKey]
 	if !ok {
-		return nil, fmt.Errorf("secret %q does not contain key %q", defaults.ClusterMeshClientSecretName, defaults.ClusterMeshClientSecretCertName)
+		return nil, fmt.Errorf("secret %q does not contain key %q", defaults.ClusterMeshClientSecretName, corev1.TLSCertKey)
 	}
 
 	externalWorkloadSecret, err := client.GetSecret(ctx, k.params.Namespace, defaults.ClusterMeshExternalWorkloadSecretName, metav1.GetOptions{})
@@ -666,14 +670,14 @@ func (k *K8sClusterMesh) extractAccessInformation(ctx context.Context, client k8
 		return nil, fmt.Errorf("unable to get secret %q to access clustermesh service: %s", defaults.ClusterMeshExternalWorkloadSecretName, err)
 	}
 
-	externalWorkloadKey, ok := externalWorkloadSecret.Data[defaults.ClusterMeshExternalWorkloadSecretKeyName]
+	externalWorkloadKey, ok := externalWorkloadSecret.Data[corev1.TLSPrivateKeyKey]
 	if !ok {
-		return nil, fmt.Errorf("secret %q does not contain key %q", defaults.ClusterMeshExternalWorkloadSecretName, defaults.ClusterMeshExternalWorkloadSecretKeyName)
+		return nil, fmt.Errorf("secret %q does not contain key %q", defaults.ClusterMeshExternalWorkloadSecretName, corev1.TLSPrivateKeyKey)
 	}
 
-	externalWorkloadCert, ok := externalWorkloadSecret.Data[defaults.ClusterMeshExternalWorkloadSecretCertName]
+	externalWorkloadCert, ok := externalWorkloadSecret.Data[corev1.TLSCertKey]
 	if !ok {
-		return nil, fmt.Errorf("secret %q does not contain key %q", defaults.ClusterMeshExternalWorkloadSecretName, defaults.ClusterMeshExternalWorkloadSecretCertName)
+		return nil, fmt.Errorf("secret %q does not contain key %q", defaults.ClusterMeshExternalWorkloadSecretName, corev1.TLSCertKey)
 	}
 
 	ai := &accessInformation{
@@ -872,12 +876,9 @@ func (k *K8sClusterMesh) Connect(ctx context.Context) error {
 	if err := k.patchConfig(ctx, k.client, aiRemote); err != nil {
 		return err
 	}
-	k.Log("✨ Connecting cluster %s -> %s...", remoteCluster.ClusterName(), k.client.ClusterName())
-	if err := k.patchConfig(ctx, remoteCluster, aiLocal); err != nil {
-		return err
-	}
 
-	return nil
+	k.Log("✨ Connecting cluster %s -> %s...", remoteCluster.ClusterName(), k.client.ClusterName())
+	return k.patchConfig(ctx, remoteCluster, aiLocal)
 }
 
 func (k *K8sClusterMesh) disconnectCluster(ctx context.Context, src, dst k8sClusterMeshImplementation) error {
@@ -924,11 +925,7 @@ func (k *K8sClusterMesh) Disconnect(ctx context.Context) error {
 		return err
 	}
 
-	if err := k.disconnectCluster(ctx, remoteCluster, k.client); err != nil {
-		return err
-	}
-
-	return nil
+	return k.disconnectCluster(ctx, remoteCluster, k.client)
 }
 
 type Status struct {
@@ -1107,7 +1104,7 @@ func (k *K8sClusterMesh) determineStatusConnectivity(ctx context.Context) (*Conn
 	for _, pod := range pods.Items {
 		s, err := k.statusCollector.ClusterMeshConnectivity(ctx, pod.Name)
 		if err != nil {
-			if err == status.ErrClusterMeshStatusNotAvailable {
+			if errors.Is(err, status.ErrClusterMeshStatusNotAvailable) {
 				continue
 			}
 			return nil, fmt.Errorf("unable to determine status of cilium pod %q: %w", pod.Name, err)
@@ -1125,10 +1122,10 @@ func (k *K8sClusterMesh) determineStatusConnectivity(ctx context.Context) (*Conn
 }
 
 func (k *K8sClusterMesh) Status(ctx context.Context, log bool) (*Status, error) {
-	var (
-		err error
-		s   = &Status{}
-	)
+	err := k.GetClusterConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	collector, err := status.NewK8sStatusCollector(ctx, k.client, status.K8sStatusParameters{
 		Namespace: k.params.Namespace,
@@ -1142,6 +1139,7 @@ func (k *K8sClusterMesh) Status(ctx context.Context, log bool) (*Status, error) 
 	ctx, cancel := context.WithTimeout(ctx, k.params.waitTimeout())
 	defer cancel()
 
+	s := &Status{}
 	s.AccessInformation, err = k.statusAccessInformation(ctx, log)
 	if err != nil {
 		return nil, err
@@ -1175,17 +1173,14 @@ func (k *K8sClusterMesh) Status(ctx context.Context, log bool) (*Status, error) 
 	s.Connectivity, err = k.statusConnectivity(ctx, log)
 
 	if log && s.Connectivity != nil {
-		if len(s.Connectivity.Clusters) == 0 {
-			k.Log("⚠️  Cluster not configured for clustermesh, use '--cluster-id' and '--cluster-name' with 'cilium install'. External workloads may still be configured.")
-			return s, nil
-		} else if s.Connectivity.NotReady > 0 {
+		if s.Connectivity.NotReady > 0 {
 			k.Log("⚠️  %d/%d nodes are not connected to all clusters [min:%d / avg:%.1f / max:%d]",
 				s.Connectivity.NotReady,
 				s.Connectivity.Total,
 				s.Connectivity.Connected.Min,
 				s.Connectivity.Connected.Avg,
 				s.Connectivity.Connected.Max)
-		} else {
+		} else if len(s.Connectivity.Clusters) > 0 {
 			k.Log("✅ All %d nodes are connected to all clusters [min:%d / avg:%.1f / max:%d]",
 				s.Connectivity.Total,
 				s.Connectivity.Connected.Min,

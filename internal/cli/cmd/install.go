@@ -19,6 +19,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/cilium/cilium-cli/defaults"
 	"github.com/cilium/cilium-cli/hubble"
 	"github.com/cilium/cilium-cli/install"
 
@@ -26,7 +27,7 @@ import (
 )
 
 func newCmdInstall() *cobra.Command {
-	var params = install.InstallParameters{Writer: os.Stdout}
+	var params = install.Parameters{Writer: os.Stdout}
 
 	cmd := &cobra.Command{
 		Use:   "install",
@@ -48,7 +49,9 @@ cilium install --context kind-cluster1 --cluster-id 1 --cluster-name cluster1
 			}
 			cmd.SilenceUsage = true
 			if err := installer.Install(context.Background()); err != nil {
-				fatalf("Unable to install Cilium:  %s", err)
+				installer.RollbackInstallation(context.Background())
+
+				fatalf("Unable to install Cilium: %s", err)
 			}
 			return nil
 		},
@@ -68,7 +71,7 @@ cilium install --context kind-cluster1 --cluster-id 1 --cluster-name cluster1
 	cmd.Flags().BoolVar(&params.Wait, "wait", true, "Wait for status to report success (no errors)")
 	cmd.Flags().DurationVar(&params.WaitDuration, "wait-duration", 15*time.Minute, "Maximum time to wait for status")
 	cmd.Flags().BoolVar(&params.RestartUnmanagedPods, "restart-unmanaged-pods", true, "Restart pods which are not being managed by Cilium")
-	cmd.Flags().BoolVar(&params.Encryption, "encryption", false, "Enable encryption of all workloads traffic")
+	cmd.Flags().StringVar(&params.Encryption, "encryption", "disabled", "Enable encryption of all workloads traffic { disabled | ipsec | wireguard }")
 	cmd.Flags().BoolVar(&params.NodeEncryption, "node-encryption", false, "Enable encryption of all node to node traffic")
 	cmd.Flags().StringSliceVar(&params.ConfigOverwrites, "config", []string{}, "Set ConfigMap entries (key=value)")
 	cmd.Flags().StringVar(&params.AgentImage, "agent-image", "", "Image path to use for Cilium agent")
@@ -77,6 +80,7 @@ cilium install --context kind-cluster1 --cluster-id 1 --cluster-name cluster1
 	cmd.Flags().StringVar(&params.Azure.ResourceGroupName, "azure-resource-group", "", "Azure resource group name the cluster is in")
 	cmd.Flags().StringVar(&params.Azure.TenantID, "azure-tenant-id", "", "Azure tenant ID")
 	cmd.Flags().StringVar(&params.Azure.ClientID, "azure-client-id", "", "Azure client (application) ID")
+	cmd.Flags().StringVar(&params.Azure.SubscriptionID, "azure-subscription-id", "", "Azure subscription ID")
 	cmd.Flags().StringVar(&params.Azure.ClientSecret, "azure-client-secret", "", "Azure client secret")
 
 	return cmd
@@ -94,9 +98,7 @@ func newCmdUninstall() *cobra.Command {
 				Namespace: params.Namespace,
 				Writer:    params.Writer,
 			})
-			if err := h.Disable(context.Background()); err != nil {
-				fatalf("Unable to disable Hubble:  %s", err)
-			}
+			h.Disable(context.Background())
 			uninstaller := install.NewK8sUninstaller(k8sClient, params)
 			if err := uninstaller.Uninstall(context.Background()); err != nil {
 				fatalf("Unable to uninstall Cilium:  %s", err)
@@ -106,6 +108,7 @@ func newCmdUninstall() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&params.Namespace, "namespace", "n", "kube-system", "Namespace to uninstall Cilium from")
+	cmd.Flags().StringVar(&params.TestNamespace, "test-namespace", defaults.ConnectivityCheckNamespace, "Namespace to uninstall Cilium tests from")
 	cmd.Flags().StringVar(&contextName, "context", "", "Kubernetes configuration context")
 	cmd.Flags().BoolVar(&params.Wait, "wait", false, "Wait for uninstallation to have completed")
 
@@ -113,7 +116,7 @@ func newCmdUninstall() *cobra.Command {
 }
 
 func newCmdUpgrade() *cobra.Command {
-	var params = install.InstallParameters{Writer: os.Stdout}
+	var params = install.Parameters{Writer: os.Stdout}
 
 	cmd := &cobra.Command{
 		Use:   "upgrade",
@@ -125,7 +128,7 @@ Examples:
 cilium upgrade
 
 # Upgrade Cilium to a specific version
-cilium upgrade --version 1.9.5
+cilium upgrade --version v1.9.7
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			installer, err := install.NewK8sInstaller(k8sClient, params)

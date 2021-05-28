@@ -1,4 +1,4 @@
-// Copyright 2020 Authors of Cilium
+// Copyright 2020-2021 Authors of Cilium
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -59,6 +59,7 @@ var relayClusterRole = &rbacv1.ClusterRole{
 }
 
 func (k *K8sHubble) generateRelayService() *corev1.Service {
+	// NOTE: assuming "disable-server-tls: true", see generateRelayConfigMap().
 	s := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   defaults.RelayServiceName,
@@ -68,7 +69,7 @@ func (k *K8sHubble) generateRelayService() *corev1.Service {
 			Type: corev1.ServiceType(k.params.RelayServiceType),
 			Ports: []corev1.ServicePort{
 				{
-					Port:       int32(80),
+					Port:       int32(defaults.RelayServicePlaintextPort),
 					TargetPort: relayPortIntstr,
 				},
 			},
@@ -187,22 +188,13 @@ func (k *K8sHubble) generateRelayDeployment() *appsv1.Deployment {
 												},
 												Items: []corev1.KeyToPath{
 													{
-														Key:  defaults.RelayClientSecretCertName,
+														Key:  corev1.TLSCertKey,
 														Path: "client.crt",
 													},
 													{
-														Key:  defaults.RelayClientSecretKeyName,
+														Key:  corev1.TLSPrivateKeyKey,
 														Path: "client.key",
 													},
-												},
-											},
-										},
-										{
-											Secret: &corev1.SecretProjection{
-												LocalObjectReference: corev1.LocalObjectReference{
-													Name: defaults.CASecretName,
-												},
-												Items: []corev1.KeyToPath{
 													{
 														Key:  defaults.CASecretCertName,
 														Path: "hubble-server-ca.crt",
@@ -214,15 +206,6 @@ func (k *K8sHubble) generateRelayDeployment() *appsv1.Deployment {
 								},
 							},
 						},
-						//{{- if .Values.hubble.relay.tls.server.enabled }}
-						//          - secret:
-						//              name: hubble-relay-server-certs
-						//              items:
-						//                - key: tls.crt
-						//                  path: server.crt
-						//                - key: tls.key
-						//                  path: server.key
-						//{{- end }}
 					},
 				},
 			},
@@ -363,11 +346,12 @@ func (k *K8sHubble) createRelayServerCertificate(ctx context.Context) error {
 	}
 
 	data := map[string][]byte{
-		defaults.RelayServerSecretCertName: cert,
-		defaults.RelayServerSecretKeyName:  key,
+		corev1.TLSCertKey:         cert,
+		corev1.TLSPrivateKeyKey:   key,
+		defaults.CASecretCertName: k.certManager.CACertBytes(),
 	}
 
-	_, err = k.client.CreateSecret(ctx, k.params.Namespace, k8s.NewSecret(defaults.RelayServerSecretName, k.params.Namespace, data), metav1.CreateOptions{})
+	_, err = k.client.CreateSecret(ctx, k.params.Namespace, k8s.NewTLSSecret(defaults.RelayServerSecretName, k.params.Namespace, data), metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("unable to create secret %s/%s: %w", k.params.Namespace, defaults.RelayServerSecretName, err)
 	}
@@ -399,11 +383,12 @@ func (k *K8sHubble) createRelayClientCertificate(ctx context.Context) error {
 	}
 
 	data := map[string][]byte{
-		defaults.RelayClientSecretCertName: cert,
-		defaults.RelayClientSecretKeyName:  key,
+		corev1.TLSCertKey:         cert,
+		corev1.TLSPrivateKeyKey:   key,
+		defaults.CASecretCertName: k.certManager.CACertBytes(),
 	}
 
-	_, err = k.client.CreateSecret(ctx, k.params.Namespace, k8s.NewSecret(defaults.RelayClientSecretName, k.params.Namespace, data), metav1.CreateOptions{})
+	_, err = k.client.CreateSecret(ctx, k.params.Namespace, k8s.NewTLSSecret(defaults.RelayClientSecretName, k.params.Namespace, data), metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("unable to create secret %s/%s: %w", k.params.Namespace, defaults.RelayClientSecretName, err)
 	}
@@ -411,19 +396,23 @@ func (k *K8sHubble) createRelayClientCertificate(ctx context.Context) error {
 	return nil
 }
 
-func (k *K8sHubble) PortForwardCommand(ctx context.Context) error {
+func (p *Parameters) PortForwardCommand(ctx context.Context) error {
 	cmd := "kubectl"
 	args := []string{
 		"port-forward",
-		"-n", k.params.Namespace,
+		"-n", p.Namespace,
 		"svc/hubble-relay",
 		"--address", "0.0.0.0",
 		"--address", "::",
-		fmt.Sprintf("%d:80", k.params.PortForward)}
+		fmt.Sprintf("%d:%d", p.PortForward, defaults.RelayServicePlaintextPort)}
+
+	if p.Context != "" {
+		args = append([]string{"--context", p.Context}, args...)
+	}
 
 	c := exec.Command(cmd, args...)
-	c.Stdout = k.params.Writer
-	c.Stderr = k.params.Writer
+	c.Stdout = p.Writer
+	c.Stderr = p.Writer
 
 	if err := c.Run(); err != nil {
 		return fmt.Errorf("unable to execute command %s %v: %s", cmd, args, err)

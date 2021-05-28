@@ -24,6 +24,7 @@ import (
 
 	"github.com/cloudflare/cfssl/config"
 	"github.com/cloudflare/cfssl/csr"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -56,11 +57,12 @@ func (k *K8sClusterMesh) createClusterMeshServerCertificate(ctx context.Context)
 	}
 
 	data := map[string][]byte{
-		defaults.ClusterMeshServerSecretCertName: cert,
-		defaults.ClusterMeshServerSecretKeyName:  key,
+		corev1.TLSCertKey:         cert,
+		corev1.TLSPrivateKeyKey:   key,
+		defaults.CASecretCertName: k.certManager.CACertBytes(),
 	}
 
-	_, err = k.client.CreateSecret(ctx, k.params.Namespace, k8s.NewSecret(defaults.ClusterMeshServerSecretName, k.params.Namespace, data), metav1.CreateOptions{})
+	_, err = k.client.CreateSecret(ctx, k.params.Namespace, k8s.NewTLSSecret(defaults.ClusterMeshServerSecretName, k.params.Namespace, data), metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("unable to create secret %s/%s: %w", k.params.Namespace, defaults.ClusterMeshServerSecretName, err)
 	}
@@ -95,11 +97,12 @@ func (k *K8sClusterMesh) createClusterMeshAdminCertificate(ctx context.Context) 
 	}
 
 	data := map[string][]byte{
-		defaults.ClusterMeshAdminSecretCertName: cert,
-		defaults.ClusterMeshAdminSecretKeyName:  key,
+		corev1.TLSCertKey:         cert,
+		corev1.TLSPrivateKeyKey:   key,
+		defaults.CASecretCertName: k.certManager.CACertBytes(),
 	}
 
-	_, err = k.client.CreateSecret(ctx, k.params.Namespace, k8s.NewSecret(defaults.ClusterMeshAdminSecretName, k.params.Namespace, data), metav1.CreateOptions{})
+	_, err = k.client.CreateSecret(ctx, k.params.Namespace, k8s.NewTLSSecret(defaults.ClusterMeshAdminSecretName, k.params.Namespace, data), metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("unable to create secret %s/%s: %w", k.params.Namespace, defaults.ClusterMeshAdminSecretName, err)
 	}
@@ -131,11 +134,12 @@ func (k *K8sClusterMesh) createClusterMeshClientCertificate(ctx context.Context)
 	}
 
 	data := map[string][]byte{
-		defaults.ClusterMeshClientSecretCertName: cert,
-		defaults.ClusterMeshClientSecretKeyName:  key,
+		corev1.TLSCertKey:         cert,
+		corev1.TLSPrivateKeyKey:   key,
+		defaults.CASecretCertName: k.certManager.CACertBytes(),
 	}
 
-	_, err = k.client.CreateSecret(ctx, k.params.Namespace, k8s.NewSecret(defaults.ClusterMeshClientSecretName, k.params.Namespace, data), metav1.CreateOptions{})
+	_, err = k.client.CreateSecret(ctx, k.params.Namespace, k8s.NewTLSSecret(defaults.ClusterMeshClientSecretName, k.params.Namespace, data), metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("unable to create secret %s/%s: %w", k.params.Namespace, defaults.ClusterMeshClientSecretName, err)
 	}
@@ -167,11 +171,12 @@ func (k *K8sClusterMesh) createClusterMeshExternalWorkloadCertificate(ctx contex
 	}
 
 	data := map[string][]byte{
-		defaults.ClusterMeshExternalWorkloadSecretCertName: cert,
-		defaults.ClusterMeshExternalWorkloadSecretKeyName:  key,
+		corev1.TLSCertKey:         cert,
+		corev1.TLSPrivateKeyKey:   key,
+		defaults.CASecretCertName: k.certManager.CACertBytes(),
 	}
 
-	_, err = k.client.CreateSecret(ctx, k.params.Namespace, k8s.NewSecret(defaults.ClusterMeshExternalWorkloadSecretName, k.params.Namespace, data), metav1.CreateOptions{})
+	_, err = k.client.CreateSecret(ctx, k.params.Namespace, k8s.NewTLSSecret(defaults.ClusterMeshExternalWorkloadSecretName, k.params.Namespace, data), metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("unable to create secret %s/%s: %w", k.params.Namespace, defaults.ClusterMeshExternalWorkloadSecretName, err)
 	}
@@ -209,18 +214,18 @@ func (k *K8sClusterMesh) installCertificates(ctx context.Context) error {
 	}
 
 	k.Log("🔑 Generating certificates for ClusterMesh...")
+
 	if err := k.createClusterMeshServerCertificate(ctx); err != nil {
 		return err
 	}
+
 	if err := k.createClusterMeshAdminCertificate(ctx); err != nil {
 		return err
 	}
+
 	if err := k.createClusterMeshClientCertificate(ctx); err != nil {
 		return err
 	}
-	if err := k.createClusterMeshExternalWorkloadCertificate(ctx); err != nil {
-		return err
-	}
 
-	return nil
+	return k.createClusterMeshExternalWorkloadCertificate(ctx)
 }

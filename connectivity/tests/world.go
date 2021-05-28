@@ -16,39 +16,79 @@ package tests
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/cilium/cilium-cli/connectivity/check"
-	"github.com/cilium/cilium-cli/connectivity/filters"
 )
 
-type PodToWorld struct{}
-
-func (t *PodToWorld) Name() string {
-	return "pod-to-world"
+// PodToWorld sends multiple HTTP(S) requests to google.com
+// from random client Pods.
+func PodToWorld(name string) check.Scenario {
+	return &podToWorld{
+		name: name,
+	}
 }
 
-func (t *PodToWorld) Run(ctx context.Context, c check.TestContext) {
-	fqdn := "https://google.com"
+// podToWorld implements a Scenario.
+type podToWorld struct {
+	name string
+}
 
-	for _, client := range c.ClientPods() {
-		run := check.NewTestRun(t.Name(), c, client, check.NetworkEndpointContext{Peer: fqdn})
+func (s *podToWorld) Name() string {
+	tn := "pod-to-world"
+	if s.name == "" {
+		return tn
+	}
+	return fmt.Sprintf("%s:%s", tn, s.name)
+}
 
-		_, err := client.K8sClient.ExecInPod(ctx, client.Pod.Namespace, client.Pod.Name, check.ClientDeploymentName, curlCommand(fqdn))
-		if err != nil {
-			run.Failure("curl connectivity check command failed: %s", err)
-		}
+func (s *podToWorld) Run(ctx context.Context, t *check.Test) {
+	ghttp := check.HTTPEndpoint("google-http", "http://google.com")
+	ghttps := check.HTTPEndpoint("google-https", "https://google.com")
+	wwwghttp := check.HTTPEndpoint("www-google-http", "http://www.google.com")
 
-		run.ValidateFlows(ctx, client.Name(), client.Pod.Status.PodIP, []filters.Pair{
-			{Filter: filters.Drop(), Expect: false, Msg: "Drop"},
-			{Filter: filters.And(filters.IP(client.Pod.Status.PodIP, ""), filters.UDP(0, 53)), Expect: true, Msg: "DNS request"},
-			{Filter: filters.And(filters.IP("", client.Pod.Status.PodIP), filters.UDP(53, 0)), Expect: true, Msg: "DNS response"},
-			{Filter: filters.And(filters.IP(client.Pod.Status.PodIP, ""), filters.TCP(0, 443), filters.SYN()), Expect: true, Msg: "SYN"},
-			{Filter: filters.And(filters.IP("", client.Pod.Status.PodIP), filters.TCP(443, 0), filters.SYNACK()), Expect: true, Msg: "SYN-ACK"},
-			// For the connection termination, we will either see:
-			// a) FIN + FIN b) FIN + RST c) RST
-			{Filter: filters.And(filters.IP(client.Pod.Status.PodIP, ""), filters.TCP(0, 443), filters.Or(filters.FIN(), filters.RST())), Expect: true, Msg: "FIN or RST"},
+	// With https, over port 443.
+	if client := t.Context().RandomClientPod(); client != nil {
+		cmd := curl(ghttps)
+
+		t.NewAction(s, "https-to-google", client, ghttps).Run(func(a *check.Action) {
+			a.ExecInPod(ctx, cmd)
+
+			egressFlowRequirements := a.GetEgressRequirements(check.FlowParameters{
+				DNSRequired: true,
+				RSTAllowed:  true,
+			})
+			a.ValidateFlows(ctx, client.Name(), client.Pod.Status.PodIP, egressFlowRequirements)
 		})
+	}
 
-		run.End()
+	// With http, over port 80.
+	if client := t.Context().RandomClientPod(); client != nil {
+		cmd := curl(ghttp)
+
+		t.NewAction(s, "http-to-google", client, ghttp).Run(func(a *check.Action) {
+			a.ExecInPod(ctx, cmd)
+
+			egressFlowRequirements := a.GetEgressRequirements(check.FlowParameters{
+				DNSRequired: true,
+				RSTAllowed:  true,
+			})
+			a.ValidateFlows(ctx, client.Name(), client.Pod.Status.PodIP, egressFlowRequirements)
+		})
+	}
+
+	// With http to www.google.com.
+	if client := t.Context().RandomClientPod(); client != nil {
+		cmd := curl(wwwghttp)
+
+		t.NewAction(s, "http-to-www-google", client, wwwghttp).Run(func(a *check.Action) {
+			a.ExecInPod(ctx, cmd)
+
+			egressFlowRequirements := a.GetEgressRequirements(check.FlowParameters{
+				DNSRequired: true,
+				RSTAllowed:  true,
+			})
+			a.ValidateFlows(ctx, client.Name(), client.Pod.Status.PodIP, egressFlowRequirements)
+		})
 	}
 }

@@ -97,9 +97,21 @@ func (w *WaitObserver) Retry(err error) error {
 
 	select {
 	case <-w.ctx.Done():
-		return fmt.Errorf("timeout while waiting for condition, last error: %s", err)
+		if err != nil {
+			return fmt.Errorf("timeout while waiting for condition, last error: %s", err)
+		}
+		return fmt.Errorf("timeout while waiting for condition")
 	case <-time.After(w.params.retryInterval()):
 	}
 
 	return nil
+}
+
+func Contains(l []string, v string) bool {
+	for _, s := range l {
+		if s == v {
+			return true
+		}
+	}
+	return false
 }

@@ -1,12 +1,14 @@
 name: Kind
 
+# Any change in triggers needs to be reflected in the concurrency group.
 on:
   pull_request: {}
-  push:
-    branches:
-      - master
   schedule:
     - cron:  '30 */6 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.after || 'scheduled' }}
+  cancel-in-progress: true
 
 env:
   KIND_VERSION: v0.9.0
@@ -15,12 +17,22 @@ env:
   LOG_TIME: 30m
 
 jobs:
-  installation-and-connectivitiy:
+  installation-and-connectivity:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.16.4
+
+      - name: Set up Go for root
+        run: |
+          sudo ln -sf `which go` `sudo which go` || true
+          sudo go version
 
       - name: Build and install cilium CLI binary
         run: sudo make install
@@ -35,16 +47,9 @@ jobs:
         run: |
           cilium install --config monitor-aggregation=none
 
-          kubectl wait -n kube-system --for=condition=Ready --all pod --timeout=5m
-          # To make sure that cilium CRD is available (default timeout is 5m)
-          # https://github.com/cilium/cilium/blob/master/operator/crd.go#L34
-          kubectl wait --for condition=Established crd/ciliumnetworkpolicies.cilium.io --timeout=5m
-
       - name: Enable Relay
         run: |
-          cilium hubble enable
-
-          kubectl wait -n kube-system --for=condition=Ready --all pod --timeout=5m
+          cilium hubble enable --ui
 
       - name: Status
         run: |
@@ -57,23 +62,34 @@ jobs:
 
       - name: Connectivity Test
         run: |
-          cilium connectivity test
+          cilium connectivity test --all-flows
 
       - name: Uninstall cilium
         run: |
           cilium uninstall --wait
 
-      - name: Install Cilium with Encryption
+      - name: Install Cilium with IPsec Encryption
         run: |
-          cilium install --encryption
+          cilium install --encryption=ipsec --kube-proxy-replacement=probe
+
+      - name: Enable Relay
+        run: |
+          cilium hubble enable
 
       - name: Status
         run: |
           cilium status --wait
 
+      - name: Relay Port Forward
+        run: |
+          pkill -f "kubectl port-forward.*hubble-relay" || true
+          sleep 1s
+          kubectl port-forward -n kube-system deployment/hubble-relay 4245:4245&
+          sleep 5s
+
       - name: Connectivity test
         run: |
-          cilium connectivity test
+          cilium connectivity test --force-deploy --all-flows
 
       - name: Cleanup
         if: ${{ always() }}

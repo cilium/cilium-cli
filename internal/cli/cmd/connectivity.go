@@ -16,8 +16,12 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
-	"time"
+	"os/signal"
+	"regexp"
+	"strings"
+	"syscall"
 
 	"github.com/cilium/cilium-cli/connectivity"
 	"github.com/cilium/cilium-cli/connectivity/check"
@@ -33,7 +37,7 @@ func newCmdConnectivity() *cobra.Command {
 		Long:  ``,
 	}
 
-	cmd.AddCommand(newCmdConnectivityCheck())
+	cmd.AddCommand(newCmdConnectivityTest())
 
 	return cmd
 }
@@ -41,27 +45,56 @@ func newCmdConnectivity() *cobra.Command {
 var params = check.Parameters{
 	Writer: os.Stdout,
 }
+var tests []string
 
-func newCmdConnectivityCheck() *cobra.Command {
+func newCmdConnectivityTest() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "test",
 		Short: "Validate connectivity in cluster",
 		Long:  ``,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cc, err := check.NewK8sConnectivityCheck(k8sClient, params)
+
+			for _, test := range tests {
+				if strings.HasPrefix(test, "!") {
+					rgx, err := regexp.Compile(strings.TrimPrefix(test, "!"))
+					if err != nil {
+						return fmt.Errorf("Test filter: %w", err)
+					}
+					params.SkipTests = append(params.SkipTests, rgx)
+				} else {
+					rgx, err := regexp.Compile(test)
+					if err != nil {
+						return fmt.Errorf("Test filter: %w", err)
+					}
+					params.RunTests = append(params.RunTests, rgx)
+				}
+			}
+
+			// Instantiate the test harness.
+			cc, err := check.NewConnectivityTest(k8sClient, params)
+
 			if err != nil {
 				return err
 			}
-			if err := connectivity.Run(context.Background(), cc); err != nil {
-				fatalf("Connectivity test failed:  %s", err)
+
+			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer cancel()
+
+			go func() {
+				<-ctx.Done()
+				cc.Log("Interrupt received, cancelling tests...")
+			}()
+
+			if err := connectivity.Run(ctx, cc); err != nil {
+				fatalf("Connectivity test failed: %s", err)
 			}
+
 			return nil
 		},
 	}
 
 	cmd.Flags().BoolVar(&params.SingleNode, "single-node", false, "Limit to tests able to run on a single node")
 	cmd.Flags().BoolVar(&params.PrintFlows, "print-flows", false, "Print flow logs for each test")
-	cmd.Flags().DurationVar(&params.FlowSettleSleepDuration, "pre-flow-collect-sleep", 2*time.Second, "Wait time before collecting flows after testing connectivity")
 	cmd.Flags().DurationVar(&params.PostTestSleepDuration, "post-test-sleep", 0, "Wait time after each test before next test starts")
 	cmd.Flags().BoolVar(&params.ForceDeploy, "force-deploy", false, "Force re-deploying test artifacts")
 	cmd.Flags().BoolVar(&params.Hubble, "hubble", true, "Automatically use Hubble for flow validation & troubleshooting")
@@ -70,8 +103,12 @@ func newCmdConnectivityCheck() *cobra.Command {
 	cmd.Flags().StringVar(&params.TestNamespace, "test-namespace", defaults.ConnectivityCheckNamespace, "Namespace to perform the connectivity test in")
 	cmd.Flags().StringVar(&params.MultiCluster, "multi-cluster", "", "Test across clusters to given context")
 	cmd.Flags().StringVar(&contextName, "context", "", "Kubernetes configuration context")
-	cmd.Flags().StringSliceVar(&params.Tests, "test", []string{}, "Run a particular set of tests")
+	cmd.Flags().StringSliceVar(&tests, "test", []string{}, "Run tests that match one of the given regular expressions, skip tests by starting the expression with '!', target Scenarios with e.g. '/pod-to-cidr'")
 	cmd.Flags().StringVar(&params.FlowValidation, "flow-validation", check.FlowValidationModeWarning, "Enable Hubble flow validation { disabled | warning | strict }")
+	cmd.Flags().BoolVar(&params.AllFlows, "all-flows", false, "Print all flows during flow validation")
+	cmd.Flags().BoolVarP(&params.Verbose, "verbose", "v", false, "Show informational messages and don't buffer any lines")
+	cmd.Flags().BoolVarP(&params.Debug, "debug", "d", false, "Show debug messages")
+	cmd.Flags().BoolVarP(&params.PauseOnFail, "pause-on-fail", "p", false, "Pause execution on test failure")
 
 	return cmd
 }

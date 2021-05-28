@@ -1,4 +1,4 @@
-// Copyright 2020 Authors of Cilium
+// Copyright 2020-2021 Authors of Cilium
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,134 +16,155 @@ package tests
 
 import (
 	"context"
-	"net"
-	"strconv"
+	"fmt"
 
 	"github.com/cilium/cilium-cli/connectivity/check"
-	"github.com/cilium/cilium-cli/connectivity/filters"
 )
 
-type PodToService struct{}
-
-func (t *PodToService) Name() string {
-	return "pod-to-service"
-}
-
-func (t *PodToService) Run(ctx context.Context, c check.TestContext) {
-	for _, client := range c.ClientPods() {
-		serviceDestinations := serviceDefinitionMap{}
-		for _, echoSvc := range c.EchoServices() {
-			serviceDestinations[echoSvc.Service.Name] = serviceDefinition{
-				port: 8080,
-				name: "ClusterIP",
-				dns:  true,
-			}
-		}
-
-		testConnetivityToServiceDefinition(ctx, c, t.Name(), client, serviceDestinations)
-	}
-
-}
-
-type PodToNodePort struct{}
-
-func (t *PodToNodePort) Name() string {
-	return "pod-to-nodeport"
-}
-
-func (t *PodToNodePort) Run(ctx context.Context, c check.TestContext) {
-	for _, client := range c.ClientPods() {
-		serviceDestinations := serviceDefinitionMap{}
-		for _, echoSvc := range c.EchoServices() {
-			for _, echo := range c.EchoPods() {
-				if echo.Pod.Status.HostIP != client.Pod.Status.HostIP {
-					serviceDestinations[echo.Pod.Status.HostIP] = serviceDefinition{
-						port: int(echoSvc.Service.Spec.Ports[0].NodePort),
-						name: "NodePort",
-					}
-				}
-			}
-		}
-
-		testConnetivityToServiceDefinition(ctx, c, t.Name(), client, serviceDestinations)
+// PodToService sends an HTTP request from all client Pods
+// to all Services in the test context.
+func PodToService(name string) check.Scenario {
+	return &podToService{
+		name: name,
 	}
 }
 
-type PodToLocalNodePort struct{}
-
-func (t *PodToLocalNodePort) Name() string {
-	return "pod-to-local-nodeport"
-}
-
-func (t *PodToLocalNodePort) Run(ctx context.Context, c check.TestContext) {
-	for _, client := range c.ClientPods() {
-		serviceDestinations := serviceDefinitionMap{}
-		for _, client := range c.ClientPods() {
-			for _, echoSvc := range c.EchoServices() {
-				for _, echo := range c.EchoPods() {
-					if echo.Pod.Status.HostIP == client.Pod.Status.HostIP {
-						serviceDestinations[echo.Pod.Status.HostIP] = serviceDefinition{
-							port: int(echoSvc.Service.Spec.Ports[0].NodePort),
-							name: "NodePort",
-						}
-					}
-				}
-			}
-		}
-
-		testConnetivityToServiceDefinition(ctx, c, t.Name(), client, serviceDestinations)
-	}
-}
-
-type serviceDefinition struct {
-	port int
+// podToService implements a Scenario.
+type podToService struct {
 	name string
-	dns  bool
 }
 
-type serviceDefinitionMap map[string]serviceDefinition
-
-func testConnetivityToServiceDefinition(ctx context.Context, c check.TestContext, name string, client check.PodContext, def serviceDefinitionMap) {
-	for peer, definition := range def {
-		destination := net.JoinHostPort(peer, strconv.Itoa(definition.port))
-		run := check.NewTestRun(name, c, client, check.NetworkEndpointContext{
-			CustomName: destination + " (" + definition.name + ")",
-			Peer:       destination,
-		})
-
-		_, err := client.K8sClient.ExecInPod(ctx, client.Pod.Namespace, client.Pod.Name, check.ClientDeploymentName, curlCommand(destination))
-		if err != nil {
-			run.Failure("curl connectivity check command failed: %s", err)
-		}
-
-		clientToEcho := filters.IP(client.Pod.Status.PodIP, "")
-		echoToClient := filters.IP("", client.Pod.Status.PodIP)
-
-		// Depending on whether NodePort is enabled or
-		// not, the port will be differnt. Ideally we
-		// look at Cilium to define this but this
-		// information is not yet available.
-		tcpRequest := filters.Or(filters.TCP(0, definition.port), filters.TCP(0, 8080))  // request to 8080 or NodePort
-		tcpResponse := filters.Or(filters.TCP(definition.port, 0), filters.TCP(8080, 0)) // response from port 8080 or NodePort
-
-		flowRequirements := []filters.Pair{
-			{Filter: filters.Drop(), Expect: false, Msg: "Drop"},
-			{Filter: filters.RST(), Expect: false, Msg: "RST"},
-			{Filter: filters.And(clientToEcho, tcpRequest, filters.SYN()), Expect: true, Msg: "SYN"},
-			{Filter: filters.And(echoToClient, tcpResponse, filters.SYNACK()), Expect: true, Msg: "SYN-ACK"},
-			{Filter: filters.And(clientToEcho, tcpRequest, filters.FIN()), Expect: true, Msg: "FIN"},
-			{Filter: filters.And(echoToClient, tcpResponse, filters.FIN()), Expect: true, Msg: "FIN-ACK"},
-		}
-
-		if definition.dns {
-			flowRequirements = append(flowRequirements, []filters.Pair{
-				{Filter: filters.And(filters.IP(client.Pod.Status.PodIP, ""), filters.UDP(0, 53)), Expect: true, Msg: "DNS request"},
-				{Filter: filters.And(filters.IP("", client.Pod.Status.PodIP), filters.UDP(53, 0)), Expect: true, Msg: "DNS response"},
-			}...)
-		}
-
-		run.ValidateFlows(ctx, client.Name(), client.Pod.Status.PodIP, flowRequirements)
-
-		run.End()
+func (s *podToService) Name() string {
+	tn := "pod-to-service"
+	if s.name == "" {
+		return tn
 	}
+	return fmt.Sprintf("%s:%s", tn, s.name)
+}
+
+func (s *podToService) Run(ctx context.Context, t *check.Test) {
+	var i int
+
+	for _, pod := range t.Context().ClientPods() {
+		for _, svc := range t.Context().EchoServices() {
+
+			t.NewAction(s, fmt.Sprintf("curl-%d", i), &pod, svc).Run(func(a *check.Action) {
+				a.ExecInPod(ctx, curl(svc))
+
+				egressFlowRequirements := a.GetEgressRequirements(check.FlowParameters{
+					DNSRequired: true,
+					NodePort:    svc.Port(),
+				})
+				a.ValidateFlows(ctx, pod.Name(), pod.Address(), egressFlowRequirements)
+			})
+
+			i++
+		}
+	}
+}
+
+// PodToRemoteNodePort sends an HTTP request from all client Pods
+// to all echo Services' NodePorts, but only to other nodes.
+func PodToRemoteNodePort(name string) check.Scenario {
+	return &podToRemoteNodePort{
+		name: name,
+	}
+}
+
+// podToRemoteNodePort implements a Scenario.
+type podToRemoteNodePort struct {
+	name string
+}
+
+func (s *podToRemoteNodePort) Name() string {
+	tn := "pod-to-remote-nodeport"
+	if s.name == "" {
+		return tn
+	}
+	return fmt.Sprintf("%s:%s", tn, s.name)
+}
+
+func (s *podToRemoteNodePort) Run(ctx context.Context, t *check.Test) {
+	var i int
+
+	for _, pod := range t.Context().ClientPods() {
+		for _, svc := range t.Context().EchoServices() {
+			for _, node := range t.Context().CiliumPods() {
+				// Use Cilium Pods as a substitute for nodes accepting workloads.
+				if pod.Pod.Status.HostIP != node.Pod.Status.HostIP {
+					// If src and dst pod are running on different nodes,
+					// call the Cilium Pod's host IP on the service's NodePort.
+					curlNodePort(ctx, s, t, fmt.Sprintf("curl-%d", i), &pod, svc, &node)
+
+					i++
+				}
+			}
+		}
+	}
+}
+
+// PodToLocalNodePort sends an HTTP request from all client Pods
+// to all echo Services' NodePorts, but only on the same node as
+// the client Pods.
+func PodToLocalNodePort(name string) check.Scenario {
+	return &podToLocalNodePort{
+		name: name,
+	}
+}
+
+// podToLocalNodePort implements a Scenario.
+type podToLocalNodePort struct {
+	name string
+}
+
+func (s *podToLocalNodePort) Name() string {
+	tn := "pod-to-local-nodeport"
+	if s.name == "" {
+		return tn
+	}
+	return fmt.Sprintf("%s:%s", tn, s.name)
+}
+
+func (s *podToLocalNodePort) Run(ctx context.Context, t *check.Test) {
+	var i int
+
+	for _, pod := range t.Context().ClientPods() {
+		for _, svc := range t.Context().EchoServices() {
+			for _, node := range t.Context().CiliumPods() {
+				// Use Cilium Pods as a substitute for nodes accepting workloads.
+				if pod.Pod.Status.HostIP == node.Pod.Status.HostIP {
+					// If src and dst pod are running on the same node,
+					// call the Cilium Pod's host IP on the service's NodePort.
+					curlNodePort(ctx, s, t, fmt.Sprintf("curl-%d", i), &pod, svc, &node)
+
+					i++
+				}
+			}
+		}
+	}
+}
+
+func curlNodePort(ctx context.Context, s check.Scenario, t *check.Test,
+	name string, pod *check.Pod, svc check.Service, node *check.Pod) {
+
+	// Get the NodePort allocated to the Service.
+	np := uint32(svc.Service.Spec.Ports[0].NodePort)
+
+	// Manually construct an HTTP endpoint to override the destination IP
+	// and port of the request.
+	ep := check.HTTPEndpoint(name, fmt.Sprintf("%s://%s:%d", svc.Scheme(), node.Pod.Status.HostIP, np))
+
+	// Create the Action with the original svc as this will influence what the
+	// flow matcher looks for in the flow logs.
+	t.NewAction(s, name, pod, svc).Run(func(a *check.Action) {
+		a.ExecInPod(ctx, curl(ep))
+
+		egressFlowRequirements := a.GetEgressRequirements(check.FlowParameters{
+			// The fact that curl is hitting the NodePort instead of the
+			// backend Pod's port is specified here. This will cause the matcher
+			// to accept both the NodePort and the ClusterIP (container) port.
+			NodePort: np,
+		})
+		a.ValidateFlows(ctx, pod.Name(), pod.Address(), egressFlowRequirements)
+	})
 }

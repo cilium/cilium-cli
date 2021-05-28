@@ -1,12 +1,14 @@
 name: External Workloads
 
+# Any change in triggers needs to be reflected in the concurrency group.
 on:
   pull_request: {}
-  push:
-    branches:
-      - master
   schedule:
     - cron:  '55 */6 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.after || 'scheduled' }}
+  cancel-in-progress: true
 
 env:
   zone: us-west2-a
@@ -17,10 +19,20 @@ env:
 jobs:
   installation-and-connectivity:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.16.4
+
+      - name: Set up Go for root
+        run: |
+          sudo ln -sf `which go` `sudo which go` || true
+          sudo go version
 
       - name: Build and install cilium CLI binary
         run: sudo make install
@@ -62,13 +74,10 @@ jobs:
       - name: Install cilium on external workload
         run: |
           cilium clustermesh vm install install-external-workload.sh
-          gcloud compute ssh ${{ env.vmName }} --zone ${{ env.zone }} --command "hostname"
           gcloud compute scp install-external-workload.sh ${{ env.vmName }}:~/ --zone ${{ env.zone }}
           gcloud compute ssh ${{ env.vmName }} --zone ${{ env.zone }} --command "~/install-external-workload.sh"
-          sleep 10s
+          sleep 5s
           gcloud compute ssh ${{ env.vmName }} --zone ${{ env.zone }} --command "cilium status"
-          kubectl get cew --all-namespaces -o wide
-          kubectl get cep --all-namespaces -o wide
 
       - name: Verify cluster DNS on external workload
         run: |
@@ -77,6 +86,10 @@ jobs:
       - name: Ping clustermesh-apiserver from external workload
         run: |
           gcloud compute ssh ${{ env.vmName }} --zone ${{ env.zone }} --command "ping -c 3 \$(cilium service list get -o jsonpath='{[?(@.spec.flags.name==\"clustermesh-apiserver\")].spec.backend-addresses[0].ip}')"
+
+      - name: Connectivity test
+        run: |
+          cilium connectivity test --all-flows
 
       - name: Cleanup
         if: ${{ always() }}
@@ -89,7 +102,7 @@ jobs:
           kubectl get cep --all-namespaces -o wide
           curl -sLO https://github.com/cilium/cilium-sysdump/releases/latest/download/cilium-sysdump.zip
           python cilium-sysdump.zip --output cilium-sysdump-out
-          gcloud container clusters delete --quiet ${{ env.clusterName }} --zone ${{ env.zone }}
+          gcloud container clusters delete --quiet ${{ env.clusterName }} --zone ${{ env.zone }} --async
           gcloud compute instances delete --quiet ${{ env.vmName }} --zone ${{ env.zone }}
         shell: bash {0}
 

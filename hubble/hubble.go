@@ -81,6 +81,8 @@ type Parameters struct {
 	RelayServiceType string
 	PortForward      int
 	CreateCA         bool
+	UI               bool
+	UIPortForward    int
 	Writer           io.Writer
 	Wait             bool
 	WaitDuration     time.Duration
@@ -185,6 +187,10 @@ func (k *K8sHubble) disableHubble(ctx context.Context) error {
 }
 
 func (k *K8sHubble) Disable(ctx context.Context) error {
+	if err := k.disableUI(ctx); err != nil {
+		return err
+	}
+
 	if err := k.disableRelay(ctx); err != nil {
 		return err
 	}

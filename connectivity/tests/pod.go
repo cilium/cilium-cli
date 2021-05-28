@@ -16,50 +16,52 @@ package tests
 
 import (
 	"context"
-	"net"
-	"strconv"
+	"fmt"
 
 	"github.com/cilium/cilium-cli/connectivity/check"
-	"github.com/cilium/cilium-cli/connectivity/filters"
 )
 
-type PodToPod struct{}
-
-func (t *PodToPod) Name() string {
-	return "pod-to-pod"
+// PodToPod generates one HTTP request from each client pod
+// to each echo (server) pod in the test context. The remote Pod is contacted
+// directly, no DNS is involved.
+func PodToPod(name string) check.Scenario {
+	return &podToPod{
+		name: name,
+	}
 }
 
-func (t *PodToPod) Run(ctx context.Context, c check.TestContext) {
-	for _, client := range c.ClientPods() {
-		for _, echo := range c.EchoPods() {
-			destination := net.JoinHostPort(echo.Pod.Status.PodIP, strconv.Itoa(8080))
-			run := check.NewTestRun(t.Name(), c, client, echo)
+// podToPod implements a Scenario.
+type podToPod struct {
+	name string
+}
 
-			_, err := client.K8sClient.ExecInPod(ctx, client.Pod.Namespace, client.Pod.Name, check.ClientDeploymentName, curlCommand(destination))
-			if err != nil {
-				run.Failure("curl connectivity check command failed: %s", err)
-			}
+func (s *podToPod) Name() string {
+	tn := "pod-to-pod"
+	if s.name == "" {
+		return tn
+	}
+	return fmt.Sprintf("%s:%s", tn, s.name)
+}
 
-			echoToClient := filters.IP(echo.Pod.Status.PodIP, client.Pod.Status.PodIP) // echo -> client response
-			clientToEcho := filters.IP(client.Pod.Status.PodIP, echo.Pod.Status.PodIP) // client -> echo request
-			tcpRequest := filters.TCP(0, 8080)                                         // request to port 8080
-			tcpResponse := filters.TCP(8080, 0)                                        // response from port 8080
+func (s *podToPod) Run(ctx context.Context, t *check.Test) {
+	var i int
 
-			run.ValidateFlows(ctx, client.Name(), client.Pod.Status.PodIP, []filters.Pair{
-				{Filter: filters.Drop(), Expect: false, Msg: "Drop"},
-				{Filter: filters.RST(), Expect: false, Msg: "RST"},
-				{Filter: filters.And(echoToClient, tcpResponse, filters.SYNACK()), Expect: true, Msg: "SYN-ACK"},
-				{Filter: filters.And(echoToClient, tcpResponse, filters.FIN()), Expect: true, Msg: "FIN-ACK"},
+	for _, client := range t.Context().ClientPods() {
+		for _, echo := range t.Context().EchoPods() {
+
+			t.NewAction(s, fmt.Sprintf("curl-%d", i), &client, echo).Run(func(a *check.Action) {
+				a.ExecInPod(ctx, curl(echo))
+
+				egressFlowRequirements := a.GetEgressRequirements(check.FlowParameters{})
+				a.ValidateFlows(ctx, client.Name(), client.Pod.Status.PodIP, egressFlowRequirements)
+
+				ingressFlowRequirements := a.GetIngressRequirements(check.FlowParameters{})
+				if ingressFlowRequirements != nil {
+					a.ValidateFlows(ctx, echo.Name(), echo.Pod.Status.PodIP, ingressFlowRequirements)
+				}
 			})
 
-			run.ValidateFlows(ctx, echo.Name(), echo.Pod.Status.PodIP, []filters.Pair{
-				{Filter: filters.Drop(), Expect: false, Msg: "Drop"},
-				{Filter: filters.RST(), Expect: false, Msg: "RST"},
-				{Filter: filters.And(clientToEcho, tcpRequest, filters.SYN()), Expect: true, Msg: "SYN"},
-				{Filter: filters.And(clientToEcho, tcpRequest, filters.FIN()), Expect: true, Msg: "FIN"},
-			})
-
-			run.End()
+			i++
 		}
 	}
 }

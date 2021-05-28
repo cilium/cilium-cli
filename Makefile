@@ -11,6 +11,9 @@ TEST_TIMEOUT ?= 5s
 RELEASE_UID ?= $(shell id -u)
 RELEASE_GID ?= $(shell id -g)
 
+GOLANGCILINT_WANT_VERSION = 1.40.1
+GOLANGCILINT_VERSION = $(shell golangci-lint version 2>/dev/null)
+
 $(TARGET):
 	$(GO) build $(if $(GO_TAGS),-tags $(GO_TAGS)) \
 		-ldflags "-w -s \
@@ -26,7 +29,7 @@ release:
 		--env "RELEASE_GID=$(RELEASE_GID)" \
 		--rm \
 		--workdir /cilium \
-		--volume `pwd`:/cilium docker.io/library/golang:1.16.3-alpine3.13 \
+		--volume `pwd`:/cilium docker.io/library/golang:1.16.4-alpine3.13 \
 		sh -c "apk add --no-cache make && make local-release"
 
 local-release: clean
@@ -68,23 +71,12 @@ test:
 bench:
 	go test -timeout=30s -bench=. $$(go list ./...)
 
-check: gofmt ineffassign lint staticcheck vet
+ifneq (,$(findstring $(GOLANGCILINT_WANT_VERSION),$(GOLANGCILINT_VERSION)))
+check:
+	golangci-lint run
+else
+check:
+	docker run --rm -v `pwd`:/app -w /app docker.io/golangci/golangci-lint:v$(GOLANGCILINT_WANT_VERSION) golangci-lint run
+endif
 
-gofmt:
-	@source="$$(find . -type f -name '*.go' -not -path './vendor/*')"; \
-	unformatted="$$(gofmt -l $$source)"; \
-	if [ -n "$$unformatted" ]; then echo "unformatted source code:" && echo "$$unformatted" && exit 1; fi
-
-ineffassign:
-	$(GO) run ./vendor/github.com/gordonklaus/ineffassign .
-
-lint:
-	$(GO) run ./vendor/golang.org/x/lint/golint -set_exit_status $$($(GO) list ./...)
-
-staticcheck:
-	$(GO) run ./vendor/honnef.co/go/tools/cmd/staticcheck -checks="all,-ST1000" $$($(GO) list ./...)
-
-vet:
-	go vet $$(go list ./...)
-
-.PHONY: $(TARGET) release local-release install clean test bench check gofmt ineffassign lint staticcheck vet
+.PHONY: $(TARGET) release local-release install clean test bench check

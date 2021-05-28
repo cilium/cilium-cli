@@ -58,7 +58,7 @@ type accountInfo struct {
 func (k *K8sInstaller) createAzureServicePrincipal(ctx context.Context) error {
 	if k.params.Azure.TenantID == "" {
 		k.Log("🚀 Creating service principal for Cilium operator...")
-		args := []string{"ad", "sp", "create-for-rbac", "--name", "cilium-operator"}
+		args := []string{"ad", "sp", "create-for-rbac"}
 		cmd := azCommand(args...)
 		bytes, err := cmd.Output()
 		if err != nil {
@@ -92,9 +92,12 @@ func (k *K8sInstaller) createAzureServicePrincipal(ctx context.Context) error {
 	}
 
 	k.Log("✅ Derived Azure subscription id %s", ai.ID)
-	k.params.Azure.SubscriptionID = ai.ID
+	k.params.Azure.DerivedSubscriptionID = ai.ID
 
 	args = []string{"aks", "show", "--resource-group", k.params.Azure.ResourceGroupName, "--name", k.params.ClusterName}
+	if k.params.Azure.SubscriptionID != "" {
+		args = append(args, "--subscription", k.params.Azure.SubscriptionID)
+	}
 	cmd = azCommand(args...)
 	bytes, err = cmd.Output()
 	if err != nil {

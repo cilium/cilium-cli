@@ -32,6 +32,7 @@ import (
 type k8sConfigImplementation interface {
 	GetConfigMap(ctx context.Context, namespace, name string, opts metav1.GetOptions) (*corev1.ConfigMap, error)
 	PatchConfigMap(ctx context.Context, namespace, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions) (*corev1.ConfigMap, error)
+	DeletePodCollection(ctx context.Context, namespace string, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error
 }
 
 type K8sConfig struct {
@@ -41,6 +42,7 @@ type K8sConfig struct {
 
 type Parameters struct {
 	Namespace string
+	Restart   bool
 	Writer    io.Writer
 }
 
@@ -55,28 +57,30 @@ func (k *K8sConfig) Log(format string, a ...interface{}) {
 	fmt.Fprintf(k.params.Writer, format+"\n", a...)
 }
 
-func (k *K8sConfig) Set(ctx context.Context, key, value string) error {
+func (k *K8sConfig) Set(ctx context.Context, key, value string, params Parameters) error {
 	patch := []byte(`{"data":{"` + key + `":"` + value + `"}}`)
 
 	k.Log("✨ Patching ConfigMap %s with %s=%s...", defaults.ConfigMapName, key, value)
-	_, err := k.client.PatchConfigMap(ctx, k.params.Namespace, defaults.ConfigMapName, types.StrategicMergePatchType, patch, metav1.PatchOptions{})
-	if err != nil {
+
+	if _, err := k.client.PatchConfigMap(ctx, k.params.Namespace, defaults.ConfigMapName,
+		types.StrategicMergePatchType, patch, metav1.PatchOptions{}); err != nil {
 		return fmt.Errorf("unable to patch ConfigMap %s with patch %q: %w", defaults.ConfigMapName, patch, err)
 	}
 
-	return nil
+	return k.restartPodsUponConfigChange(params)
 }
 
-func (k *K8sConfig) Delete(ctx context.Context, key string) error {
+func (k *K8sConfig) Delete(ctx context.Context, key string, params Parameters) error {
 	patch := []byte(`[{"op": "remove", "path": "/data/` + key + `"}]`)
 
 	k.Log("✨ Removing key %s from ConfigMap %s...", key, defaults.ConfigMapName)
-	_, err := k.client.PatchConfigMap(ctx, k.params.Namespace, defaults.ConfigMapName, types.JSONPatchType, patch, metav1.PatchOptions{})
-	if err != nil {
+
+	if _, err := k.client.PatchConfigMap(ctx, k.params.Namespace, defaults.ConfigMapName,
+		types.JSONPatchType, patch, metav1.PatchOptions{}); err != nil {
 		return fmt.Errorf("unable to patch ConfigMap %s with patch %q: %w", defaults.ConfigMapName, patch, err)
 	}
 
-	return nil
+	return k.restartPodsUponConfigChange(params)
 }
 
 func (k *K8sConfig) View(ctx context.Context) (string, error) {
@@ -102,4 +106,20 @@ func (k *K8sConfig) View(ctx context.Context) (string, error) {
 	w.Flush()
 
 	return buf.String(), nil
+}
+
+func (k *K8sConfig) restartPodsUponConfigChange(params Parameters) error {
+	if !params.Restart {
+		fmt.Println("⚠️  Restart Cilium pods for configmap changes to take effect")
+		return nil
+	}
+
+	if err := k.client.DeletePodCollection(context.Background(), params.Namespace,
+		metav1.DeleteOptions{}, metav1.ListOptions{LabelSelector: defaults.CiliumPodSelector}); err != nil {
+		return fmt.Errorf("⚠️  unable to restart Cilium pods: %v", err)
+	}
+
+	fmt.Println("♻️  Restarted Cilium pods")
+
+	return nil
 }

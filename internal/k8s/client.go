@@ -15,50 +15,61 @@
 package k8s
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/cilium/cilium/api/v1/models"
 	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	ciliumClientset "github.com/cilium/cilium/pkg/k8s/client/clientset/versioned"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/cli-runtime/pkg/resource"
 	"k8s.io/client-go/kubernetes"
-	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+
+	// Register all auth providers (azure, gcp, oidc, openstack, ..).
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
 
 type Client struct {
-	Clientset       kubernetes.Interface
-	CiliumClientset ciliumClientset.Interface
-	Config          *rest.Config
-	RawConfig       clientcmdapi.Config
-	contextName     string
+	Clientset        kubernetes.Interface
+	CiliumClientset  ciliumClientset.Interface
+	Config           *rest.Config
+	RawConfig        clientcmdapi.Config
+	restClientGetter genericclioptions.RESTClientGetter
+	contextName      string
 }
 
 func NewClient(contextName, kubeconfig string) (*Client, error) {
-	rules := clientcmd.NewDefaultClientConfigLoadingRules()
+	// Register the Cilium types in the default scheme.
+	_ = ciliumv2.AddToScheme(scheme.Scheme)
 
-	if kubeconfig != "" {
-		rules.ExplicitPath = kubeconfig
+	restClientGetter := genericclioptions.ConfigFlags{
+		Context:    &contextName,
+		KubeConfig: &kubeconfig,
 	}
+	rawKubeConfigLoader := restClientGetter.ToRawKubeConfigLoader()
 
-	nonInteractiveClient := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, &clientcmd.ConfigOverrides{CurrentContext: contextName})
-
-	config, err := nonInteractiveClient.ClientConfig()
+	config, err := rawKubeConfigLoader.ClientConfig()
 	if err != nil {
 		return nil, err
 	}
 
-	rawConfig, err := nonInteractiveClient.RawConfig()
+	rawConfig, err := rawKubeConfigLoader.RawConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -78,11 +89,12 @@ func NewClient(contextName, kubeconfig string) (*Client, error) {
 	}
 
 	return &Client{
-		CiliumClientset: ciliumClientset,
-		Clientset:       clientset,
-		Config:          config,
-		RawConfig:       rawConfig,
-		contextName:     contextName,
+		CiliumClientset:  ciliumClientset,
+		Clientset:        clientset,
+		Config:           config,
+		RawConfig:        rawConfig,
+		restClientGetter: &restClientGetter,
+		contextName:      contextName,
 	}, nil
 }
 
@@ -228,6 +240,62 @@ func (c *Client) ListPods(ctx context.Context, namespace string, options metav1.
 	return c.Clientset.CoreV1().Pods(namespace).List(ctx, options)
 }
 
+func (c *Client) PodLogs(namespace, name string, opts *corev1.PodLogOptions) *rest.Request {
+	return c.Clientset.CoreV1().Pods(namespace).GetLogs(name, opts)
+}
+
+// separator for locating the start of the next log message. Sometimes
+// logs may span multiple lines, locate the timestamp, log level and
+// msg that always start a new log message
+var logSplitter = regexp.MustCompile(`\r?\n[^ ]+ level=[[:alpha:]]+ msg=`)
+
+func (c *Client) CiliumLogs(ctx context.Context, namespace, pod string, since time.Time, filter *regexp.Regexp) (string, error) {
+	opts := &corev1.PodLogOptions{
+		Container:  "cilium-agent",
+		Timestamps: true,
+		SinceTime:  &metav1.Time{Time: since},
+	}
+	req := c.PodLogs(namespace, pod, opts)
+	podLogs, err := req.Stream(ctx)
+	if err != nil {
+		return "", fmt.Errorf("error getting cilium-agent logs for %s/%s: %w", namespace, pod, err)
+	}
+	defer podLogs.Close()
+
+	buf := new(bytes.Buffer)
+	scanner := bufio.NewScanner(podLogs)
+	scanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
+		if atEOF && len(data) == 0 {
+			return 0, nil, nil
+		}
+		// find the full log line separator
+		loc := logSplitter.FindIndex(data)
+		if loc != nil {
+			// Locate '\n', advance just past it
+			nl := loc[0] + bytes.IndexByte(data[loc[0]:loc[1]], '\n') + 1
+			return nl, data[:nl], nil
+		} else if atEOF {
+			// EOF, return all we have
+			return len(data), data, nil
+		} else {
+			// Nothing to return
+			return 0, nil, nil
+		}
+	})
+
+	for scanner.Scan() {
+		if filter != nil && !filter.Match(scanner.Bytes()) {
+			continue
+		}
+		buf.Write(scanner.Bytes())
+	}
+	err = scanner.Err()
+	if err != nil {
+		err = fmt.Errorf("error reading cilium-agent logs for %s/%s: %w", namespace, pod, err)
+	}
+	return buf.String(), err
+}
+
 func (c *Client) ListServices(ctx context.Context, namespace string, options metav1.ListOptions) (*corev1.ServiceList, error) {
 	return c.Clientset.CoreV1().Services(namespace).List(ctx, options)
 }
@@ -239,11 +307,7 @@ func (c *Client) ExecInPodWithStderr(ctx context.Context, namespace, pod, contai
 		Container: container,
 		Command:   command,
 	})
-	if err != nil {
-		return bytes.Buffer{}, bytes.Buffer{}, err
-	}
-
-	return result.Stdout, result.Stderr, nil
+	return result.Stdout, result.Stderr, err
 }
 
 func (c *Client) ExecInPod(ctx context.Context, namespace, pod, container string, command []string) (bytes.Buffer, error) {
@@ -426,4 +490,125 @@ func (c *Client) CreateCiliumExternalWorkload(ctx context.Context, cew *ciliumv2
 
 func (c *Client) DeleteCiliumExternalWorkload(ctx context.Context, name string, opts metav1.DeleteOptions) error {
 	return c.CiliumClientset.CiliumV2().CiliumExternalWorkloads().Delete(ctx, name, opts)
+}
+
+func (c *Client) ListCiliumNetworkPolicies(ctx context.Context, namespace string, opts metav1.ListOptions) (*ciliumv2.CiliumNetworkPolicyList, error) {
+	return c.CiliumClientset.CiliumV2().CiliumNetworkPolicies(namespace).List(ctx, opts)
+}
+
+func (c *Client) GetCiliumNetworkPolicy(ctx context.Context, namespace, name string, opts metav1.GetOptions) (*ciliumv2.CiliumNetworkPolicy, error) {
+	return c.CiliumClientset.CiliumV2().CiliumNetworkPolicies(namespace).Get(ctx, name, opts)
+}
+
+func (c *Client) CreateCiliumNetworkPolicy(ctx context.Context, cnp *ciliumv2.CiliumNetworkPolicy, opts metav1.CreateOptions) (*ciliumv2.CiliumNetworkPolicy, error) {
+	return c.CiliumClientset.CiliumV2().CiliumNetworkPolicies(cnp.Namespace).Create(ctx, cnp, opts)
+}
+
+func (c *Client) UpdateCiliumNetworkPolicy(ctx context.Context, cnp *ciliumv2.CiliumNetworkPolicy, opts metav1.UpdateOptions) (*ciliumv2.CiliumNetworkPolicy, error) {
+	return c.CiliumClientset.CiliumV2().CiliumNetworkPolicies(cnp.Namespace).Update(ctx, cnp, opts)
+}
+
+func (c *Client) DeleteCiliumNetworkPolicy(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error {
+	return c.CiliumClientset.CiliumV2().CiliumNetworkPolicies(namespace).Delete(ctx, name, opts)
+}
+
+func (c *Client) ListCiliumClusterwideNetworkPolicies(ctx context.Context, opts metav1.ListOptions) (*ciliumv2.CiliumClusterwideNetworkPolicyList, error) {
+	return c.CiliumClientset.CiliumV2().CiliumClusterwideNetworkPolicies().List(ctx, opts)
+}
+
+func (c *Client) GetCiliumClusterwideNetworkPolicy(ctx context.Context, name string, opts metav1.GetOptions) (*ciliumv2.CiliumClusterwideNetworkPolicy, error) {
+	return c.CiliumClientset.CiliumV2().CiliumClusterwideNetworkPolicies().Get(ctx, name, opts)
+}
+
+func (c *Client) CreateCiliumClusterwideNetworkPolicy(ctx context.Context, ccnp *ciliumv2.CiliumClusterwideNetworkPolicy, opts metav1.CreateOptions) (*ciliumv2.CiliumClusterwideNetworkPolicy, error) {
+	return c.CiliumClientset.CiliumV2().CiliumClusterwideNetworkPolicies().Create(ctx, ccnp, opts)
+}
+
+func (c *Client) UpdateCiliumClusterwideNetworkPolicy(ctx context.Context, ccnp *ciliumv2.CiliumClusterwideNetworkPolicy, opts metav1.UpdateOptions) (*ciliumv2.CiliumClusterwideNetworkPolicy, error) {
+	return c.CiliumClientset.CiliumV2().CiliumClusterwideNetworkPolicies().Update(ctx, ccnp, opts)
+}
+
+func (c *Client) DeleteCiliumClusterwideNetworkPolicy(ctx context.Context, name string, opts metav1.DeleteOptions) error {
+	return c.CiliumClientset.CiliumV2().CiliumClusterwideNetworkPolicies().Delete(ctx, name, opts)
+}
+
+func (c *Client) GetVersion(_ context.Context) (string, error) {
+	v, err := c.Clientset.Discovery().ServerVersion()
+	if err != nil {
+		return "", fmt.Errorf("failed to get Kubernetes version: %w", err)
+	}
+	return fmt.Sprintf("%#v", *v), nil
+}
+
+func (c *Client) ListEvents(ctx context.Context, o metav1.ListOptions) (*corev1.EventList, error) {
+	return c.Clientset.CoreV1().Events(corev1.NamespaceAll).List(ctx, o)
+}
+
+func (c *Client) ListNamespaces(ctx context.Context, o metav1.ListOptions) (*corev1.NamespaceList, error) {
+	return c.Clientset.CoreV1().Namespaces().List(ctx, o)
+}
+
+func (c *Client) GetPodsTable(ctx context.Context) (*metav1.Table, error) {
+	r := resource.NewBuilder(c.restClientGetter).
+		Unstructured().
+		AllNamespaces(true).
+		ResourceTypes("pods").
+		SingleResourceType().
+		SelectAllParam(true).
+		RequestChunksOf(500).
+		ContinueOnError().
+		Latest().
+		Flatten().
+		TransformRequests(func(r *rest.Request) {
+			r.SetHeader(
+				"Accept", fmt.Sprintf("application/json;as=Table;v=%s;g=%s", metav1.SchemeGroupVersion.Version, metav1.GroupName),
+			)
+		}).
+		Do()
+	if r.Err() != nil {
+		return nil, r.Err()
+	}
+	i, err := r.Infos()
+	if err != nil {
+		return nil, err
+	}
+	if len(i) != 1 {
+		return nil, fmt.Errorf("expected a single kind of resource (got %d)", len(i))
+	}
+	return unstructuredToTable(i[0].Object)
+}
+
+func (c *Client) ListNetworkPolicies(ctx context.Context, o metav1.ListOptions) (*networkingv1.NetworkPolicyList, error) {
+	return c.Clientset.NetworkingV1().NetworkPolicies(corev1.NamespaceAll).List(ctx, o)
+}
+
+func (c *Client) ListCiliumIdentities(ctx context.Context) (*ciliumv2.CiliumIdentityList, error) {
+	return c.CiliumClientset.CiliumV2().CiliumIdentities().List(ctx, metav1.ListOptions{})
+}
+
+func (c *Client) ListCiliumNodes(ctx context.Context) (*ciliumv2.CiliumNodeList, error) {
+	return c.CiliumClientset.CiliumV2().CiliumNodes().List(ctx, metav1.ListOptions{})
+}
+
+func (c *Client) GetLogs(ctx context.Context, namespace, name, container string, sinceTime time.Time, limitBytes int64, previous bool) (string, error) {
+	t := metav1.NewTime(sinceTime)
+	o := corev1.PodLogOptions{
+		Container:  container,
+		Follow:     false,
+		LimitBytes: &limitBytes,
+		Previous:   previous,
+		SinceTime:  &t,
+		Timestamps: true,
+	}
+	r := c.Clientset.CoreV1().Pods(namespace).GetLogs(name, &o)
+	s, err := r.Stream(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer s.Close()
+	var b bytes.Buffer
+	if _, err = io.Copy(&b, s); err != nil {
+		return "", err
+	}
+	return b.String(), nil
 }

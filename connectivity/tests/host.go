@@ -16,48 +16,60 @@ package tests
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/cilium/cilium-cli/connectivity/check"
-	"github.com/cilium/cilium-cli/connectivity/filters"
 )
 
-type PodToHost struct{}
-
-func (t *PodToHost) Name() string {
-	return "pod-to-host"
+// PodToHost sends an ICMP ping from all client Pods to all nodes
+// in the test context.
+func PodToHost(name string) check.Scenario {
+	return &podToHost{
+		name: name,
+	}
 }
 
-func (t *PodToHost) Run(ctx context.Context, c check.TestContext) {
-	// Construct a map of all unique host IPs where pods are running on.
-	// This will include:
-	// - The local host
-	// - Remote hosts unless running in single node environments
-	// - Remote hosts in remote clusters when running in multi-cluster mode
-	hostIPs := map[string]struct{}{}
-	for _, client := range c.ClientPods() {
-		hostIPs[client.Pod.Status.HostIP] = struct{}{}
+// podToHost implements a Scenario.
+type podToHost struct {
+	name string
+}
+
+func (s *podToHost) Name() string {
+	tn := "pod-to-host"
+	if s.name == "" {
+		return tn
 	}
-	for _, echo := range c.EchoPods() {
-		hostIPs[echo.Pod.Status.HostIP] = struct{}{}
+	return fmt.Sprintf("%s:%s", tn, s.name)
+}
+
+func (s *podToHost) Run(ctx context.Context, t *check.Test) {
+	// Construct a unique list of all nodes in the cluster running workloads.
+	// TODO(timo): Should probably use Cilium agent Pods or actual nodes as the
+	// source of truth here.
+	nodes := make(map[string]check.TestPeer)
+	for _, client := range t.Context().ClientPods() {
+		ip := client.Pod.Status.HostIP
+		nodes[ip] = check.ICMPEndpoint("", ip)
+	}
+	for _, echo := range t.Context().EchoPods() {
+		ip := echo.Pod.Status.HostIP
+		nodes[ip] = check.ICMPEndpoint("", ip)
 	}
 
-	for _, client := range c.ClientPods() {
-		for hostIP := range hostIPs {
-			cmd := []string{"ping", "-c", "3", hostIP}
-			run := check.NewTestRun(t.Name(), c, client, check.NetworkEndpointContext{Peer: hostIP})
+	var i int
 
-			_, err := client.K8sClient.ExecInPod(ctx, client.Pod.Namespace, client.Pod.Name, check.ClientDeploymentName, cmd)
-			if err != nil {
-				run.Failure("ping command failed: %s", err)
-			}
+	for _, pod := range t.Context().ClientPods() {
+		for _, node := range nodes {
 
-			run.ValidateFlows(ctx, client.Name(), client.Pod.Status.PodIP, []filters.Pair{
-				{Filter: filters.Drop(), Expect: false, Msg: "Found drop"},
-				{Filter: filters.And(filters.IP(client.Pod.Status.PodIP, hostIP), filters.Or(filters.ICMP(8), filters.ICMPv6(128))), Expect: true, Msg: "ICMP request"},
-				{Filter: filters.And(filters.IP(hostIP, client.Pod.Status.PodIP), filters.Or(filters.ICMP(0), filters.ICMPv6(129))), Expect: true, Msg: "ICMP response"},
+			t.NewAction(s, fmt.Sprintf("ping-%d", i), &pod, node).Run(func(a *check.Action) {
+				a.ExecInPod(ctx, ping(node))
+				egressFlowRequirements := a.GetEgressRequirements(check.FlowParameters{
+					Protocol: check.ICMP,
+				})
+				a.ValidateFlows(ctx, pod.Name(), pod.Pod.Status.PodIP, egressFlowRequirements)
 			})
 
-			run.End()
+			i++
 		}
 	}
 }

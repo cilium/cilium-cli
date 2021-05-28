@@ -45,7 +45,7 @@ var (
 	clusterNameValidation = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])$`)
 )
 
-func (p InstallParameters) checkDisabled(name string) bool {
+func (p Parameters) checkDisabled(name string) bool {
 	for _, n := range p.DisableChecks {
 		if n == name {
 			return true
@@ -132,9 +132,11 @@ func (k *K8sInstaller) autodetectAndValidate(ctx context.Context) error {
 		switch f.Kind {
 		case k8s.KindKind:
 			k.params.DatapathMode = DatapathTunnel
-			k.Log("ℹ️  kube-proxy-replacement disabled")
-			k.params.KubeProxyReplacement = "disabled"
 
+			if k.params.KubeProxyReplacement == "" {
+				k.Log("ℹ️  kube-proxy-replacement disabled")
+				k.params.KubeProxyReplacement = "disabled"
+			}
 		case k8s.KindMinikube:
 			k.params.DatapathMode = DatapathTunnel
 		case k8s.KindEKS:
@@ -148,7 +150,6 @@ func (k *K8sInstaller) autodetectAndValidate(ctx context.Context) error {
 				k.Log("ℹ️  kube-proxy-replacement disabled")
 				k.params.KubeProxyReplacement = "disabled"
 			}
-
 		}
 
 		if k.params.DatapathMode != "" {
@@ -164,6 +165,16 @@ func (k *K8sInstaller) autodetectAndValidate(ctx context.Context) error {
 	if !clusterNameValidation.MatchString(k.params.ClusterName) {
 		k.Log("❌ Cluster name %q is not valid, must match regular expression: %s", k.params.ClusterName, clusterNameValidation)
 		return fmt.Errorf("invalid cluster name")
+	}
+
+	switch k.params.Encryption {
+	case encryptionDisabled,
+		encryptionIPsec,
+		encryptionWireguard:
+		// nothing to do for valid values
+	default:
+		k.Log("❌ Invalid encryption mode: %q", k.params.Encryption)
+		return fmt.Errorf("invalid encryption mode")
 	}
 
 	return nil

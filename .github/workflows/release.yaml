@@ -14,6 +14,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.16.4
+
       - name: Generate the artifacts
         run: make release
       - name: Create Release
@@ -30,7 +36,7 @@ jobs:
           prerelease: false
       - name: Upload the artifacts
         id: upload-release-artifacts
-        uses: skx/github-action-publish-binaries@master
+        uses: skx/github-action-publish-binaries@c881a3f8ffb80b684f367660178d38ceabc065c2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:

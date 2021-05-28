@@ -1,24 +1,36 @@
 name: EKS (ENI)
 
+# Any change in triggers needs to be reflected in the concurrency group.
 on:
   pull_request: {}
-  push:
-    branches:
-      - master
   schedule:
     - cron:  '10 */6 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.after || 'scheduled' }}
+  cancel-in-progress: true
 
 env:
   clusterName: cilium-cli-ci-eks-eni-${{ github.run_number }}
   region: us-east-2
 
 jobs:
-  installation-and-connectivitiy:
+  installation-and-connectivity:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.16.4
+
+      - name: Set up Go for root
+        run: |
+          sudo ln -sf `which go` `sudo which go` || true
+          sudo go version
 
       - name: Build and install cilium CLI binary
         run: sudo make install
@@ -63,7 +75,7 @@ jobs:
 
       - name: Connectivity Test
         run: |
-          cilium connectivity test --test '!pod-to-local-nodeport'
+          cilium connectivity test --test '!/pod-to-local-nodeport' --all-flows
 
       - name: Cleanup
         if: ${{ always() }}

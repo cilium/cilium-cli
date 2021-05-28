@@ -59,6 +59,12 @@ const (
 	ipamAzure       = "azure"
 )
 
+const (
+	encryptionDisabled  = "disabled"
+	encryptionIPsec     = "ipsec"
+	encryptionWireguard = "wireguard"
+)
+
 var ciliumClusterRole = &rbacv1.ClusterRole{
 	ObjectMeta: metav1.ObjectMeta{
 		Name: defaults.AgentClusterRoleName,
@@ -151,6 +157,12 @@ var operatorClusterRole = &rbacv1.ClusterRole{
 			Verbs: []string{"get", "list", "watch"},
 		},
 		{
+
+			APIGroups: []string{""},
+			Resources: []string{"services/status"}, // to perform LB IP allocation for BGP
+			Verbs:     []string{"update"},
+		},
+		{
 			APIGroups: []string{"cilium.io"},
 			Resources: []string{
 				"ciliumnetworkpolicies",
@@ -182,7 +194,7 @@ var operatorClusterRole = &rbacv1.ClusterRole{
 		// For cilium-operator running in HA mode.
 		//
 		// Cilium operator running in HA mode requires the use of
-		// ResourceLock for Leader Election between mulitple running
+		// ResourceLock for Leader Election between multiple running
 		// instances.  The preferred way of doing this is to use
 		// LeasesResourceLock as edits to Leases are less common and
 		// fewer objects in the cluster watch "all Leases".  The
@@ -599,22 +611,13 @@ func (k *K8sInstaller) generateAgentDaemonSet() *appsv1.DaemonSet {
 												},
 												Items: []corev1.KeyToPath{
 													{
-														Key:  defaults.HubbleServerSecretCertName,
+														Key:  corev1.TLSCertKey,
 														Path: "server.crt",
 													},
 													{
-														Key:  defaults.HubbleServerSecretKeyName,
+														Key:  corev1.TLSPrivateKeyKey,
 														Path: "server.key",
 													},
-												},
-											},
-										},
-										{
-											Secret: &corev1.SecretProjection{
-												LocalObjectReference: corev1.LocalObjectReference{
-													Name: defaults.CASecretName,
-												},
-												Items: []corev1.KeyToPath{
 													{
 														Key:  defaults.CASecretCertName,
 														Path: "client-ca.crt",
@@ -636,7 +639,7 @@ func (k *K8sInstaller) generateAgentDaemonSet() *appsv1.DaemonSet {
 	auxVolumes := []corev1.Volume{}
 	auxVolumeMounts := []corev1.VolumeMount{}
 
-	if k.params.Encryption {
+	if k.params.Encryption == encryptionIPsec {
 		auxVolumes = append(auxVolumes, corev1.Volume{
 			Name: "cilium-ipsec-secrets",
 			VolumeSource: corev1.VolumeSource{
@@ -720,6 +723,26 @@ func (k *K8sInstaller) generateAgentDaemonSet() *appsv1.DaemonSet {
 	ds.Spec.Template.Spec.InitContainers = append(nodeInitContainers, ds.Spec.Template.Spec.InitContainers...)
 	ds.Spec.Template.Spec.Volumes = append(ds.Spec.Template.Spec.Volumes, auxVolumes...)
 	ds.Spec.Template.Spec.Containers[0].VolumeMounts = append(ds.Spec.Template.Spec.Containers[0].VolumeMounts, auxVolumeMounts...)
+
+	if k.bgpEnabled() {
+		ds.Spec.Template.Spec.Containers[0].VolumeMounts = append(ds.Spec.Template.Spec.Containers[0].VolumeMounts,
+			corev1.VolumeMount{
+				Name:      "bgp-config-path",
+				ReadOnly:  true,
+				MountPath: "/var/lib/cilium/bgp",
+			},
+		)
+		ds.Spec.Template.Spec.Volumes = append(ds.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name: "bgp-config-path",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: "bgp-config",
+					},
+				},
+			},
+		})
+	}
 
 	return ds
 }
@@ -885,7 +908,7 @@ func (k *K8sInstaller) generateOperatorDeployment() *appsv1.Deployment {
 		c := &deployment.Spec.Template.Spec.Containers[0]
 		c.Env = append(c.Env, corev1.EnvVar{
 			Name:  "AZURE_SUBSCRIPTION_ID",
-			Value: k.params.Azure.SubscriptionID,
+			Value: k.params.Azure.DerivedSubscriptionID,
 		})
 
 		c.Env = append(c.Env, corev1.EnvVar{
@@ -909,12 +932,39 @@ func (k *K8sInstaller) generateOperatorDeployment() *appsv1.Deployment {
 		})
 	}
 
+	if k.bgpEnabled() {
+		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
+			corev1.VolumeMount{
+				Name:      "bgp-config-path",
+				ReadOnly:  true,
+				MountPath: "/var/lib/cilium/bgp",
+			},
+		)
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name: "bgp-config-path",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: "bgp-config",
+					},
+				},
+			},
+		})
+	}
+
 	return deployment
 }
 
 type k8sInstallerImplementation interface {
+	ClusterName() string
+	ListNodes(ctx context.Context, options metav1.ListOptions) (*corev1.NodeList, error)
+	GetCiliumExternalWorkload(ctx context.Context, name string, opts metav1.GetOptions) (*ciliumv2.CiliumExternalWorkload, error)
+	CreateCiliumExternalWorkload(ctx context.Context, cew *ciliumv2.CiliumExternalWorkload, opts metav1.CreateOptions) (*ciliumv2.CiliumExternalWorkload, error)
+	DeleteCiliumExternalWorkload(ctx context.Context, name string, opts metav1.DeleteOptions) error
+	ListCiliumExternalWorkloads(ctx context.Context, opts metav1.ListOptions) (*ciliumv2.CiliumExternalWorkloadList, error)
 	CreateServiceAccount(ctx context.Context, namespace string, account *corev1.ServiceAccount, opts metav1.CreateOptions) (*corev1.ServiceAccount, error)
 	DeleteServiceAccount(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error
+	GetConfigMap(ctx context.Context, namespace, name string, opts metav1.GetOptions) (*corev1.ConfigMap, error)
 	CreateConfigMap(ctx context.Context, namespace string, config *corev1.ConfigMap, opts metav1.CreateOptions) (*corev1.ConfigMap, error)
 	DeleteConfigMap(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error
 	CreateClusterRole(ctx context.Context, config *rbacv1.ClusterRole, opts metav1.CreateOptions) (*rbacv1.ClusterRole, error)
@@ -925,6 +975,7 @@ type k8sInstallerImplementation interface {
 	GetDaemonSet(ctx context.Context, namespace, name string, opts metav1.GetOptions) (*appsv1.DaemonSet, error)
 	DeleteDaemonSet(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error
 	PatchDaemonSet(ctx context.Context, namespace, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions) (*appsv1.DaemonSet, error)
+	GetService(ctx context.Context, namespace, name string, opts metav1.GetOptions) (*corev1.Service, error)
 	CreateService(ctx context.Context, namespace string, service *corev1.Service, opts metav1.CreateOptions) (*corev1.Service, error)
 	DeleteService(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error
 	DeleteDeployment(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error
@@ -941,6 +992,7 @@ type k8sInstallerImplementation interface {
 	CreateSecret(ctx context.Context, namespace string, secret *corev1.Secret, opts metav1.CreateOptions) (*corev1.Secret, error)
 	DeleteSecret(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error
 	GetSecret(ctx context.Context, namespace, name string, opts metav1.GetOptions) (*corev1.Secret, error)
+	PatchSecret(ctx context.Context, namespace, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions) (*corev1.Secret, error)
 	CreateResourceQuota(ctx context.Context, namespace string, r *corev1.ResourceQuota, opts metav1.CreateOptions) (*corev1.ResourceQuota, error)
 	DeleteResourceQuota(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error
 	AutodetectFlavor(ctx context.Context) (k8s.Flavor, error)
@@ -950,10 +1002,11 @@ type k8sInstallerImplementation interface {
 }
 
 type K8sInstaller struct {
-	client      k8sInstallerImplementation
-	params      InstallParameters
-	flavor      k8s.Flavor
-	certManager *certs.CertManager
+	client        k8sInstallerImplementation
+	params        Parameters
+	flavor        k8s.Flavor
+	certManager   *certs.CertManager
+	rollbackSteps []rollbackStep
 }
 
 const (
@@ -966,15 +1019,16 @@ const (
 )
 
 type AzureParameters struct {
-	ResourceGroupName string
-	SubscriptionID    string
-	TenantID          string
-	ResourceGroup     string
-	ClientID          string
-	ClientSecret      string
+	ResourceGroupName     string
+	SubscriptionID        string
+	DerivedSubscriptionID string
+	TenantID              string
+	ResourceGroup         string
+	ClientID              string
+	ClientSecret          string
 }
 
-type InstallParameters struct {
+type Parameters struct {
 	Namespace            string
 	Writer               io.Writer
 	ClusterName          string
@@ -993,13 +1047,15 @@ type InstallParameters struct {
 	KubeProxyReplacement string
 	Azure                AzureParameters
 	RestartUnmanagedPods bool
-	Encryption           bool
+	Encryption           string
 	NodeEncryption       bool
 	ConfigOverwrites     []string
 	configOverwrites     map[string]string
 }
 
-func (p *InstallParameters) validate() error {
+type rollbackStep func(context.Context)
+
+func (p *Parameters) validate() error {
 	p.configOverwrites = map[string]string{}
 	for _, config := range p.ConfigOverwrites {
 		t := strings.SplitN(config, "=", 2)
@@ -1069,7 +1125,7 @@ func (k *K8sInstaller) operatorCommand() []string {
 	return []string{"cilium-operator-generic"}
 }
 
-func NewK8sInstaller(client k8sInstallerImplementation, p InstallParameters) (*K8sInstaller, error) {
+func NewK8sInstaller(client k8sInstallerImplementation, p Parameters) (*K8sInstaller, error) {
 	if err := (&p).validate(); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %w", err)
 	}
@@ -1256,17 +1312,29 @@ func (k *K8sInstaller) generateConfigMap() (*corev1.ConfigMap, error) {
 		m.Data["gke-node-init-script"] = nodeInitStartupScriptGKE
 	}
 
-	if k.params.Encryption {
+	switch k.params.Encryption {
+	case encryptionIPsec:
 		m.Data["enable-ipsec"] = "true"
 		m.Data["ipsec-key-file"] = "/etc/ipsec/keys"
 
 		if k.params.NodeEncryption {
 			m.Data["encrypt-node"] = "true"
 		}
+	case encryptionWireguard:
+		m.Data["enable-wireguard"] = "true"
+		// TODO(gandro): Future versions of Cilium will remove the following
+		// two limitations, we will need to have set the config map values
+		// based on the installed Cilium version
+		m.Data["enable-l7-proxy"] = "false"
+		k.Log("ℹ️  L7 proxy disabled due to Wireguard encryption")
+
+		if k.params.NodeEncryption {
+			k.Log("⚠️️  Wireguard does not support node encryption yet")
+		}
 	}
 
 	for key, value := range k.params.configOverwrites {
-		k.Log("ℹ️  Manual overwrite in ConfigMap: %s=%s", key, value)
+		k.Log("ℹ️ Manual overwrite in ConfigMap: %s=%s", key, value)
 		m.Data[key] = value
 	}
 
@@ -1286,6 +1354,10 @@ func (k *K8sInstaller) generateConfigMap() (*corev1.ConfigMap, error) {
 
 		if m.Data["kube-proxy-replacement"] != "strict" {
 			return nil, fmt.Errorf("--install-no-conntrack-iptables-rules requires kube-proxy replacement to be enabled")
+		}
+
+		if m.Data["enable-bpf-masquerade"] != "true" {
+			return nil, fmt.Errorf("--install-no-conntrack-iptables-rules requires eBPF masquerading to be enabled")
 		}
 
 		if m.Data["cni-chaining-mode"] != "" {
@@ -1323,6 +1395,11 @@ func (k *K8sInstaller) deployResourceQuotas(ctx context.Context) error {
 	if _, err := k.client.CreateResourceQuota(ctx, k.params.Namespace, ciliumResourceQuota, metav1.CreateOptions{}); err != nil {
 		return err
 	}
+	k.pushRollbackStep(func(ctx context.Context) {
+		if err := k.client.DeleteResourceQuota(ctx, k.params.Namespace, defaults.AgentResourceQuota, metav1.DeleteOptions{}); err != nil {
+			k.Log("Cannot delete %s ResourceQuota: %s", defaults.AgentResourceQuota, err)
+		}
+	})
 
 	operatorResourceQuota := &corev1.ResourceQuota{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1348,6 +1425,11 @@ func (k *K8sInstaller) deployResourceQuotas(ctx context.Context) error {
 	if _, err := k.client.CreateResourceQuota(ctx, k.params.Namespace, operatorResourceQuota, metav1.CreateOptions{}); err != nil {
 		return err
 	}
+	k.pushRollbackStep(func(ctx context.Context) {
+		if err := k.client.DeleteResourceQuota(ctx, k.params.Namespace, defaults.OperatorResourceQuota, metav1.DeleteOptions{}); err != nil {
+			k.Log("Cannot delete %s ResourceQuota: %s", defaults.OperatorResourceQuota, err)
+		}
+	})
 
 	return nil
 }
@@ -1451,29 +1533,59 @@ func (k *K8sInstaller) Install(ctx context.Context) error {
 	if _, err := k.client.CreateServiceAccount(ctx, k.params.Namespace, k8s.NewServiceAccount(defaults.AgentServiceAccountName), metav1.CreateOptions{}); err != nil {
 		return err
 	}
+	k.pushRollbackStep(func(ctx context.Context) {
+		if err := k.client.DeleteServiceAccount(ctx, k.params.Namespace, defaults.AgentServiceAccountName, metav1.DeleteOptions{}); err != nil {
+			k.Log("Cannot delete %s ServiceAccount: %s", defaults.AgentServiceAccountName, err)
+		}
+	})
 
 	if _, err := k.client.CreateServiceAccount(ctx, k.params.Namespace, k8s.NewServiceAccount(defaults.OperatorServiceAccountName), metav1.CreateOptions{}); err != nil {
 		return err
 	}
+	k.pushRollbackStep(func(ctx context.Context) {
+		if err := k.client.DeleteServiceAccount(ctx, k.params.Namespace, defaults.OperatorServiceAccountName, metav1.DeleteOptions{}); err != nil {
+			k.Log("Cannot delete %s ServiceAccount: %s", defaults.OperatorServiceAccountName, err)
+		}
+	})
 
 	k.Log("🚀 Creating Cluster roles...")
 	if _, err := k.client.CreateClusterRole(ctx, ciliumClusterRole, metav1.CreateOptions{}); err != nil {
 		return err
 	}
+	k.pushRollbackStep(func(ctx context.Context) {
+		if err := k.client.DeleteClusterRole(ctx, defaults.AgentClusterRoleName, metav1.DeleteOptions{}); err != nil {
+			k.Log("Cannot delete %s ClusterRole: %s", defaults.AgentClusterRoleName, err)
+		}
+	})
 
 	if _, err := k.client.CreateClusterRoleBinding(ctx, k8s.NewClusterRoleBinding(defaults.AgentClusterRoleName, k.params.Namespace, defaults.AgentServiceAccountName), metav1.CreateOptions{}); err != nil {
 		return err
 	}
+	k.pushRollbackStep(func(ctx context.Context) {
+		if err := k.client.DeleteClusterRoleBinding(ctx, defaults.AgentClusterRoleName, metav1.DeleteOptions{}); err != nil {
+			k.Log("Cannot delete %s ClusterRoleBinding: %s", defaults.AgentClusterRoleName, err)
+		}
+	})
 
 	if _, err := k.client.CreateClusterRole(ctx, operatorClusterRole, metav1.CreateOptions{}); err != nil {
 		return err
 	}
+	k.pushRollbackStep(func(ctx context.Context) {
+		if err := k.client.DeleteClusterRole(ctx, defaults.OperatorClusterRoleName, metav1.DeleteOptions{}); err != nil {
+			k.Log("Cannot delete %s ClusterRole: %s", defaults.OperatorClusterRoleName, err)
+		}
+	})
 
 	if _, err := k.client.CreateClusterRoleBinding(ctx, k8s.NewClusterRoleBinding(defaults.OperatorClusterRoleName, k.params.Namespace, defaults.OperatorServiceAccountName), metav1.CreateOptions{}); err != nil {
 		return err
 	}
+	k.pushRollbackStep(func(ctx context.Context) {
+		if err := k.client.DeleteClusterRoleBinding(ctx, defaults.OperatorClusterRoleName, metav1.DeleteOptions{}); err != nil {
+			k.Log("Cannot delete %s ClusterRoleBinding: %s", defaults.OperatorClusterRoleName, err)
+		}
+	})
 
-	if k.params.Encryption {
+	if k.params.Encryption == encryptionIPsec {
 		if err := k.createEncryptionSecret(ctx); err != nil {
 			return err
 		}
@@ -1488,6 +1600,11 @@ func (k *K8sInstaller) Install(ctx context.Context) error {
 	if _, err := k.client.CreateConfigMap(ctx, k.params.Namespace, configMap, metav1.CreateOptions{}); err != nil {
 		return err
 	}
+	k.pushRollbackStep(func(ctx context.Context) {
+		if err := k.client.DeleteConfigMap(ctx, k.params.Namespace, defaults.ConfigMapName, metav1.DeleteOptions{}); err != nil {
+			k.Log("Cannot delete %s ConfigMap: %s", defaults.ConfigMapName, err)
+		}
+	})
 
 	switch k.flavor.Kind {
 	case k8s.KindGKE:
@@ -1495,17 +1612,32 @@ func (k *K8sInstaller) Install(ctx context.Context) error {
 		if _, err := k.client.CreateDaemonSet(ctx, k.params.Namespace, k.generateGKEInitDaemonSet(), metav1.CreateOptions{}); err != nil {
 			return err
 		}
+		k.pushRollbackStep(func(ctx context.Context) {
+			if err := k.client.DeleteDaemonSet(ctx, k.params.Namespace, gkeInitName, metav1.DeleteOptions{}); err != nil {
+				k.Log("Cannot delete %s DaemonSet: %s", gkeInitName, err)
+			}
+		})
 	}
 
 	k.Log("🚀 Creating Agent DaemonSet...")
 	if _, err := k.client.CreateDaemonSet(ctx, k.params.Namespace, k.generateAgentDaemonSet(), metav1.CreateOptions{}); err != nil {
 		return err
 	}
+	k.pushRollbackStep(func(ctx context.Context) {
+		if err := k.client.DeleteDaemonSet(ctx, k.params.Namespace, defaults.AgentDaemonSetName, metav1.DeleteOptions{}); err != nil {
+			k.Log("Cannot delete %s DaemonSet: %s", defaults.AgentDaemonSetName, err)
+		}
+	})
 
 	k.Log("🚀 Creating Operator Deployment...")
 	if _, err := k.client.CreateDeployment(ctx, k.params.Namespace, k.generateOperatorDeployment(), metav1.CreateOptions{}); err != nil {
 		return err
 	}
+	k.pushRollbackStep(func(ctx context.Context) {
+		if err := k.client.DeleteDeployment(ctx, k.params.Namespace, defaults.OperatorDeploymentName, metav1.DeleteOptions{}); err != nil {
+			k.Log("Cannot delete %s Deployment: %s", defaults.OperatorDeploymentName, err)
+		}
+	})
 
 	if k.params.Wait {
 		k.Log("⌛ Waiting for Cilium to be installed...")
@@ -1535,4 +1667,18 @@ func (k *K8sInstaller) Install(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (k *K8sInstaller) pushRollbackStep(step rollbackStep) {
+	// Prepend the step to the steps slice so that, in case rollback is
+	// performed, steps are rolled back in the reverse order
+	k.rollbackSteps = append([]rollbackStep{step}, k.rollbackSteps...)
+}
+
+func (k *K8sInstaller) RollbackInstallation(ctx context.Context) {
+	k.Log("↩️ Rolling back installation...")
+
+	for _, r := range k.rollbackSteps {
+		r(ctx)
+	}
 }
