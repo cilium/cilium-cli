@@ -1446,7 +1446,24 @@ func (k *K8sInstaller) restartUnmanagedPods(ctx context.Context) error {
 		}
 	}
 
-	tail := func(pods []*corev1.Pod) []*corev1.Pod {
+	type PodEvictionInfo struct {
+		Name                   string
+		Namespace              string
+		IsHostNetwork          bool
+		TerminationGracePeriod time.Duration
+	}
+
+	// group pods by namespace to make evictions faster
+	nsToPods := make(map[string][]PodEvictionInfo)
+	for _, p := range pods.Items {
+		nsToPods[p.Namespace] = append(nsToPods[p.Namespace], PodEvictionInfo{
+			p.Name,
+			p.Namespace,
+			p.Spec.HostNetwork,
+			time.Duration(*p.Spec.TerminationGracePeriodSeconds) * time.Second})
+	}
+
+	tail := func(pods []PodEvictionInfo) []PodEvictionInfo {
 		if len(pods) <= 1 {
 			pods = nil
 		} else {
@@ -1455,11 +1472,6 @@ func (k *K8sInstaller) restartUnmanagedPods(ctx context.Context) error {
 		return pods
 	}
 
-	// group pods by namespace to make evictions faster
-	nsToPods := make(map[string][]*corev1.Pod)
-	for idx, p := range pods.Items {
-		nsToPods[p.Namespace] = append(nsToPods[p.Namespace], &pods.Items[idx])
-	}
 	var wg sync.WaitGroup
 	for ns, pods := range nsToPods {
 		ns := ns
@@ -1472,7 +1484,7 @@ func (k *K8sInstaller) restartUnmanagedPods(ctx context.Context) error {
 			maxRetry := 5 // this seems arbitrary
 			for len(pods) > 0 {
 				pod := pods[0]
-				if pod.Spec.HostNetwork {
+				if pod.IsHostNetwork {
 					pods = tail(pods)
 					continue
 				}
@@ -1485,12 +1497,13 @@ func (k *K8sInstaller) restartUnmanagedPods(ctx context.Context) error {
 				err := k.client.EvictPod(ctx, pod.Namespace, pod.Name, metav1.DeleteOptions{})
 				if err != nil {
 					if errors.IsTooManyRequests(err) { //PodDisruptionBudget enforcement
-						waitTime := time.Duration(*pod.Spec.TerminationGracePeriodSeconds)
-						k.Log("ℹ️  Evicting %s/%s would violate disruption budget. Sleeping %ds before retrying.", pod.Namespace, pod.Name, waitTime)
-						time.Sleep(waitTime * time.Second)
+						k.Log("ℹ️  Evicting %s/%s would violate disruption budget. Sleeping %vs before retrying.", pod.Namespace, pod.Name,
+							pod.TerminationGracePeriod.Seconds())
+						time.Sleep(pod.TerminationGracePeriod)
 						retry++
 						if retry > maxRetry {
-							k.Log("⚠️  Unable to evict pods in namespace=%s, after retries=%d every t=%ds.", pod.Namespace, maxRetry, waitTime)
+							k.Log("⚠️  Unable to evict pods in namespace=%s, after retries=%d every t=%vs.", pod.Namespace, maxRetry,
+								pod.TerminationGracePeriod.Seconds())
 							return
 						}
 						continue
