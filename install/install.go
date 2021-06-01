@@ -1019,13 +1019,13 @@ const (
 )
 
 type AzureParameters struct {
-	ResourceGroupName     string
-	ResourceGroup         string
-	SubscriptionName      string
-	SubscriptionID        string
-	TenantID              string
-	ClientID              string
-	ClientSecret          string
+	ResourceGroupName string
+	ResourceGroup     string
+	SubscriptionName  string
+	SubscriptionID    string
+	TenantID          string
+	ClientID          string
+	ClientSecret      string
 }
 
 type Parameters struct {
@@ -1036,6 +1036,7 @@ type Parameters struct {
 	Version              string
 	AgentImage           string
 	OperatorImage        string
+	RelayImage           string
 	InheritCA            string
 	Wait                 bool
 	WaitDuration         time.Duration
