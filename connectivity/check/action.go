@@ -152,7 +152,7 @@ func (a *Action) ExecInPod(ctx context.Context, cmd []string) {
 	}
 	pod := a.src
 
-	a.Debug("Executing command", cmd)
+	a.Debugf("%s: Executing command %s", a.started.UTC(), cmd)
 
 	// Warning: ExecInPod* does not use ctx, command cannot be cancelled.
 	stdout, stderr, err := pod.K8sClient.ExecInPodWithStderr(context.TODO(),
