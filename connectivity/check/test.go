@@ -22,7 +22,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cilium/cilium-cli/defaults"
 	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type Test struct {
@@ -227,6 +229,17 @@ func (t *Test) WithScenarios(sl ...Scenario) *Test {
 	}
 
 	return t
+}
+
+// RestartCiliumPods restarts all Cilium pods in the cluster of the
+// given 'pod', which need not be a Cilium pod.
+func (t *Test) RestartCiliumPods(pod Pod) {
+	if err := pod.K8sClient.DeletePodCollection(context.Background(), t.ctx.params.CiliumNamespace,
+		metav1.DeleteOptions{}, metav1.ListOptions{LabelSelector: defaults.CiliumPodSelector}); err != nil {
+		t.Fatalf("Unable to restart Cilium pods: %v", err)
+	} else {
+		t.Info("Restarted Cilium pods")
+	}
 }
 
 // NewAction creates a new Action. s must be the Scenario the Action is created
