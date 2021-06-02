@@ -37,6 +37,9 @@ type Test struct {
 	// True if the Test is marked as skipped.
 	skipped bool
 
+	// True if the Test is marked as quarantined.
+	quarantined bool
+
 	// True if the Test is marked as failed.
 	failed bool
 
@@ -67,6 +70,15 @@ type Test struct {
 
 	// List of functions to be called when Run() returns.
 	finalizers []func() error
+}
+
+func (t *Test) Quarantine() *Test {
+	t.quarantined = true
+	return t
+}
+
+func (t *Test) Quarantined() bool {
+	return t.quarantined
 }
 
 func (t *Test) String() string {
@@ -112,6 +124,11 @@ func (t *Test) skip(s Scenario) {
 // willRun returns false if all of the Test's Scenarios will be skipped.
 func (t *Test) willRun() bool {
 	var sc int
+
+	// Check if the test is quarantined
+	if !(t.Quarantined() == t.Context().params.RunQuarantined) {
+		return false
+	}
 
 	for s := range t.scenarios {
 		if !t.Context().params.testEnabled(t.scenarioName(s)) {

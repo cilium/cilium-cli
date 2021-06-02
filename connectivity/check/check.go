@@ -45,6 +45,7 @@ type Parameters struct {
 	Verbose               bool
 	Debug                 bool
 	PauseOnFail           bool
+	RunQuarantined        bool
 }
 
 func (p Parameters) ciliumEndpointTimeout() time.Duration {
