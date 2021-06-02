@@ -46,9 +46,20 @@ var (
 
 	//go:embed manifests/client-egress-to-cidr-1111.yaml
 	clientEgressToCIDR1111PolicyYAML string
+
+	//go:embed manifests/client-dns-visibility.yaml
+	clientDNSVisibilityPolicyYAML string
 )
 
 func Run(ctx context.Context, ct *check.ConnectivityTest) error {
+	// Run all tests without any policies in place.
+	ct.NewTest("restart").WithPolicy(clientDNSVisibilityPolicyYAML).WithScenarios(
+		tests.RestartDNS(""),
+	).WithExpectations(
+		func(a *check.Action) (egress check.Result, ingress check.Result) {
+			return check.ResultDNSOK, check.ResultNone
+		}).Quarantine()
+
 	// Run all tests without any policies in place.
 	ct.NewTest("no-policies").WithScenarios(
 		tests.PodToPod(""),

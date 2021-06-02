@@ -46,6 +46,9 @@ type Test struct {
 	// Warning counter for reporting purposes.
 	warnings uint
 
+	// ciliumRestarted is true if Cilium Agents have been restarted
+	ciliumRestarted bool
+
 	// Scenarios registered to this test.
 	scenarios map[Scenario][]*Action
 
@@ -75,6 +78,10 @@ type Test struct {
 func (t *Test) Quarantine() *Test {
 	t.quarantined = true
 	return t
+}
+
+func (t *Test) ClearFail() {
+	t.failed = false
 }
 
 func (t *Test) Quarantined() bool {
@@ -146,6 +153,10 @@ func (t *Test) finalize() {
 	if t.failed && t.Context().params.PauseOnFail {
 		t.Log("Pausing after test failure, press the Enter key to continue:")
 		fmt.Scanln()
+	}
+
+	if t.ciliumRestarted {
+		t.ctx.resetCiliumPods(context.TODO())
 	}
 
 	t.Debug("Finalizing Test", t.Name())
@@ -255,8 +266,24 @@ func (t *Test) RestartCiliumPods(pod Pod) {
 		metav1.DeleteOptions{}, metav1.ListOptions{LabelSelector: defaults.CiliumPodSelector}); err != nil {
 		t.Fatalf("Unable to restart Cilium pods: %v", err)
 	} else {
+		t.ciliumRestarted = true
 		t.Info("Restarted Cilium pods")
 	}
+}
+
+// CiliumRunning returns true if Cilium agents API is available on all Cilium Pods
+func (t *Test) CiliumRunning() bool {
+	err := t.ctx.resetCiliumPods(context.TODO())
+	if err != nil || len(t.ctx.ciliumPods) == 0 {
+		return false
+	}
+	// Get current policy revisions in all Cilium pods
+	_, err = t.ctx.getCiliumPolicyRevisions(context.TODO())
+	if err != nil {
+		return false
+	}
+
+	return true
 }
 
 // NewAction creates a new Action. s must be the Scenario the Action is created

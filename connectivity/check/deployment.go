@@ -366,18 +366,8 @@ func (ct *ConnectivityTest) deleteDeployments(ctx context.Context, client *k8s.C
 }
 
 // validateDeployment checks if the Deployments we created have the expected Pods in them.
-func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
-
-	ct.Debug("Validating Deployments...")
-
-	srcDeployments, dstDeployments := ct.deploymentList()
-	if err := ct.waitForDeployments(ctx, ct.clients.src, srcDeployments); err != nil {
-		return err
-	}
-	if err := ct.waitForDeployments(ctx, ct.clients.dst, dstDeployments); err != nil {
-		return err
-	}
-
+func (ct *ConnectivityTest) resetCiliumPods(ctx context.Context) error {
+	ct.ciliumPods = make(map[string]Pod)
 	for _, client := range ct.clients.clients() {
 		ciliumPods, err := client.ListPods(ctx, ct.params.CiliumNamespace, metav1.ListOptions{LabelSelector: "k8s-app=cilium"})
 		if err != nil {
@@ -391,6 +381,23 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 			}
 		}
 	}
+	return nil
+}
+
+// validateDeployment checks if the Deployments we created have the expected Pods in them.
+func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
+
+	ct.Debug("Validating Deployments...")
+
+	srcDeployments, dstDeployments := ct.deploymentList()
+	if err := ct.waitForDeployments(ctx, ct.clients.src, srcDeployments); err != nil {
+		return err
+	}
+	if err := ct.waitForDeployments(ctx, ct.clients.dst, dstDeployments); err != nil {
+		return err
+	}
+
+	ct.resetCiliumPods(ctx)
 
 	clientPods, err := ct.client.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindClientName})
 	if err != nil {

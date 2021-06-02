@@ -73,6 +73,9 @@ type Action struct {
 
 	// warned is true when Warn was called on the Action
 	warned bool
+
+	// allowFail is true when the action is allowed to fail
+	allowFail bool
 }
 
 func newAction(t *Test, name string, s Scenario, src *Pod, dst TestPeer) *Action {
@@ -86,6 +89,14 @@ func newAction(t *Test, name string, s Scenario, src *Pod, dst TestPeer) *Action
 		flows:       map[string]flowsSet{},
 		flowResults: map[string]FlowRequirementResults{},
 	}
+}
+
+func (a *Action) Succeeded() bool {
+	return !a.failed
+}
+
+func (a *Action) AllowFail() {
+	a.allowFail = true
 }
 
 func (a *Action) String() string {
@@ -128,6 +139,10 @@ func (a *Action) Run(f func(*Action)) {
 	// Might call Fatal().
 	f(a)
 
+	if a.failed && a.allowFail {
+		a.failed = false
+	}
+
 	// Print flow buffer if any failures or warnings occur.
 	if a.test.ctx.PrintFlows() || a.failed || a.warned {
 		for name, flows := range a.flows {
@@ -169,7 +184,12 @@ func (a *Action) ExecInPod(ctx context.Context, cmd []string) {
 
 	if err != nil || stderr.Len() > 0 {
 		if a.shouldSucceed() {
-			a.Failf("command %q failed: %s", cmdStr, err)
+			if a.allowFail {
+				a.Infof("command %q failed: %s", cmdStr, err)
+				a.fail()
+			} else {
+				a.Failf("command %q failed: %s", cmdStr, err)
+			}
 		} else {
 			a.test.Debugf("command %q failed as expected: %s", cmdStr, err)
 		}
