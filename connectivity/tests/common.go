@@ -21,18 +21,28 @@ import (
 	"github.com/cilium/cilium-cli/connectivity/check"
 )
 
-func curl(peer check.TestPeer) []string {
-	return []string{"curl",
-		"-w", "%{local_ip}:%{local_port} -> %{remote_ip}:%{remote_port} = %{response_code}",
-		"--silent", "--fail", "--show-error",
-		"--connect-timeout", "5",
-		"--output", "/dev/null",
-		fmt.Sprintf("%s://%s",
-			peer.Scheme(),
-			net.JoinHostPort(peer.Address(), fmt.Sprint(peer.Port()))),
-	}
+var curlCmd = []string{"curl",
+	"-w", "%{local_ip}:%{local_port} -> %{remote_ip}:%{remote_port} = %{response_code}",
+	"--silent", "--fail", "--show-error",
+	"--connect-timeout", "5",
+	"--output", "/dev/null"}
+
+func curl(peer check.TestPeer, args ...string) []string {
+	return append(append(curlCmd,
+		fmt.Sprintf("%s://%s", peer.Scheme(), net.JoinHostPort(peer.Address(), fmt.Sprint(peer.Port())))),
+		args...)
+}
+
+func curlName(peer check.TestPeer, args ...string) []string {
+	return append(append(curlCmd,
+		fmt.Sprintf("%s://%s", peer.Scheme(), net.JoinHostPort(peer.FQDN(), fmt.Sprint(peer.Port())))),
+		args...)
 }
 
 func ping(peer check.TestPeer) []string {
 	return []string{"ping", "-w", "3", "-c", "1", peer.Address()}
+}
+
+func pingName(peer check.TestPeer) []string {
+	return []string{"ping", "-w", "3", "-c", "1", peer.FQDN()}
 }

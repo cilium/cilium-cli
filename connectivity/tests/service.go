@@ -49,7 +49,7 @@ func (s *podToService) Run(ctx context.Context, t *check.Test) {
 		for _, svc := range t.Context().EchoServices() {
 
 			t.NewAction(s, fmt.Sprintf("curl-%d", i), &pod, svc).Run(func(a *check.Action) {
-				a.ExecInPod(ctx, curl(svc))
+				a.ExecInPod(ctx, curlName(svc))
 
 				egressFlowRequirements := a.GetEgressRequirements(check.FlowParameters{
 					DNSRequired: true,
