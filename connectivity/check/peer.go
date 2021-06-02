@@ -17,6 +17,7 @@ package check
 import (
 	"net/url"
 	"strconv"
+	"strings"
 
 	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	corev1 "k8s.io/api/core/v1"
@@ -37,6 +38,9 @@ type TestPeer interface {
 	// Address must return the network address of the peer. This can be a
 	// DNS name or an IP address.
 	Address() string
+
+	// FQDN must return the fully-qualified domain name for the peer, if available.
+	FQDN() string
 
 	// Port must return the destination port number used by the test traffic to the peer.
 	Port() uint32
@@ -79,6 +83,11 @@ func (p Pod) Address() string {
 	return p.Pod.Status.PodIP
 }
 
+// FQDN returns the fully-qualified domain name for the Pod.
+func (p Pod) FQDN() string {
+	return strings.ReplaceAll(p.Pod.Status.PodIP, ".", "-") + "." + p.Pod.Namespace + ".pod.cluster.local"
+}
+
 // HasLabel checks if given label exists and value matches.
 func (p Pod) HasLabel(name, value string) bool {
 	v, ok := p.Pod.Labels[name]
@@ -113,6 +122,11 @@ func (s Service) Address() string {
 	return s.Service.Name
 }
 
+// FQDN returns the fully-qualified domain name for the Service.
+func (s Service) FQDN() string {
+	return s.Service.Name + "." + s.Service.Namespace + ".svc.cluster.local"
+}
+
 // Port returns the first port of the Service.
 func (s Service) Port() uint32 {
 	return uint32(s.Service.Spec.Ports[0].Port)
@@ -144,6 +158,11 @@ func (e ExternalWorkload) Scheme() string {
 // Address returns the network address of the ExternalWorkload.
 func (e ExternalWorkload) Address() string {
 	return e.workload.Status.IP
+}
+
+// FQDN returns the fully-qualified domain name for the ExternalWorkload.
+func (e ExternalWorkload) FQDN() string {
+	return strings.ReplaceAll(e.workload.Status.IP, ".", "-") + "." + e.workload.Namespace + ".pod.cluster.local"
 }
 
 // Port returns 0.
@@ -192,6 +211,11 @@ func (ie icmpEndpoint) Address() string {
 	return ie.host
 }
 
+// FQDN returns the address as icmpEndpoints have no domain names
+func (ie icmpEndpoint) FQDN() string {
+	return ie.host
+}
+
 func (ie icmpEndpoint) Port() uint32 {
 	return 0
 }
@@ -237,6 +261,10 @@ func (he httpEndpoint) Scheme() string {
 }
 
 func (he httpEndpoint) Address() string {
+	return he.url.Hostname()
+}
+
+func (he httpEndpoint) FQDN() string {
 	return he.url.Hostname()
 }
 
