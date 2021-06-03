@@ -128,6 +128,14 @@ func (ct *ConnectivityTest) Fatalf(format string, a ...interface{}) {
 // should always call the methods implemented on Test.
 //
 
+// Progress adds a progress indicator if logging is buffered
+func (t *Test) Progress() {
+	// Print progress if logging is buffered
+	if t.logBuf != nil {
+		t.ctx.params.Writer.Write([]byte{'.'})
+	}
+}
+
 // log takes out a read lock and logs a message to the Test's internal buffer.
 // If the internal log buffer is nil, write to user-specified writer instead.
 // Prefix is an optional prefix to the message.
@@ -175,6 +183,9 @@ func (t *Test) flush() {
 	if t.logBuf == nil {
 		return
 	}
+
+	// Terminate progress so far
+	t.ctx.params.Writer.Write([]byte{'\n'})
 
 	// Flush internal buffer to user-specified writer.
 	if _, err := io.Copy(t.ctx.params.Writer, t.logBuf); err != nil {
@@ -293,6 +304,11 @@ func (t *Test) Fatalf(format string, a ...interface{}) {
 //
 // Output methods on an Action scope.
 //
+
+// Progress adds a progress indicator if logging is buffered
+func (a *Action) Progress() {
+	a.test.Progress()
+}
 
 // Log logs a message.
 func (a *Action) Log(s ...interface{}) {
