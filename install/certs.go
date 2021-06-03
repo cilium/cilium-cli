@@ -26,6 +26,7 @@ import (
 	"github.com/cloudflare/cfssl/config"
 	"github.com/cloudflare/cfssl/csr"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -126,6 +127,9 @@ func (k *K8sInstaller) installCerts(ctx context.Context) error {
 
 	k.Log("🔑 Generating certificates for Hubble...")
 	if err := k.createHubbleServerCertificate(ctx); err != nil {
+		if errors.IsAlreadyExists(err) {
+			k.Log("ℹ️  A cilium resource is already present in this cluster. If you are trying to upgrade cilium, please do `cilium upgrade` instead")
+		}
 		return err
 	}
 	k.pushRollbackStep(func(ctx context.Context) {

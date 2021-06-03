@@ -1019,13 +1019,13 @@ const (
 )
 
 type AzureParameters struct {
-	ResourceGroupName     string
-	ResourceGroup         string
-	SubscriptionName      string
-	SubscriptionID        string
-	TenantID              string
-	ClientID              string
-	ClientSecret          string
+	ResourceGroupName string
+	ResourceGroup     string
+	SubscriptionName  string
+	SubscriptionID    string
+	TenantID          string
+	ClientID          string
+	ClientSecret      string
 }
 
 type Parameters struct {
@@ -1680,6 +1680,10 @@ func (k *K8sInstaller) pushRollbackStep(step rollbackStep) {
 }
 
 func (k *K8sInstaller) RollbackInstallation(ctx context.Context) {
+	if len(k.rollbackSteps) == 0 {
+		return
+	}
+
 	k.Log("↩️ Rolling back installation...")
 
 	for _, r := range k.rollbackSteps {
