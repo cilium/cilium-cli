@@ -123,6 +123,7 @@ func (a *Action) Destination() TestPeer {
 // This method is to be called from a Scenario implementation.
 func (a *Action) Run(f func(*Action)) {
 	a.Logf("[.] Action [%s]", a)
+	a.test.progress()
 
 	// Execute the given test function.
 	// Might call Fatal().
