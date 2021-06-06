@@ -1419,6 +1419,76 @@ func (k *K8sInstaller) deployResourceQuotas(ctx context.Context) error {
 	return nil
 }
 
+func tail(pods []*corev1.Pod) []*corev1.Pod {
+	if len(pods) <= 1 {
+		pods = nil
+	} else {
+		pods = pods[1:]
+	}
+	return pods
+}
+
+func groupPodsByNamespace(pods *corev1.PodList) map[string][]*corev1.Pod {
+	nsToPods := make(map[string][]*corev1.Pod)
+	for idx, p := range pods.Items {
+		nsToPods[p.Namespace] = append(nsToPods[p.Namespace], &pods.Items[idx])
+	}
+	return nsToPods
+}
+
+func (k *K8sInstaller) runEvictions(ctx context.Context, cepMap map[string]struct{}, pods *corev1.PodList) {
+	nsToPods := groupPodsByNamespace(pods)
+	var wg sync.WaitGroup
+	for ns, pods := range nsToPods {
+		ns := ns
+		pods := pods
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			k.Log("♻️  Restarting unmanaged pods on namespace=%s", ns)
+			var retry int
+			maxRetry := 5
+			for len(pods) > 0 {
+				pod := pods[0]
+				if pod.Spec.HostNetwork {
+					pods = tail(pods)
+					continue
+				}
+
+				if _, ok := cepMap[pod.Namespace+"/"+pod.Name]; ok {
+					pods = tail(pods)
+					continue
+				}
+
+				err := k.client.EvictPod(ctx, pod.Namespace, pod.Name, metav1.DeleteOptions{})
+				if err != nil {
+					if errors.IsTooManyRequests(err) { //PodDisruptionBudget enforcement
+						waitTime := time.Duration(*pod.Spec.TerminationGracePeriodSeconds)
+						k.Log("ℹ️  Restarting %s/%s would violate PodDisruptionBudget. Sleeping %ds before retrying.", pod.Namespace, pod.Name, waitTime)
+						time.Sleep(waitTime * time.Second)
+						retry++
+						if retry > maxRetry {
+							k.Log("⚠️  Unable to restart pods in namespace=%s, after retries=%d every t=%ds.", pod.Namespace, maxRetry, waitTime)
+							return
+						}
+						continue
+					} else if errors.IsInternalError(err) {
+						k.Log("⚠️  Could not restart pod %s/%s. Please take manual action: %s", pod.Namespace, pod.Name, err)
+					} else {
+						k.Log("⚠️  Unable to restart pod %s/%s: %s.", pod.Namespace, pod.Name, err)
+					}
+					pods = tail(pods)
+					continue
+				}
+				k.Log("♻️  Restarted unmanaged pod %s/%s", pod.Namespace, pod.Name)
+				retry = 0
+				pods = tail(pods)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
 func (k *K8sInstaller) restartUnmanagedPods(ctx context.Context) error {
 	pods, err := k.client.ListPods(ctx, "", metav1.ListOptions{})
 	if err != nil {
@@ -1446,70 +1516,7 @@ func (k *K8sInstaller) restartUnmanagedPods(ctx context.Context) error {
 		}
 	}
 
-	tail := func(pods []*corev1.Pod) []*corev1.Pod {
-		if len(pods) <= 1 {
-			pods = nil
-		} else {
-			pods = pods[1:]
-		}
-		return pods
-	}
-
-	// group pods by namespace to make evictions faster
-	nsToPods := make(map[string][]*corev1.Pod)
-	for idx, p := range pods.Items {
-		nsToPods[p.Namespace] = append(nsToPods[p.Namespace], &pods.Items[idx])
-	}
-	var wg sync.WaitGroup
-	for ns, pods := range nsToPods {
-		ns := ns
-		pods := pods
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			k.Log("♻️  Restarting unmanaged pods on namespace=%s", ns)
-			var retry int
-			maxRetry := 5 // this seems arbitrary
-			for len(pods) > 0 {
-				pod := pods[0]
-				if pod.Spec.HostNetwork {
-					pods = tail(pods)
-					continue
-				}
-
-				if _, ok := cepMap[pod.Namespace+"/"+pod.Name]; ok {
-					pods = tail(pods)
-					continue
-				}
-
-				err := k.client.EvictPod(ctx, pod.Namespace, pod.Name, metav1.DeleteOptions{})
-				if err != nil {
-					if errors.IsTooManyRequests(err) { //PodDisruptionBudget enforcement
-						waitTime := time.Duration(*pod.Spec.TerminationGracePeriodSeconds)
-						k.Log("ℹ️  Evicting %s/%s would violate disruption budget. Sleeping %ds before retrying.", pod.Namespace, pod.Name, waitTime)
-						time.Sleep(waitTime * time.Second)
-						retry++
-						if retry > maxRetry {
-							k.Log("⚠️  Unable to evict pods in namespace=%s, after retries=%d every t=%ds.", pod.Namespace, maxRetry, waitTime)
-							return
-						}
-						continue
-					} else if errors.IsInternalError(err) {
-						k.Log("⚠️  Could not evict pod %s/%s. Please take manual action: %s", pod.Namespace, pod.Name, err)
-					} else {
-						k.Log("⚠️  Unable to evict pod %s/%s: %s.", pod.Namespace, pod.Name, err)
-					}
-					pods = tail(pods)
-					continue
-				}
-				k.Log("♻️  Restarted unmanaged pod %s/%s", pod.Namespace, pod.Name)
-				retry = 0
-				pods = tail(pods)
-			}
-		}()
-	}
-
-	wg.Wait()
+	k.runEvictions(ctx, cepMap, pods)
 	return nil
 }
 
