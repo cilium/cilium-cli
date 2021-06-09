@@ -315,6 +315,12 @@ func (ct *ConnectivityTest) report() error {
 }
 
 func (ct *ConnectivityTest) enableHubbleClient(ctx context.Context) error {
+	if ct.params.FlowValidation == FlowValidationModeDisabled {
+		ct.Info("Hubble flow validation disabled")
+		ct.params.Hubble = false
+		return nil
+	}
+
 	ct.Log("🔭 Enabling Hubble telescope...")
 
 	dialCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
