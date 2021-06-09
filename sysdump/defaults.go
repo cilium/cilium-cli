@@ -30,6 +30,8 @@ const (
 	DefaultCiliumOperatorLabelSelector = "io.cilium/app=operator"
 	DefaultCiliumOperatorNamespace     = DefaultCiliumNamespace
 	DefaultDebug                       = false
+	DefaultEncrypt                     = false
+	DefaultEncryptionKey               = "root"
 	DefaultHubbleLabelSelector         = labelPrefix + "hubble"
 	DefaultHubbleNamespace             = DefaultCiliumNamespace
 	DefaultHubbleRelayLabelSelector    = labelPrefix + "hubble-relay"

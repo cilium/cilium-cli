@@ -47,6 +47,10 @@ type Options struct {
 	CiliumOperatorNamespace string
 	// Whether to enable debug logging.
 	Debug bool
+	// Whether to encrypt the resulting zip file.
+	Encrypt bool
+	// The path to the OpenPGP-compliant public key to use for encrypting the resulting zip file.
+	EncryptionKeys []string
 	// The labels used to target Hubble pods.
 	HubbleLabelSelector string
 	// The namespace Hubble is running in.
@@ -668,14 +672,10 @@ func (c *Collector) Run() error {
 	}
 
 	// Create the zip file in the current directory.
-	c.log("🗳 Compiling sysdump")
-	p, err := os.Getwd()
+	c.log("🗳 Archiving sysdump")
+	f, err := c.createOutputFile(d, absoluteTempPath)
 	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
-	}
-	f := filepath.Join(p, replaceTimestamp(c.options.OutputFileName)+".zip")
-	if err := archiver.Archive([]string{d}, f); err != nil {
-		return fmt.Errorf("failed to create zip file: %w", err)
+		return fmt.Errorf("failed to create output: %w", err)
 	}
 	c.log("✅ The sysdump has been saved to %s", f)
 
@@ -685,6 +685,46 @@ func (c *Collector) Run() error {
 		c.logWarn("failed to remove temporary directory %s: %v", d, err)
 	}
 	return nil
+}
+
+func (c *Collector) createOutputFile(d string, path func(string) string) (string, error) {
+	// Create the zip file.
+	f := path(outputZipFilename)
+	if err := archiver.Archive([]string{d}, f); err != nil {
+		return "", fmt.Errorf("failed to create zip file: %w", err)
+	}
+	// Encrypt it if asked to.
+	if c.options.Encrypt {
+		e, err := createEncryptedZipFile(f, c.options.EncryptionKeys)
+		if err != nil {
+			return "", fmt.Errorf("failed to encrypt zip file: %w", err)
+		}
+		f = e
+	}
+	// Copy the output file to the current directory.
+	// The original one will be deleted once the temporary directory is cleaned up.
+	p, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current directory: %w", err)
+	}
+	r, err := os.Open(f)
+	if err != nil {
+		return "", fmt.Errorf("failed to open sysdump file: %w", err)
+	}
+	defer r.Close()
+	o := filepath.Join(p, filepath.Base(f))
+	w, err := os.Create(o)
+	if err != nil {
+		return "", fmt.Errorf("failed to create sysdump file: %w", err)
+	}
+	defer w.Close()
+	if _, err := io.Copy(w, r); err != nil {
+		return "", fmt.Errorf("failed to copy sysdump file: %w", err)
+	}
+	if err := w.Sync(); err != nil {
+		return "", fmt.Errorf("failed to flush sysdump file: %w", err)
+	}
+	return o, nil
 }
 
 func (c *Collector) log(msg string, args ...interface{}) {

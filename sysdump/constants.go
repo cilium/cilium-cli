@@ -58,6 +58,7 @@ const (
 	kubernetesServicesFileName               = "k8s-services-<ts>.yaml"
 	kubernetesVersionInfoFileName            = "k8s-version-<ts>.txt"
 	timestampPlaceholderFileName             = "<ts>"
+	outputZipFilename                        = "cilium-sysdump-<ts>.zip"
 )
 
 const (
