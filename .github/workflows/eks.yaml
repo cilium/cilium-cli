@@ -102,8 +102,9 @@ jobs:
             --set tag=${{ steps.vars.outputs.sha }} \
             --set cluster_name=${{ env.clusterName }}
 
-      - name: Wait for test job
+      - name: Wait for and copy the sysdump in the background and wait for job termination
         run: |
+          kubectl -n kube-system exec job/cilium-cli -- cat /tmp/cilium-sysdump-out > cilium-sysdump-out.zip &
           kubectl -n kube-system wait job/cilium-cli --for=condition=complete --timeout=10m
 
       - name: Post-test information gathering
@@ -112,8 +113,6 @@ jobs:
           kubectl logs -n kube-system job/cilium-cli-install
           kubectl logs -n kube-system job/cilium-cli
           kubectl get pods --all-namespaces -o wide
-          curl -sLO https://github.com/cilium/cilium-sysdump/releases/latest/download/cilium-sysdump.zip
-          python cilium-sysdump.zip --output cilium-sysdump-out
         shell: bash {0} # Disable default fail-fast behaviour so that all commands run independently
 
       - name: Clean up EKS

@@ -3,6 +3,10 @@
 set -x
 set -e
 
+# Create a FIFO through which we'll pipe the sysdump before the job terminates.
+# NOTE: This MUST be the first step in the script.
+mkfifo /tmp/cilium-sysdump-out
+
 # Enable Relay
 cilium hubble enable
 
@@ -18,3 +22,10 @@ cilium connectivity test --test '!/pod-to-local-nodeport' --all-flows
 
 # Retrieve Cilium  status
 cilium status
+
+# Grab a sysdump
+cilium sysdump --output-filename=cilium-sysdump-out
+
+# Wait for the sysdump to be read.
+# NOTE: This MUST be the last step in the script.
+cat cilium-sysdump-out >> /tmp/cilium-sysdump-out

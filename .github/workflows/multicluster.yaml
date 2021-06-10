@@ -132,8 +132,10 @@ jobs:
             --set cluster_name_2=${{ env.clusterName2 }} \
             --set cluster_cidr_2=${{ steps.cluster2.outputs.cluster_cidr }}
 
-      - name: Wait for test job
+      - name: Wait for and copy the sysdump in the background and wait for job termination
         run: |
+          kubectl -n kube-system exec job/cilium-cli -- cat /tmp/cilium-sysdump-out-1 > cilium-sysdump-out-1.zip &
+          kubectl -n kube-system exec job/cilium-cli -- cat /tmp/cilium-sysdump-out-2 > cilium-sysdump-out-2.zip &
           kubectl -n kube-system wait job/cilium-cli --for=condition=complete --timeout=20m
 
       - name: Post-test information gathering
@@ -141,8 +143,6 @@ jobs:
         run: |
           kubectl logs -n kube-system job/cilium-cli
           kubectl get pods --all-namespaces -o wide
-          curl -sLO https://github.com/cilium/cilium-sysdump/releases/latest/download/cilium-sysdump.zip
-          python cilium-sysdump.zip --output cilium-sysdump-out
         shell: bash {0} # Disable default fail-fast behaviour so that all commands run independently
 
       - name: Clean up GKE
@@ -153,12 +153,20 @@ jobs:
           gcloud container clusters delete ${{ env.clusterName2 }} --zone ${{ env.zone }} --quiet --async
         shell: bash {0} # Disable default fail-fast behaviour so that all commands run independently
 
-      - name: Upload artifacts
+      - name: Upload artifacts (1)
         if: ${{ failure() }}
         uses: actions/upload-artifact@ee69f02b3dfdecd58bb31b4d133da38ba6fe3700
         with:
-          name: cilium-sysdump-out.zip
-          path: cilium-sysdump-out.zip
+          name: cilium-sysdump-out-1.zip
+          path: cilium-sysdump-out-1.zip
+          retention-days: 5
+
+      - name: Upload artifacts (2)
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ee69f02b3dfdecd58bb31b4d133da38ba6fe3700
+        with:
+          name: cilium-sysdump-out-2.zip
+          path: cilium-sysdump-out-2.zip
           retention-days: 5
 
       - name: Send slack notification
