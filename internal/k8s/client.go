@@ -310,6 +310,19 @@ func (c *Client) ExecInPodWithStderr(ctx context.Context, namespace, pod, contai
 	return result.Stdout, result.Stderr, err
 }
 
+func (c *Client) ExecInPodWithTTY(ctx context.Context, namespace, pod, container string, command []string, stdin io.Reader, stdout io.Writer) error {
+	_, err := c.execInPod(ctx, ExecParameters{
+		Namespace: namespace,
+		Pod:       pod,
+		Container: container,
+		Command:   command,
+		TTY:       true,
+		Stdin:     stdin,
+		Stdout:    stdout,
+	})
+	return err
+}
+
 func (c *Client) ExecInPod(ctx context.Context, namespace, pod, container string, command []string) (bytes.Buffer, error) {
 	result, err := c.execInPod(ctx, ExecParameters{
 		Namespace: namespace,
