@@ -416,6 +416,7 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 				K8sClient: client,
 				Pod:       echoPod.DeepCopy(),
 				scheme:    "http",
+				path:      "/",
 				port:      8080, // listen port of the echo server inside the container
 			}
 		}

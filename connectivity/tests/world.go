@@ -44,6 +44,7 @@ func (s *podToWorld) Name() string {
 
 func (s *podToWorld) Run(ctx context.Context, t *check.Test) {
 	ghttp := check.HTTPEndpoint("google-http", "http://google.com")
+	ghttpindex := check.HTTPEndpoint("google-http", "http://google.com/index.html")
 	ghttps := check.HTTPEndpoint("google-https", "https://google.com")
 	wwwghttp := check.HTTPEndpoint("www-google-http", "http://www.google.com")
 
@@ -67,6 +68,21 @@ func (s *podToWorld) Run(ctx context.Context, t *check.Test) {
 		cmd := curl(ghttp)
 
 		t.NewAction(s, "http-to-google", client, ghttp).Run(func(a *check.Action) {
+			a.ExecInPod(ctx, cmd)
+
+			egressFlowRequirements := a.GetEgressRequirements(check.FlowParameters{
+				DNSRequired: true,
+				RSTAllowed:  true,
+			})
+			a.ValidateFlows(ctx, client.Name(), client.Pod.Status.PodIP, egressFlowRequirements)
+		})
+	}
+
+	// With http, over port 80, index.html
+	if client := t.Context().RandomClientPod(); client != nil {
+		cmd := curl(ghttpindex)
+
+		t.NewAction(s, "http-to-google-index", client, ghttpindex).Run(func(a *check.Action) {
 			a.ExecInPod(ctx, cmd)
 
 			egressFlowRequirements := a.GetEgressRequirements(check.FlowParameters{

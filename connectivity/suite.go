@@ -121,19 +121,23 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 	ct.NewTest("to-fqdns").WithPolicy(clientEgressToFQDNsGooglePolicyYAML).
 		WithScenarios(
 			tests.PodToWorld(""),
-		).WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
-
-		if a.Destination().Port() == 80 && a.Destination().Address() == "google.com" {
-			egress = check.ResultDNSOK
-			egress.HTTP = check.HTTP{
-				Method: "GET",
-				URL:    "http://google.com/",
+		).
+		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			if a.Destination().Port() == 80 && a.Destination().Address() == "google.com" {
+				if a.Destination().Path() == "/" || a.Destination().Path() == "" {
+					egress = check.ResultDNSOK
+					egress.HTTP = check.HTTP{
+						Method: "GET",
+						URL:    "http://google.com/",
+					}
+					return egress, check.ResultNone
+				}
+				// Else expect HTTP drop by proxy
+				return check.ResultDNSOKHttpDrop, check.ResultNone
 			}
-			return egress, check.ResultNone
-		}
-		// No HTTP proxy on other ports
-		return check.ResultDNSOKDrop, check.ResultNone
-	})
+			// No HTTP proxy on other ports
+			return check.ResultDNSOKDrop, check.ResultNone
+		})
 
 	// This policy allows UDP to kube-dns and port 80 TCP to all 'world' endpoints.
 	ct.NewTest("to-entities-world").
