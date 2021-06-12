@@ -21,6 +21,7 @@ import (
 	"io"
 	"math"
 	"net"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -187,6 +188,8 @@ func (a *Action) fail() {
 	a.failed = true
 }
 
+var exitCodeRegex = regexp.MustCompile("exit code ([0-9]+)")
+
 func (a *Action) ExecInPod(ctx context.Context, cmd []string) {
 	if err := ctx.Err(); err != nil {
 		a.Fatal("Skipping command execution:", ctx.Err())
@@ -199,6 +202,7 @@ func (a *Action) ExecInPod(ctx context.Context, cmd []string) {
 	pod := a.src
 
 	a.Debug("Executing command", cmd)
+	expectedExitCode := a.expectedExitCode()
 
 	// Warning: ExecInPod* does not use ctx, command cannot be cancelled.
 	stdout, stderr, err := pod.K8sClient.ExecInPodWithStderr(context.TODO(),
@@ -207,17 +211,36 @@ func (a *Action) ExecInPod(ctx context.Context, cmd []string) {
 	cmdName := cmd[0]
 	cmdStr := strings.Join(cmd, " ")
 
-	if err != nil || stderr.Len() > 0 {
-		if a.shouldSucceed() {
+	if err != nil {
+		// Extract exit code from 'err'
+		exitCode := ExitCode(0)
+		m := exitCodeRegex.FindStringSubmatch(err.Error())
+		if len(m) != 2 || len(m[1]) == 0 {
+			a.Warnf("Unable to extract exit code from error: %s", err.Error())
+		} else {
+			i, err := strconv.Atoi(m[1])
+			if err != nil || i <= 0 || i > 255 {
+				a.Warnf("Invalid exit code: %s", m[1])
+			} else {
+				exitCode = ExitCode(i)
+			}
+		}
+
+		if expectedExitCode == 0 {
 			a.Failf("command %q failed: %s", cmdStr, err)
 		} else {
-			a.test.Infof("command %q failed as expected: %s", cmdStr, err)
+			if expectedExitCode == ExitAnyError || exitCode == expectedExitCode {
+				a.test.Infof("command %q failed as expected: %s", cmdStr, err)
+			} else {
+				a.Failf("command %q failed with unexpected exit code: %s (expected %d, found %d)", cmdStr, err, expectedExitCode, exitCode)
+			}
 		}
 	} else {
-		if !a.shouldSucceed() {
+		if expectedExitCode != 0 {
 			a.Failf("command %q succeeded while it should have failed: %s", cmdStr, stdout.String())
 		}
 	}
+
 	if a.failed {
 		if stderr.Len() > 0 {
 			a.Warnf("%s stderr: %s", cmdName, stderr.String())
@@ -227,9 +250,15 @@ func (a *Action) ExecInPod(ctx context.Context, cmd []string) {
 	}
 }
 
-// shouldSucceed returns true if no drops are expected in either direction.
-func (a *Action) shouldSucceed() bool {
-	return !a.expEgress.Drop && !a.expIngress.Drop
+// expectedExitCode returns the expected shell exit code, or ExitAnyError for any value between 1-255.
+func (a *Action) expectedExitCode() ExitCode {
+	if a.expEgress.ExitCode != 0 {
+		return a.expEgress.ExitCode
+	}
+	if a.expIngress.ExitCode != 0 {
+		return a.expIngress.ExitCode
+	}
+	return 0 // success
 }
 
 func (a *Action) printFlows(pod string, f flowsSet, r FlowRequirementResults) {

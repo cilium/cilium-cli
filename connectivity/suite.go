@@ -131,8 +131,8 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 			}
 			return egress, check.ResultNone
 		}
-
-		return check.ResultDNSOKRequestDrop, check.ResultNone
+		// No HTTP proxy on other ports
+		return check.ResultDNSOKDrop, check.ResultNone
 	})
 
 	// This policy allows UDP to kube-dns and port 80 TCP to all 'world' endpoints.

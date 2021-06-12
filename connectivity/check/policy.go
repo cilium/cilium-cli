@@ -129,17 +129,50 @@ var (
 	// ResultDNSOK expects a successful command, only generating DNS traffic.
 	ResultDNSOK = Result{DNSProxy: true}
 
-	// ResultDNSOKRequestDrop expects a failed command, generating DNS traffic and a dropped flow.
-	ResultDNSOKRequestDrop = Result{DNSProxy: true, Drop: true}
+	// ResultDNSOKDrop expects a failed command, generating DNS traffic and a dropped flow.
+	// 28 is the curl exit code for connection OR DNS resolution timeouts.
+	ResultDNSOKDrop = Result{
+		DNSProxy: true,
+		Drop:     true,
+		ExitCode: 28,
+	}
+
+	// ResultDNSOKHttpDrop expects a failed command, generating DNS traffic and a dropped flow.
+	// 22 is the curl exit code for HTTP errors.
+	ResultDNSOKHttpDrop = Result{
+		DNSProxy: true,
+		Drop:     true,
+		ExitCode: 22,
+	}
 
 	// ResultDrop expects a dropped flow and a failed command.
-	ResultDrop = Result{Drop: true}
+	ResultDrop = Result{Drop: true, ExitCode: ExitAnyError}
+
+	// ResultHTTPDrop expects a dropped flow and a failed command.
+	// 22 is the Curl exit code for CURLE_HTTP_RETURNED_ERROR
+	ResultHTTPDrop = Result{Drop: true, ExitCode: 22}
 )
 
 type HTTP struct {
 	Status string
 	Method string
 	URL    string
+}
+
+type ExitCode int16
+
+const (
+	ExitAnyError ExitCode = -1
+)
+
+func (e ExitCode) Check(code uint8) bool {
+	switch e {
+	case ExitAnyError:
+		return code != 0
+	case ExitCode(code):
+		return true
+	}
+	return false
 }
 
 type Result struct {
@@ -155,8 +188,11 @@ type Result struct {
 	// L7Proxy is true when L7 proxy (e.g., Envoy) is to be expected
 	L7Proxy bool
 
-	// HTTPStatus is true when a HTTP status code in response is to be expected
+	// HTTPStatus is non-zero when a HTTP status code in response is to be expected
 	HTTP HTTP
+
+	// ExitCode is the expected shell exit code
+	ExitCode ExitCode
 }
 
 func (r Result) String() string {
@@ -187,6 +223,9 @@ func (r Result) String() string {
 	if r.HTTP.Status != "" {
 		ret += "-"
 		ret += r.HTTP.Status
+	}
+	if r.ExitCode >= 0 && r.ExitCode <= 255 {
+		ret += fmt.Sprintf("-exit(%d)", r.ExitCode)
 	}
 	return ret
 }
