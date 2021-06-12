@@ -345,11 +345,12 @@ func (a *Action) Infof(format string, s ...interface{}) {
 }
 
 // Warn must be called when a warning is detected performing the Action.
-//
+// Warnings are logged both inline and at the end of a test.
 // Action name is prepended to the warning as they are displayed separately
 // at the end of a Test.
 func (a *Action) Warn(s ...interface{}) {
 	a.warned = true
+	a.test.log(warn, s...)
 
 	p := []interface{}{fmt.Sprintf("[%s]", a.String())}
 	p = append(p, s...)
@@ -358,11 +359,12 @@ func (a *Action) Warn(s ...interface{}) {
 }
 
 // Warnf must be called when a warning is detected performing the Action.
-//
+// Warnings are logged both inline and at the end of a test.
 // Action name is prepended to the warning as they are displayed separately
 // at the end of a Test.
 func (a *Action) Warnf(format string, s ...interface{}) {
 	a.warned = true
+	a.test.logf(warn+" "+format, s...)
 	a.test.Warnf(fmt.Sprintf("[%s] ", a.String())+format, s...)
 }
 
