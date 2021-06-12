@@ -207,21 +207,22 @@ func (a *Action) ExecInPod(ctx context.Context, cmd []string) {
 	cmdName := cmd[0]
 	cmdStr := strings.Join(cmd, " ")
 
-	if stderr.Len() > 0 {
-		a.test.Debugf("%s stderr: %s", cmdName, stderr.String())
-	} else if stdout.Len() > 0 {
-		a.test.Debugf("%s stdout: %s", cmdName, stdout.String())
-	}
-
 	if err != nil || stderr.Len() > 0 {
 		if a.shouldSucceed() {
 			a.Failf("command %q failed: %s", cmdStr, err)
 		} else {
-			a.test.Debugf("command %q failed as expected: %s", cmdStr, err)
+			a.test.Infof("command %q failed as expected: %s", cmdStr, err)
 		}
 	} else {
 		if !a.shouldSucceed() {
 			a.Failf("command %q succeeded while it should have failed: %s", cmdStr, stdout.String())
+		}
+	}
+	if a.failed {
+		if stderr.Len() > 0 {
+			a.Warnf("%s stderr: %s", cmdName, stderr.String())
+		} else if stdout.Len() > 0 {
+			a.Warnf("%s stdout: %s", cmdName, stdout.String())
 		}
 	}
 }
@@ -552,7 +553,7 @@ var errNeedMoreFlows = errors.New("Required flows not found yet")
 func (a *Action) ValidateFlows(ctx context.Context, pod, podIP string, reqs []filters.FlowSetRequirement) {
 	oldFailed := a.failed
 	oldTestFailed := a.test.failed
-	
+
 	err := a.validateFlows(ctx, pod, podIP, reqs)
 	if err != nil {
 		// Do not fail test due to inability to get flows from Hubble
@@ -561,7 +562,7 @@ func (a *Action) ValidateFlows(ctx context.Context, pod, podIP string, reqs []fi
 		a.Warnf("Cannot get flows for %s: %s", pod, err.Error())
 	}
 }
-	
+
 // ValidateFlows retrieves the flow pods of the specified pod and validates
 // that all filters find a match. On failure, t.Fail() is called.
 // An error is returned if flow validation cannot be performed.
