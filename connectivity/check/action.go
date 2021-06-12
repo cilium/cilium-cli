@@ -175,6 +175,10 @@ func (a *Action) Run(f func(*Action)) {
 	if a.failed {
 		a.printMonitors()
 	}
+	if a.failed && a.test.ctx.params.PauseOnFail {
+		a.Log("Pausing after test case failure, press the Enter key to continue:")
+		fmt.Scanln()
+	}
 }
 
 // fail marks the Action as failed.
