@@ -22,7 +22,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cilium/cilium-cli/defaults"
 	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type Test struct {
@@ -35,11 +37,17 @@ type Test struct {
 	// True if the Test is marked as skipped.
 	skipped bool
 
+	// True if the Test is marked as quarantined.
+	quarantined bool
+
 	// True if the Test is marked as failed.
 	failed bool
 
 	// Warning counter for reporting purposes.
 	warnings uint
+
+	// ciliumRestarted is true if Cilium Agents have been restarted
+	ciliumRestarted bool
 
 	// Scenarios registered to this test.
 	scenarios map[Scenario][]*Action
@@ -65,6 +73,19 @@ type Test struct {
 
 	// List of functions to be called when Run() returns.
 	finalizers []func() error
+}
+
+func (t *Test) Quarantine() *Test {
+	t.quarantined = true
+	return t
+}
+
+func (t *Test) ClearFail() {
+	t.failed = false
+}
+
+func (t *Test) Quarantined() bool {
+	return t.quarantined
 }
 
 func (t *Test) String() string {
@@ -111,6 +132,11 @@ func (t *Test) skip(s Scenario) {
 func (t *Test) willRun() bool {
 	var sc int
 
+	// Check if the test is quarantined
+	if !(t.Quarantined() == t.Context().params.RunQuarantined) {
+		return false
+	}
+
 	for s := range t.scenarios {
 		if !t.Context().params.testEnabled(t.scenarioName(s)) {
 			sc++
@@ -127,6 +153,10 @@ func (t *Test) finalize() {
 	if t.failed && t.Context().params.PauseOnFail {
 		t.Log("Pausing after test failure, press the Enter key to continue:")
 		fmt.Scanln()
+	}
+
+	if t.ciliumRestarted {
+		t.ctx.resetCiliumPods(context.TODO())
 	}
 
 	t.Debug("Finalizing Test", t.Name())
@@ -227,6 +257,33 @@ func (t *Test) WithScenarios(sl ...Scenario) *Test {
 	}
 
 	return t
+}
+
+// RestartCiliumPods restarts all Cilium pods in the cluster of the
+// given 'pod', which need not be a Cilium pod.
+func (t *Test) RestartCiliumPods(pod Pod) {
+	if err := pod.K8sClient.DeletePodCollection(context.Background(), t.ctx.params.CiliumNamespace,
+		metav1.DeleteOptions{}, metav1.ListOptions{LabelSelector: defaults.CiliumPodSelector}); err != nil {
+		t.Fatalf("Unable to restart Cilium pods: %v", err)
+	} else {
+		t.ciliumRestarted = true
+		t.Info("Restarted Cilium pods")
+	}
+}
+
+// CiliumRunning returns true if Cilium agents API is available on all Cilium Pods
+func (t *Test) CiliumRunning() bool {
+	err := t.ctx.resetCiliumPods(context.TODO())
+	if err != nil || len(t.ctx.ciliumPods) == 0 {
+		return false
+	}
+	// Get current policy revisions in all Cilium pods
+	_, err = t.ctx.getCiliumPolicyRevisions(context.TODO())
+	if err != nil {
+		return false
+	}
+
+	return true
 }
 
 // NewAction creates a new Action. s must be the Scenario the Action is created

@@ -45,6 +45,7 @@ type Parameters struct {
 	Verbose               bool
 	Debug                 bool
 	PauseOnFail           bool
+	RunQuarantined        bool
 }
 
 func (p Parameters) ciliumEndpointTimeout() time.Duration {
@@ -106,6 +107,9 @@ type FlowRequirementResults struct {
 func (r *FlowRequirementResults) Merge(from *FlowRequirementResults) {
 	if r.FirstMatch < 0 || from.FirstMatch >= 0 && from.FirstMatch < r.FirstMatch {
 		r.FirstMatch = from.FirstMatch
+	}
+	if from.FirstMatch > r.LastMatch {
+		r.LastMatch = from.FirstMatch
 	}
 	if from.LastMatch > r.LastMatch {
 		r.LastMatch = from.LastMatch

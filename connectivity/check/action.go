@@ -74,6 +74,9 @@ type Action struct {
 
 	// warned is true when Warn was called on the Action
 	warned bool
+
+	// allowFail is true when the action is allowed to fail
+	allowFail bool
 }
 
 func newAction(t *Test, name string, s Scenario, src *Pod, dst TestPeer) *Action {
@@ -87,6 +90,14 @@ func newAction(t *Test, name string, s Scenario, src *Pod, dst TestPeer) *Action
 		flows:       map[string]flowsSet{},
 		flowResults: map[string]FlowRequirementResults{},
 	}
+}
+
+func (a *Action) Succeeded() bool {
+	return !a.failed
+}
+
+func (a *Action) AllowFail() {
+	a.allowFail = true
 }
 
 func (a *Action) String() string {
@@ -124,10 +135,15 @@ func (a *Action) Destination() TestPeer {
 // This method is to be called from a Scenario implementation.
 func (a *Action) Run(f func(*Action)) {
 	a.Logf("[.] Action [%s]", a)
+	a.Progress()
 
 	// Execute the given test function.
 	// Might call Fatal().
 	f(a)
+
+	if a.failed && a.allowFail {
+		a.failed = false
+	}
 
 	// Print flow buffer if any failures or warnings occur.
 	if a.test.ctx.PrintFlows() || a.failed || a.warned {
@@ -153,7 +169,7 @@ func (a *Action) ExecInPod(ctx context.Context, cmd []string) {
 	}
 	pod := a.src
 
-	a.Debug("Executing command", cmd)
+	a.Debugf("%s: Executing command %s", a.started.UTC(), cmd)
 
 	// Warning: ExecInPod* does not use ctx, command cannot be cancelled.
 	stdout, stderr, err := pod.K8sClient.ExecInPodWithStderr(context.TODO(),
@@ -170,7 +186,12 @@ func (a *Action) ExecInPod(ctx context.Context, cmd []string) {
 
 	if err != nil || stderr.Len() > 0 {
 		if a.shouldSucceed() {
-			a.Failf("command %q failed: %s", cmdStr, err)
+			if a.allowFail {
+				a.Infof("command %q failed: %s", cmdStr, err)
+				a.fail()
+			} else {
+				a.Failf("command %q failed: %s", cmdStr, err)
+			}
 		} else {
 			a.test.Debugf("command %q failed as expected: %s", cmdStr, err)
 		}
@@ -319,8 +340,8 @@ func (a *Action) GetEgressRequirements(p FlowParameters) (reqs []filters.FlowSet
 		dstIP = ""
 	}
 
-	ipResponse := filters.IP(dstIP, srcIP)
 	ipRequest := filters.IP(srcIP, dstIP)
+	ipResponse := filters.IP(dstIP, srcIP)
 
 	switch p.Protocol {
 	case ICMP:
@@ -405,16 +426,24 @@ func (a *Action) GetEgressRequirements(p FlowParameters) (reqs []filters.FlowSet
 	reqs = append(reqs, egress)
 
 	if p.DNSRequired || a.expEgress.DNSProxy {
+		// Override to allow for any DNS server
+		ipRequest := filters.IP(srcIP, "")
+		ipResponse := filters.IP("", srcIP)
+
 		dnsRequest := filters.Or(filters.UDP(0, 53), filters.TCP(0, 53))
 		dnsResponse := filters.Or(filters.UDP(53, 0), filters.TCP(53, 0))
 
 		dns := filters.FlowSetRequirement{First: filters.FlowRequirement{Filter: filters.And(ipRequest, dnsRequest), Msg: "DNS request"}}
 		if a.expEgress.DNSProxy {
+			qname := a.dst.FQDN() + "."
 			dns.Middle = []filters.FlowRequirement{{Filter: filters.And(ipResponse, dnsResponse), Msg: "DNS response"}}
-			dns.Last = filters.FlowRequirement{Filter: filters.And(ipResponse, dnsResponse, filters.DNS(a.dst.Address()+".", 0)), Msg: "DNS proxy"}
+			dns.Last = filters.FlowRequirement{Filter: filters.And(ipResponse, dnsResponse, filters.DNS(qname, 0)), Msg: "DNS proxy"}
+			// 5 is the default rcode returned on error such as policy deny
+			dns.Except = []filters.FlowRequirement{{Filter: filters.And(ipResponse, dnsResponse, filters.DNS(qname, 5)), Msg: "DNS proxy DROP"}}
 		} else {
 			dns.Last = filters.FlowRequirement{Filter: filters.And(ipResponse, dnsResponse), Msg: "DNS response"}
 		}
+
 		reqs = append(reqs, dns)
 	}
 
@@ -462,7 +491,7 @@ func (a *Action) GetIngressRequirements(p FlowParameters) []filters.FlowSetRequi
 				First: filters.FlowRequirement{Filter: filters.And(ipRequest, icmpRequest), Msg: "ICMP request"},
 				Last:  filters.FlowRequirement{Filter: filters.And(ipResponse, icmpResponse), Msg: "ICMP response", SkipOnAggregation: true},
 				Except: []filters.FlowRequirement{
-					{Filter: filters.Drop(), Msg: "Drop"},
+					{Filter: filters.And(ipRequest, icmpRequest, filters.Drop()), Msg: "Drop"},
 				},
 			}
 		}
@@ -541,13 +570,17 @@ retry:
 	a.flows[pod] = flows
 
 	res := FlowRequirementResults{FirstMatch: -1, LastMatch: -1}
+	resFail := FlowRequirementResults{FirstMatch: -1, LastMatch: -1}
 	for i, req := range reqs {
 		offset := 0
 		var r FlowRequirementResults
 		for offset < len(flows) {
 			r = a.matchFlowRequirements(ctx, flows, offset, pod, &req)
-			// Check if fully matched or no match for the first flow
-			if !r.NeedMoreFlows || r.FirstMatch == -1 {
+			if r.Failures > 0 {
+				resFail.Merge(&r)
+			}
+			// Check if successfully fully matched or no match for the first flow
+			if (!r.NeedMoreFlows && r.Failures == 0) || r.FirstMatch == -1 {
 				break
 			}
 			// Try if some other flow instance would find both first and last required flows
@@ -561,7 +594,13 @@ retry:
 			}
 		}
 		// Merge results
-		res.Merge(&r)
+		if r.Failures > 0 {
+			// on Failure merge all tries to see what flows matched
+			res.Merge(&resFail)
+		} else {
+			// on Success only merge the successfully matched filters
+			res.Merge(&r)
+		}
 		a.Debugf("Merged flow validation results #%d: %v", i, res)
 	}
 	a.flowResults[pod] = res

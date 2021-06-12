@@ -48,6 +48,7 @@ type deploymentParameters struct {
 	Affinity       *corev1.Affinity
 	ReadinessProbe *corev1.Probe
 	Labels         map[string]string
+	Annotations    map[string]string
 }
 
 func newDeployment(p deploymentParameters) *appsv1.Deployment {
@@ -103,6 +104,12 @@ func newDeployment(p deploymentParameters) *appsv1.Deployment {
 
 	for k, v := range p.Labels {
 		dep.Spec.Template.ObjectMeta.Labels[k] = v
+	}
+	if len(p.Annotations) > 0 {
+		dep.Spec.Template.ObjectMeta.Annotations = make(map[string]string, len(p.Annotations))
+		for k, v := range p.Annotations {
+			dep.Spec.Template.ObjectMeta.Annotations[k] = v
+		}
 	}
 
 	return dep
@@ -240,11 +247,12 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 	if err != nil {
 		ct.Logf("✨ [%s] Deploying client deployment...", ct.clients.src.ClusterName())
 		clientDeployment := newDeployment(deploymentParameters{
-			Name:    ClientDeploymentName,
-			Kind:    kindClientName,
-			Port:    8080,
-			Image:   defaults.ConnectivityCheckAlpineCurlImage,
-			Command: []string{"/bin/ash", "-c", "sleep 10000000"},
+			Name:        ClientDeploymentName,
+			Kind:        kindClientName,
+			Port:        8080,
+			Image:       defaults.ConnectivityCheckAlpineCurlImage,
+			Command:     []string{"/bin/ash", "-c", "sleep 10000000"},
+			Annotations: map[string]string{"io.cilium.proxy-visibility": "<Egress/53/ANY/DNS>"},
 		})
 		_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, clientDeployment, metav1.CreateOptions{})
 		if err != nil {
@@ -257,12 +265,13 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 	if err != nil {
 		ct.Logf("✨ [%s] Deploying client2 deployment...", ct.clients.src.ClusterName())
 		clientDeployment := newDeployment(deploymentParameters{
-			Name:    Client2DeploymentName,
-			Kind:    kindClientName,
-			Port:    8080,
-			Image:   defaults.ConnectivityCheckAlpineCurlImage,
-			Command: []string{"/bin/ash", "-c", "sleep 10000000"},
-			Labels:  map[string]string{"other": "client"},
+			Name:        Client2DeploymentName,
+			Kind:        kindClientName,
+			Port:        8080,
+			Image:       defaults.ConnectivityCheckAlpineCurlImage,
+			Command:     []string{"/bin/ash", "-c", "sleep 10000000"},
+			Labels:      map[string]string{"other": "client"},
+			Annotations: map[string]string{"io.cilium.proxy-visibility": "<Egress/53/ANY/DNS>"},
 		})
 		_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, clientDeployment, metav1.CreateOptions{})
 		if err != nil {
@@ -310,6 +319,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 					},
 				},
 				ReadinessProbe: newLocalReadinessProbe(8080, "/"),
+				Annotations:    map[string]string{"io.cilium.proxy-visibility": "<Ingress/8080/TCP/HTTP>"},
 			})
 
 			_, err = ct.clients.dst.CreateDeployment(ctx, ct.params.TestNamespace, echoOtherNodeDeployment, metav1.CreateOptions{})
@@ -356,18 +366,8 @@ func (ct *ConnectivityTest) deleteDeployments(ctx context.Context, client *k8s.C
 }
 
 // validateDeployment checks if the Deployments we created have the expected Pods in them.
-func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
-
-	ct.Debug("Validating Deployments...")
-
-	srcDeployments, dstDeployments := ct.deploymentList()
-	if err := ct.waitForDeployments(ctx, ct.clients.src, srcDeployments); err != nil {
-		return err
-	}
-	if err := ct.waitForDeployments(ctx, ct.clients.dst, dstDeployments); err != nil {
-		return err
-	}
-
+func (ct *ConnectivityTest) resetCiliumPods(ctx context.Context) error {
+	ct.ciliumPods = make(map[string]Pod)
 	for _, client := range ct.clients.clients() {
 		ciliumPods, err := client.ListPods(ctx, ct.params.CiliumNamespace, metav1.ListOptions{LabelSelector: "k8s-app=cilium"})
 		if err != nil {
@@ -381,6 +381,23 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 			}
 		}
 	}
+	return nil
+}
+
+// validateDeployment checks if the Deployments we created have the expected Pods in them.
+func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
+
+	ct.Debug("Validating Deployments...")
+
+	srcDeployments, dstDeployments := ct.deploymentList()
+	if err := ct.waitForDeployments(ctx, ct.clients.src, srcDeployments); err != nil {
+		return err
+	}
+	if err := ct.waitForDeployments(ctx, ct.clients.dst, dstDeployments); err != nil {
+		return err
+	}
+
+	ct.resetCiliumPods(ctx)
 
 	clientPods, err := ct.client.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindClientName})
 	if err != nil {
@@ -462,7 +479,47 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 		}
 	}
 
+	// Set the timeout for all DNS lookup retries
+	dnsCtx, cancel := context.WithTimeout(ctx, ct.params.ipCacheTimeout())
+	defer cancel()
+	for _, cp := range ct.clientPods {
+		err := ct.waitForDNS(dnsCtx, cp)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+// Validate that kube-dns responds and knows about cluster services
+func (ct *ConnectivityTest) waitForDNS(ctx context.Context, pod Pod) error {
+	ct.Logf("⌛ [%s] Waiting for pod %s to reach kube-dns service...", ct.client.ClusterName(), pod.Name())
+
+	for {
+		// Don't retry lookups more often than once per second.
+		r := time.After(time.Second)
+
+		target := fmt.Sprintf("kube-dns.%s.svc.cluster.local", ct.params.CiliumNamespace)
+		// Warning: ExecInPod ignores ctx. Don't pass it here so we don't
+		// falsely expect the function to be able to be cancelled.
+		stdout, _, err := pod.K8sClient.ExecInPodWithStderr(context.TODO(), pod.Pod.Namespace, pod.Pod.Name,
+			"", []string{"nslookup", target})
+		if err == nil {
+			return nil
+		}
+
+		ct.Debugf("Error looking up %s from pod %s: %s", target, pod.Name(), stdout.String())
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout reached waiting lookup for %s from pod %s to succeed", target, pod.Name())
+		default:
+		}
+
+		// Wait for the pace timer to avoid busy polling.
+		<-r
+	}
 }
 
 func (ct *ConnectivityTest) waitForIPCache(ctx context.Context, pod Pod) error {
