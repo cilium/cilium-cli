@@ -750,3 +750,91 @@ func (a *Action) getFlows(ctx context.Context, hubbleClient observer.ObserverCli
 		}
 	}
 }
+
+func (a *Action) FollowFlows(ctx context.Context, pod string, flows chan *observer.GetFlowsResponse) {
+	hubbleClient := a.test.ctx.HubbleClient()
+	if hubbleClient == nil {
+		return
+	}
+	a.Logf("📄 Following flows for pod %s", pod)
+
+	// The filter is liberal, it includes any flow that:
+	// - source or destination pod name matches pod name
+	filter := []*flow.FlowFilter{
+		{SourcePod: []string{pod}},
+		{DestinationPod: []string{pod}},
+	}
+	request := &observer.GetFlowsRequest{
+		Whitelist: filter,
+		Follow:    true,
+	}
+
+	b, err := hubbleClient.GetFlows(ctx, request)
+	if err != nil {
+		return
+	}
+
+	for {
+		res, err := b.Recv()
+		if err != nil {
+			a.Log("received return an err", err)
+			return
+		}
+		switch res.GetResponseTypes().(type) {
+		case *observer.GetFlowsResponse_Flow:
+			flows <- res
+		}
+	}
+}
+
+// ValidateFlows2 retrieves the flow pods of the specified pod and validates
+// that all filters find a match. On failure, t.Fail() is called.
+// An error is returned if flow validation cannot be performed.
+func (a *Action) ValidateFlows2(ctx context.Context, flowsChan chan *observer.GetFlowsResponse, reqs []filters.FlowSetRequirement, pod string) {
+	hubbleClient := a.test.ctx.HubbleClient()
+	if hubbleClient == nil {
+		return
+	}
+	a.Logf("📄 Matching flows for pod %s", pod)
+	timeout := time.After(defaults.FlowWaitTimeout)
+	timeoutReached := false
+getFlowLoop:
+	for {
+		select {
+		case f := <-flowsChan:
+			a.flows[pod] = append(a.flows[pod], f)
+		case <-time.After(defaults.FlowRetryInterval):
+			break getFlowLoop
+		case <-timeout:
+			timeoutReached = true
+		}
+	}
+
+	res := FlowRequirementResults{FirstMatch: -1, LastMatch: -1}
+	for i, req := range reqs {
+		offset := 0
+		var r FlowRequirementResults
+		for offset < len(a.flows[pod]) {
+			r = a.matchFlowRequirements(ctx, a.flows[pod], offset, pod, &req)
+			// Check if fully matched or no match for the first flow
+			if !r.NeedMoreFlows || r.FirstMatch == -1 {
+				break
+			}
+			// Try if some other flow instance would find both first and last required flows
+			offset = r.FirstMatch + 1
+		}
+		if (r.NeedMoreFlows || len(a.flows[pod]) == 0) && !timeoutReached {
+			goto getFlowLoop
+		}
+		// Merge results
+		res.Merge(&r)
+		a.Debugf("Merged flow validation results #%d: %v", i, res)
+	}
+	a.flowResults[pod] = res
+	if res.Failures == 0 {
+		a.Logf("✅ Flow validation successful for pod %s (first: %d, last: %d, matched: %d)", pod, res.FirstMatch, res.LastMatch, len(res.Matched))
+	} else {
+		a.Failf("Flow validation failed for pod %s: %d failures (first: %d, last: %d, matched: %d)", pod, res.Failures, res.FirstMatch, res.LastMatch, len(res.Matched))
+		a.failed = true
+	}
+}

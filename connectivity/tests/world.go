@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"github.com/cilium/cilium-cli/connectivity/check"
+	"github.com/cilium/cilium/api/v1/observer"
 )
 
 // PodToWorld sends multiple HTTP(S) requests to google.com
@@ -53,13 +54,17 @@ func (s *podToWorld) Run(ctx context.Context, t *check.Test) {
 		cmd := curl(ghttps)
 
 		t.NewAction(s, "https-to-google", client, ghttps).Run(func(a *check.Action) {
+			newCtx, cancel := context.WithCancel(ctx)
+			res := make(chan *observer.GetFlowsResponse, 100)
+			go a.FollowFlows(newCtx, client.Name(), res)
 			a.ExecInPod(ctx, cmd)
 
 			egressFlowRequirements := a.GetEgressRequirements(check.FlowParameters{
 				DNSRequired: true,
 				RSTAllowed:  true,
 			})
-			a.ValidateFlows(ctx, client.Name(), client.Pod.Status.PodIP, egressFlowRequirements)
+			a.ValidateFlows2(ctx, res, egressFlowRequirements, client.Name())
+			cancel()
 		})
 	}
 
@@ -68,13 +73,17 @@ func (s *podToWorld) Run(ctx context.Context, t *check.Test) {
 		cmd := curl(ghttp)
 
 		t.NewAction(s, "http-to-google", client, ghttp).Run(func(a *check.Action) {
+			newCtx, cancel := context.WithCancel(ctx)
+			res := make(chan *observer.GetFlowsResponse, 100)
+			go a.FollowFlows(newCtx, client.Name(), res)
 			a.ExecInPod(ctx, cmd)
 
 			egressFlowRequirements := a.GetEgressRequirements(check.FlowParameters{
 				DNSRequired: true,
 				RSTAllowed:  true,
 			})
-			a.ValidateFlows(ctx, client.Name(), client.Pod.Status.PodIP, egressFlowRequirements)
+			a.ValidateFlows2(ctx, res, egressFlowRequirements, client.Name())
+			cancel()
 		})
 	}
 
@@ -83,13 +92,17 @@ func (s *podToWorld) Run(ctx context.Context, t *check.Test) {
 		cmd := curl(ghttpindex)
 
 		t.NewAction(s, "http-to-google-index", client, ghttpindex).Run(func(a *check.Action) {
+			newCtx, cancel := context.WithCancel(ctx)
+			res := make(chan *observer.GetFlowsResponse, 100)
+			go a.FollowFlows(newCtx, client.Name(), res)
 			a.ExecInPod(ctx, cmd)
 
 			egressFlowRequirements := a.GetEgressRequirements(check.FlowParameters{
 				DNSRequired: true,
 				RSTAllowed:  true,
 			})
-			a.ValidateFlows(ctx, client.Name(), client.Pod.Status.PodIP, egressFlowRequirements)
+			a.ValidateFlows2(ctx, res, egressFlowRequirements, client.Name())
+			cancel()
 		})
 	}
 
@@ -98,13 +111,17 @@ func (s *podToWorld) Run(ctx context.Context, t *check.Test) {
 		cmd := curl(wwwghttp)
 
 		t.NewAction(s, "http-to-www-google", client, wwwghttp).Run(func(a *check.Action) {
+			newCtx, cancel := context.WithCancel(ctx)
+			res := make(chan *observer.GetFlowsResponse, 100)
+			go a.FollowFlows(newCtx, client.Name(), res)
 			a.ExecInPod(ctx, cmd)
 
 			egressFlowRequirements := a.GetEgressRequirements(check.FlowParameters{
 				DNSRequired: true,
 				RSTAllowed:  true,
 			})
-			a.ValidateFlows(ctx, client.Name(), client.Pod.Status.PodIP, egressFlowRequirements)
+			a.ValidateFlows2(ctx, res, egressFlowRequirements, client.Name())
+			cancel()
 		})
 	}
 }
