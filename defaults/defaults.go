@@ -80,6 +80,8 @@ const (
 
 	TunnelType = "vxlan"
 
+	ExecCloseTimeout = 2 * time.Second
+
 	WaitRetryInterval   = 2 * time.Second
 	WaitWarningInterval = 10 * time.Second
 

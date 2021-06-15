@@ -25,6 +25,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cilium/cilium-cli/defaults"
+	"github.com/cilium/cilium-cli/internal/utils"
 	"github.com/cilium/cilium/api/v1/models"
 	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	ciliumClientset "github.com/cilium/cilium/pkg/k8s/client/clientset/versioned"
@@ -301,31 +303,57 @@ func (c *Client) ListServices(ctx context.Context, namespace string, options met
 }
 
 func (c *Client) ExecInPodWithStderr(ctx context.Context, namespace, pod, container string, command []string) (bytes.Buffer, bytes.Buffer, error) {
-	result, err := c.execInPod(ctx, ExecParameters{
-		Namespace: namespace,
-		Pod:       pod,
-		Container: container,
-		Command:   command,
-	})
-	return result.Stdout, result.Stderr, err
+	done := make(chan struct{}, 1)
+	stdin := utils.NewCtrlCReader()
+	var result *ExecResult
+	var execErr error
+
+	go func() {
+		defer close(done)
+		result, execErr = c.execInPod(ctx, ExecParameters{
+			Namespace: namespace,
+			Pod:       pod,
+			Container: container,
+			Command:   command,
+			TTY:       true,
+			Stdin:     stdin,
+		})
+	}()
+
+	// Wait for the command to complete
+	select {
+	case <-done:
+	case <-ctx.Done():
+		stdin.Close()
+		select {
+		case <-done:
+		case <-time.After(defaults.ExecCloseTimeout):
+			return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("exec failed to close in %s", defaults.ExecCloseTimeout)
+		}
+	}
+
+	return result.Stdout, result.Stderr, execErr
 }
 
 func (c *Client) ExecInPod(ctx context.Context, namespace, pod, container string, command []string) (bytes.Buffer, error) {
-	result, err := c.execInPod(ctx, ExecParameters{
+	stdout, stderr, err := c.ExecInPodWithStderr(ctx, namespace, pod, container, command)
+	if errString := stderr.String(); errString != "" {
+		return bytes.Buffer{}, fmt.Errorf("command failed: %s", errString)
+	}
+	return stdout, err
+}
+
+func (c *Client) ExecInPodWithTTY(ctx context.Context, namespace, pod, container string, command []string, stdin io.Reader, stdout io.Writer) error {
+	_, err := c.execInPod(ctx, ExecParameters{
 		Namespace: namespace,
 		Pod:       pod,
 		Container: container,
 		Command:   command,
+		TTY:       true,
+		Stdin:     stdin,
+		Stdout:    stdout,
 	})
-	if err != nil {
-		return bytes.Buffer{}, err
-	}
-
-	if errString := result.Stderr.String(); errString != "" {
-		return bytes.Buffer{}, fmt.Errorf("command failed: %s", errString)
-	}
-
-	return result.Stdout, nil
+	return err
 }
 
 func (c *Client) CiliumStatus(ctx context.Context, namespace, pod string) (*models.StatusResponse, error) {
