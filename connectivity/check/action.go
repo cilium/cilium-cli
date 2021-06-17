@@ -21,6 +21,7 @@ import (
 	"io"
 	"math"
 	"net"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -169,22 +170,58 @@ func (a *Action) ExecInPod(ctx context.Context, cmd []string) {
 		a.test.Debugf("%s stdout: %s", cmdName, stdout.String())
 	}
 
-	if err != nil || stderr.Len() > 0 {
-		if a.shouldSucceed() {
+	expectedExitCode := a.expectedExitCode()
+	if err != nil {
+		if expectedExitCode == 0 {
 			a.Failf("command %q failed: %s", cmdStr, err)
 		} else {
-			a.test.Debugf("command %q failed as expected: %s", cmdStr, err)
+			exitCode, extractErr := a.extractExitCode(err)
+			if extractErr != nil {
+				a.Fatal(extractErr.Error())
+			}
+			if expectedExitCode == ExitAnyError || exitCode == expectedExitCode {
+				a.test.Debugf("command %q failed as expected: %s", cmdStr, err)
+			} else {
+				a.Failf("command %q failed with unexpected exit code: %s (expected %d, found %d)", cmdStr, err, expectedExitCode, exitCode)
+			}
 		}
 	} else {
-		if !a.shouldSucceed() {
+		if expectedExitCode != 0 {
 			a.Failf("command %q succeeded while it should have failed: %s", cmdStr, stdout.String())
 		}
 	}
 }
 
-// shouldSucceed returns true if no drops are expected in either direction.
-func (a *Action) shouldSucceed() bool {
-	return !a.expEgress.Drop && !a.expIngress.Drop
+var exitCodeRegex = regexp.MustCompile("exit code ([0-9]+)")
+
+// extractExitCode extracts command exit code from ExecInPod() error output
+func (a *Action) extractExitCode(err error) (ExitCode, error) {
+	// Extract exit code from 'err'
+	m := exitCodeRegex.FindStringSubmatch(err.Error())
+	if len(m) != 2 || len(m[1]) == 0 {
+		return 0, fmt.Errorf("Unable to extract exit code from error: %s", err.Error())
+	}
+	i, err := strconv.Atoi(m[1])
+	if err != nil {
+		return 0, fmt.Errorf("Invalid exit code %q in error %s", m[1], err.Error())
+	}
+	if i < 0 || i > 255 {
+		return 0, fmt.Errorf("Exit code %q out of range [0-255] in error %s", m[1], err.Error())
+	}
+	return ExitCode(i), nil
+}
+
+// expectedExitCode returns the expected shell exit code, or ExitAnyError for any value between 1-255.
+func (a *Action) expectedExitCode() ExitCode {
+	if a.expEgress.ExitCode == 0 && a.expIngress.ExitCode == 0 {
+		return 0 // success
+	}
+	// If egress and ingress expect the command to fail in different
+	// ways gress enforcement will cause the command to fail first.
+	if a.expEgress.ExitCode != 0 {
+		return a.expEgress.ExitCode
+	}
+	return a.expIngress.ExitCode
 }
 
 func (a *Action) printFlows(pod string, f flowsSet, r FlowRequirementResults) {
@@ -295,7 +332,14 @@ func (a *Action) matchFlowRequirements(ctx context.Context, flows flowsSet, offs
 		if f.SkipOnAggregation && a.test.ctx.FlowAggregation() {
 			continue
 		}
-		match(true, f, &flowCtx)
+		// "middle" flows can appear out of order due to e.g.,
+		// L7 flows being delivered from a proxy vs. SYN/FIN
+		// being delivered from the datapath. Allow for this
+		// by requesting more flows also when any of the
+		// "middle" matches fail.
+		if _, match, _ := match(true, f, &flowCtx); !match {
+			r.NeedMoreFlows = true
+		}
 	}
 
 	if !(req.Last.SkipOnAggregation && a.test.ctx.FlowAggregation()) {
@@ -362,7 +406,8 @@ func (a *Action) GetEgressRequirements(p FlowParameters) (reqs []filters.FlowSet
 			tcpResponse = filters.Or(filters.TCP(p.NodePort, 0), tcpResponse)
 		}
 
-		if a.expEgress.Drop {
+		if a.expEgress.Drop && !a.expEgress.L7Proxy {
+			// L3/L4 drop
 			egress = filters.FlowSetRequirement{
 				First: filters.FlowRequirement{Filter: filters.And(ipRequest, tcpRequest, filters.SYN()), Msg: "SYN"},
 				Last:  filters.FlowRequirement{Filter: filters.And(ipRequest, tcpRequest, filters.Drop()), Msg: "Drop"},
@@ -380,15 +425,19 @@ func (a *Action) GetEgressRequirements(p FlowParameters) (reqs []filters.FlowSet
 				// Either side may FIN first
 				Last: filters.FlowRequirement{Filter: filters.And(filters.Or(filters.And(ipRequest, tcpRequest), filters.And(ipResponse, tcpResponse)), filters.FIN()), Msg: "FIN"},
 				Except: []filters.FlowRequirement{
-					{Filter: filters.And(filters.Or(filters.And(ipRequest, tcpRequest), filters.And(ipResponse, tcpResponse)), filters.Drop()), Msg: "Drop"},
+					{Filter: filters.And(filters.Or(filters.And(ipRequest, tcpRequest), filters.And(ipResponse, tcpResponse)), filters.Drop()), Msg: "L3/L4 Drop"},
 				},
+			}
+			if a.expEgress.Drop {
+				// L7 drop
+				egress.Middle = append(egress.Middle, filters.FlowRequirement{Filter: filters.And(ipRequest, tcpRequest, filters.L7Drop()), Msg: "L7 Drop"})
 			}
 			if a.expEgress.HTTP.Status != "" || a.expEgress.HTTP.Method != "" || a.expEgress.HTTP.URL != "" {
 				code, err := strconv.Atoi(a.expEgress.HTTP.Status)
 				if err != nil {
 					code = math.MaxUint32
 				}
-				egress.Middle = append(egress.Middle, filters.FlowRequirement{Filter: filters.HTTP(uint32(code), a.expEgress.HTTP.Method, a.expEgress.HTTP.URL), Msg: "HTTP"})
+				egress.Middle = append(egress.Middle, filters.FlowRequirement{Filter: filters.And(ipRequest, tcpRequest, filters.HTTP(uint32(code), a.expEgress.HTTP.Method, a.expEgress.HTTP.URL)), Msg: "HTTP"})
 			}
 			if p.RSTAllowed {
 				// For the connection termination, we will either see:
