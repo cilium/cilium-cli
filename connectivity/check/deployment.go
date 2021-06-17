@@ -589,10 +589,12 @@ func (ct *ConnectivityTest) waitForService(ctx context.Context, service Service)
 		return fmt.Errorf("no client pod available")
 	}
 
+	// count the number of tries just for logging purpose.
+	numTries := 0
 	for {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("timeout reached waiting for %s", service)
+			return fmt.Errorf("timeout reached after %d tries waiting for %s", numTries, service)
 		default:
 		}
 
@@ -610,10 +612,11 @@ func (ct *ConnectivityTest) waitForService(ctx context.Context, service Service)
 			return nil
 		}
 
-		ct.Debugf("Error waiting for service %s: %s: %s", service.Name(), err, e.String())
+		ct.Infof("Continue waiting for service %s: %s: %s", service.Name(), err, e.String())
 
 		// Wait for the pace timer to avoid busy polling.
 		<-r
+		numTries++
 	}
 }
 
