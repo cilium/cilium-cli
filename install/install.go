@@ -1683,6 +1683,10 @@ func (k *K8sInstaller) pushRollbackStep(step rollbackStep) {
 }
 
 func (k *K8sInstaller) RollbackInstallation(ctx context.Context) {
+	if len(k.rollbackSteps) == 0 {
+		return
+	}
+
 	k.Log("↩️ Rolling back installation...")
 
 	for _, r := range k.rollbackSteps {
