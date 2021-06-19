@@ -19,16 +19,21 @@ replace (
 )
 
 require (
+	github.com/StackExchange/wmi v0.0.0-20210224194228-fe8f1750fd46 // indirect
 	github.com/cilium/cilium v1.9.8
 	github.com/cilium/hubble v0.7.1
 	github.com/cilium/workerpool v1.0.0
 	github.com/cloudflare/cfssl v1.5.0
+	github.com/go-ole/go-ole v1.2.5 // indirect
 	github.com/go-openapi/strfmt v0.19.11
 	github.com/golang/protobuf v1.4.3
 	github.com/google/gofuzz v1.2.0 // indirect
+	github.com/google/gops v0.3.18
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/mholt/archiver/v3 v3.5.0
 	github.com/spf13/cobra v1.1.1
+	github.com/stretchr/testify v1.7.0 // indirect
+	golang.org/x/sys v0.0.0-20210615035016-665e8c7367d1 // indirect
 	google.golang.org/grpc v1.34.0
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
 	k8s.io/api v0.19.11

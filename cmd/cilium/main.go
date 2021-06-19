@@ -16,12 +16,19 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/cilium/cilium-cli/internal/cli/cmd"
+
+	gops "github.com/google/gops/agent"
 )
 
 func main() {
+	if err := gops.Listen(gops.Options{}); err != nil {
+		log.Fatal(err)
+	}
+
 	if err := cmd.NewDefaultCiliumCommand().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

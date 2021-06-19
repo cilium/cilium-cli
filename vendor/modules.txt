@@ -17,7 +17,8 @@ github.com/Azure/go-autorest/tracing
 github.com/PuerkitoBio/purell
 # github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578
 github.com/PuerkitoBio/urlesc
-# github.com/StackExchange/wmi v0.0.0-20190523213315-cbe66965904d
+# github.com/StackExchange/wmi v0.0.0-20210224194228-fe8f1750fd46
+## explicit
 github.com/StackExchange/wmi
 # github.com/andybalholm/brotli v1.0.0
 github.com/andybalholm/brotli
@@ -150,7 +151,8 @@ github.com/fsnotify/fsnotify
 github.com/ghodss/yaml
 # github.com/go-logr/logr v0.2.0
 github.com/go-logr/logr
-# github.com/go-ole/go-ole v1.2.4
+# github.com/go-ole/go-ole v1.2.5
+## explicit
 github.com/go-ole/go-ole
 github.com/go-ole/go-ole/oleutil
 # github.com/go-openapi/analysis v0.19.10
@@ -213,6 +215,11 @@ github.com/google/certificate-transparency-go/x509/pkix
 ## explicit
 github.com/google/gofuzz
 github.com/google/gofuzz/bytesource
+# github.com/google/gops v0.3.18
+## explicit
+github.com/google/gops/agent
+github.com/google/gops/internal
+github.com/google/gops/signal
 # github.com/googleapis/gnostic v0.4.1
 github.com/googleapis/gnostic/compiler
 github.com/googleapis/gnostic/extensions
@@ -335,6 +342,8 @@ github.com/spf13/jwalterweatherman
 github.com/spf13/pflag
 # github.com/spf13/viper v1.7.1
 github.com/spf13/viper
+# github.com/stretchr/testify v1.7.0
+## explicit
 # github.com/subosito/gotenv v1.2.0
 github.com/subosito/gotenv
 # github.com/ulikunitz/xz v0.5.7
@@ -402,7 +411,8 @@ golang.org/x/oauth2/jws
 golang.org/x/oauth2/jwt
 # golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 golang.org/x/sync/semaphore
-# golang.org/x/sys v0.0.0-20210412220455-f1c623a9e750
+# golang.org/x/sys v0.0.0-20210615035016-665e8c7367d1
+## explicit
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
 golang.org/x/sys/windows
