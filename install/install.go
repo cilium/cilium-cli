@@ -1070,7 +1070,7 @@ func (p *Parameters) validate() error {
 
 		p.configOverwrites[t[0]] = t[1]
 	}
-	if p.AgentImage != "" || p.OperatorImage != "" {
+	if p.AgentImage != defaults.AgentImage || p.OperatorImage != defaults.OperatorImage {
 		return nil
 	} else if !utils.CheckVersion(p.Version) && p.Version != "" {
 		return fmt.Errorf("invalid syntax %q for image tag", p.Version)
