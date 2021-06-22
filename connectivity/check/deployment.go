@@ -609,10 +609,11 @@ func (ct *ConnectivityTest) waitForService(ctx context.Context, service Service)
 		return fmt.Errorf("no client pod available")
 	}
 
+	numTries := 0
 	for {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("timeout reached waiting for %s", service)
+			return fmt.Errorf("timeout reached after %d tries waiting for %s", numTries, service)
 		default:
 		}
 
@@ -630,6 +631,7 @@ func (ct *ConnectivityTest) waitForService(ctx context.Context, service Service)
 			return nil
 		}
 
+		numTries++
 		ct.Debugf("Error waiting for service %s: %s: %s", service.Name(), err, e.String())
 
 		// Wait for the pace timer to avoid busy polling.
@@ -653,6 +655,7 @@ func (ct *ConnectivityTest) waitForNodePorts(ctx context.Context, nodeIP string,
 		}
 		ct.Logf("⌛ [%s] Waiting for NodePort %s:%d (%s) to become ready...",
 			ct.client.ClusterName(), nodeIP, nodePort, service.Name())
+		numTries := 0
 		for {
 			// Warning: ExecInPodWithStderr ignores ctx. Don't pass it here so we don't
 			// falsely expect the function to be able to be cancelled.
@@ -662,12 +665,13 @@ func (ct *ConnectivityTest) waitForNodePorts(ctx context.Context, nodeIP string,
 			if err == nil {
 				break
 			}
+			numTries++
 
 			ct.Debugf("Error waiting for NodePort %s:%d (%s): %s: %s", nodeIP, nodePort, service.Name(), err, e.String())
 
 			select {
 			case <-ctx.Done():
-				return fmt.Errorf("timeout reached waiting for NodePort %s:%d (%s)", nodeIP, nodePort, service.Name())
+				return fmt.Errorf("timeout reached after %d tries waiting for NodePort %s:%d (%s)", numTries, nodeIP, nodePort, service.Name())
 			case <-time.After(time.Second):
 			}
 		}
