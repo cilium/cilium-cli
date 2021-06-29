@@ -13,14 +13,14 @@ func (b *InstallSuite) TestTail(c *check.C) {
 	}{
 		{
 			given: []*corev1.Pod{
-				{ObjectMeta: v1.ObjectMeta{Name: "Foo"}}},
+				{ObjectMeta: v1.ObjectMeta{Name: "foo"}}},
 			expect: nil,
 		},
 		{
 			given: []*corev1.Pod{
-				{ObjectMeta: v1.ObjectMeta{Name: "Foo"}},
-				{ObjectMeta: v1.ObjectMeta{Name: "Bar"}}},
-			expect: []*corev1.Pod{{ObjectMeta: v1.ObjectMeta{Name: "Bar"}}},
+				{ObjectMeta: v1.ObjectMeta{Name: "foo"}},
+				{ObjectMeta: v1.ObjectMeta{Name: "bar"}}},
+			expect: []*corev1.Pod{{ObjectMeta: v1.ObjectMeta{Name: "bar"}}},
 		},
 		{
 			given:  []*corev1.Pod{},
@@ -28,10 +28,10 @@ func (b *InstallSuite) TestTail(c *check.C) {
 		},
 		{
 			given: []*corev1.Pod{
-				{ObjectMeta: v1.ObjectMeta{Name: "Foo"}},
-				{ObjectMeta: v1.ObjectMeta{Name: "Bar"}},
-				{ObjectMeta: v1.ObjectMeta{Name: "Qux"}}},
-			expect: []*corev1.Pod{{ObjectMeta: v1.ObjectMeta{Name: "Bar"}}, {ObjectMeta: v1.ObjectMeta{Name: "Qux"}}},
+				{ObjectMeta: v1.ObjectMeta{Name: "foo"}},
+				{ObjectMeta: v1.ObjectMeta{Name: "bar"}},
+				{ObjectMeta: v1.ObjectMeta{Name: "qux"}}},
+			expect: []*corev1.Pod{{ObjectMeta: v1.ObjectMeta{Name: "bar"}}, {ObjectMeta: v1.ObjectMeta{Name: "qux"}}},
 		},
 	}
 	for _, cs := range cases {
@@ -43,14 +43,14 @@ func (b *InstallSuite) TestTail(c *check.C) {
 func (b *InstallSuite) TestGroupPodsByNamespace(c *check.C) {
 	t := corev1.PodList{
 		Items: []corev1.Pod{
-			{ObjectMeta: v1.ObjectMeta{Name: "Foo", Namespace: "Berlin"}},
-			{ObjectMeta: v1.ObjectMeta{Name: "Bar", Namespace: "Berlin"}},
-			{ObjectMeta: v1.ObjectMeta{Name: "Qux", Namespace: "Caracas"}},
+			{ObjectMeta: v1.ObjectMeta{Name: "foo", Namespace: "berlin"}},
+			{ObjectMeta: v1.ObjectMeta{Name: "bar", Namespace: "berlin"}},
+			{ObjectMeta: v1.ObjectMeta{Name: "qux", Namespace: "caracas"}},
 		},
 	}
 
 	nsToPods := groupPodsByNamespace(&t)
-	c.Assert(nsToPods["Berlin"], check.DeepEquals, []*corev1.Pod{{ObjectMeta: v1.ObjectMeta{Name: "Foo", Namespace: "Berlin"}},
-		{ObjectMeta: v1.ObjectMeta{Name: "Bar", Namespace: "Berlin"}}})
-	c.Assert(nsToPods["Caracas"], check.DeepEquals, []*corev1.Pod{{ObjectMeta: v1.ObjectMeta{Name: "Qux", Namespace: "Caracas"}}})
+	c.Assert(nsToPods["berlin"], check.DeepEquals, []*corev1.Pod{{ObjectMeta: v1.ObjectMeta{Name: "foo", Namespace: "berlin"}},
+		{ObjectMeta: v1.ObjectMeta{Name: "bar", Namespace: "berlin"}}})
+	c.Assert(nsToPods["caracas"], check.DeepEquals, []*corev1.Pod{{ObjectMeta: v1.ObjectMeta{Name: "qux", Namespace: "caracas"}}})
 }
