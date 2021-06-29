@@ -1464,13 +1464,13 @@ func (k *K8sInstaller) runEvictions(ctx context.Context, cepMap map[string]struc
 				if err != nil {
 					if errors.IsTooManyRequests(err) { //PodDisruptionBudget enforcement
 						waitTime := time.Duration(*pod.Spec.TerminationGracePeriodSeconds)
-						k.Log("ℹ️  Restarting %s/%s would violate PodDisruptionBudget. Sleeping %ds before retrying.", pod.Namespace, pod.Name, waitTime)
-						time.Sleep(waitTime * time.Second)
-						retry++
 						if retry > maxRetry {
 							k.Log("⚠️  Unable to restart pods in namespace %q, after %d retries every %ds.", pod.Namespace, maxRetry, waitTime)
 							return
 						}
+						k.Log("ℹ️  Restarting %s/%s would violate PodDisruptionBudget. Sleeping %ds before retrying.", pod.Namespace, pod.Name, waitTime)
+						time.Sleep(waitTime * time.Second)
+						retry++
 						continue
 					} else if errors.IsInternalError(err) {
 						k.Log("⚠️  Could not restart pod %s/%s. Please take manual action: %s", pod.Namespace, pod.Name, err)
