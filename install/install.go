@@ -1468,7 +1468,7 @@ func (k *K8sInstaller) runEvictions(ctx context.Context, cepMap map[string]struc
 						time.Sleep(waitTime * time.Second)
 						retry++
 						if retry > maxRetry {
-							k.Log("⚠️  Unable to restart pods in namespace=%s, after retries=%d every t=%ds.", pod.Namespace, maxRetry, waitTime)
+							k.Log("⚠️  Unable to restart pods in namespace %q, after %d retries every %ds.", pod.Namespace, maxRetry, waitTime)
 							return
 						}
 						continue
