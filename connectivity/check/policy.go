@@ -32,6 +32,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	// testNamespacePlaceholder will get replaced with the test namespace in use when parsing CPNs from YAML.
+	testNamespacePlaceholder = "${TEST_NAMESPACE}"
+)
+
 // getCiliumPolicyRevisions returns the current policy revisions of all Cilium pods
 func (ct *ConnectivityTest) getCiliumPolicyRevisions(ctx context.Context) (map[Pod]int, error) {
 	revisions := make(map[Pod]int)
@@ -237,8 +242,8 @@ func (t *Test) addCNPs(cnps ...*ciliumv2.CiliumNetworkPolicy) error {
 		}
 
 		t.cnps[p.Name] = p
-	}
 
+	}
 	return nil
 }
 
@@ -347,7 +352,7 @@ func (t *Test) ciliumLogs(ctx context.Context) {
 }
 
 // parsePolicyYAML decodes policy yaml into a slice of CiliumNetworkPolicies.
-func parsePolicyYAML(policy string) (cnps []*ciliumv2.CiliumNetworkPolicy, err error) {
+func parsePolicyYAML(policy, testNamespace string) (cnps []*ciliumv2.CiliumNetworkPolicy, err error) {
 	if policy == "" {
 		return nil, nil
 	}
@@ -358,7 +363,8 @@ func parsePolicyYAML(policy string) (cnps []*ciliumv2.CiliumNetworkPolicy, err e
 		if strings.TrimSpace(yaml) == "" {
 			continue
 		}
-
+		// Replace the test namespace.
+		yaml = strings.ReplaceAll(yaml, testNamespacePlaceholder, testNamespace)
 		obj, kind, err := serializer.NewCodecFactory(scheme.Scheme, serializer.EnableStrict).UniversalDeserializer().Decode([]byte(yaml), nil, nil)
 		if err != nil {
 			return nil, fmt.Errorf("decoding policy yaml (%w) in: %s", err, yaml)

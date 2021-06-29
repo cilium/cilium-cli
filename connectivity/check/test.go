@@ -204,7 +204,7 @@ func (t *Test) Run(ctx context.Context) error {
 // the polic(y)(ies) to the scope of the Test, to be applied when the test
 // starts running.
 func (t *Test) WithPolicy(policy string) *Test {
-	pl, err := parsePolicyYAML(policy)
+	pl, err := parsePolicyYAML(policy, t.ctx.params.TestNamespace)
 	if err != nil {
 		t.Fatal("Error parsing policy YAML: %w", err)
 	}

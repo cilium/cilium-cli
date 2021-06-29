@@ -60,7 +60,7 @@ func (k *K8sUninstaller) Uninstall(ctx context.Context) error {
 		return err
 	}
 
-	k.Log("🔥 Deleting cilium-test namespace...")
+	k.Log("🔥 Deleting the %q test namespace...", k.params.TestNamespace)
 	k.client.DeleteNamespace(ctx, k.params.TestNamespace, metav1.DeleteOptions{})
 
 	k.Log("🔥 Deleting Service accounts...")

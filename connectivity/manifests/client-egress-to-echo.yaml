@@ -1,7 +1,7 @@
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  namespace: cilium-test
+  namespace: ${TEST_NAMESPACE}
   name: client-egress-to-echo
 spec:
   endpointSelector:
@@ -14,7 +14,7 @@ spec:
         protocol: TCP
     toEndpoints:
     - matchLabels:
-        k8s:io.kubernetes.pod.namespace: cilium-test
+        k8s:io.kubernetes.pod.namespace: ${TEST_NAMESPACE}
         k8s:kind: echo
   - toPorts:
     - ports:
