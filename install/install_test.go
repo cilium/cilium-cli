@@ -54,18 +54,3 @@ func (b *InstallSuite) TestGroupPodsByNamespace(c *check.C) {
 		{ObjectMeta: v1.ObjectMeta{Name: "Bar", Namespace: "Berlin"}}})
 	c.Assert(nsToPods["Caracas"], check.DeepEquals, []*corev1.Pod{{ObjectMeta: v1.ObjectMeta{Name: "Qux", Namespace: "Caracas"}}})
 }
-
-func (b *InstallSuite) TestRunEvictions(c *check.C) {
-	// it should not evict cep pods
-	// it should not evict HostNetwork pods
-	// t := corev1.PodList{
-	// 	Items: []corev1.Pod{
-	// 		{ObjectMeta: v1.ObjectMeta{Name: "Foo", Namespace: "Berlin"}, Spec: corev1.PodSpec{HostNetwork: true}},
-	// 		{ObjectMeta: v1.ObjectMeta{Name: "ciliumEP", Namespace: "Berlin"}},
-	// 		{ObjectMeta: v1.ObjectMeta{Name: "Qux", Namespace: "Caracas"}},
-	// 	},
-	// }
-	// cepMap := map[string]struct{}{"ciliumEP": struct{}{}}
-	// k := K8sInstaller{}
-	// k.runEvictions(context.Background(), cepMap, &t)
-}
