@@ -77,6 +77,9 @@ type Action struct {
 
 	// warned is true when Warn was called on the Action
 	warned bool
+
+	// monitors for Cilium pods
+	monitors []*Monitor
 }
 
 func newAction(t *Test, name string, s Scenario, src *Pod, dst TestPeer) *Action {
@@ -121,6 +124,38 @@ func (a *Action) Destination() TestPeer {
 	return a.dst
 }
 
+func (a *Action) startMonitors(opts ...string) {
+	// Launch monitor on each of the Cilium pods.
+	for _, pod := range a.test.ctx.ciliumPods {
+		a.monitors = append(a.monitors, a.NewMonitor(pod, opts...))
+	}
+
+	// Wait that each monitor has started execution.
+	// Waiting in the launch order after all the monitors have
+	// been launched minimizes the overall wait time.
+	for _, monitor := range a.monitors {
+		monitor.Wait()
+	}
+}
+
+func (a *Action) stopMonitors() {
+	for _, monitor := range a.monitors {
+		monitor.Stop()
+	}
+}
+
+func (a *Action) printMonitors() {
+	for _, monitor := range a.monitors {
+		output, err := monitor.Output()
+		if err != nil {
+			a.Warnf("Monitor on pod %s failed: %w", monitor.Name(), err)
+		}
+		a.Log("------------------------------------------------------------------------------")
+		a.Logf("Monitor output for pod %s:", monitor.Name())
+		a.Logf("%s", output)
+	}
+}
+
 // Run executes function f.
 //
 // This method is to be called from a Scenario implementation.
@@ -163,7 +198,9 @@ func (a *Action) Run(f func(*Action)) {
 
 	// Execute the given test function.
 	// Might call Fatal().
+	a.startMonitors("-D", "-vv")
 	f(a)
+	a.stopMonitors()
 
 	// Print flow buffer if any failures or warnings occurred.
 	// TODO(timo): printFlows is a misnomer, this function actually prints
@@ -171,6 +208,9 @@ func (a *Action) Run(f func(*Action)) {
 	if a.test.ctx.PrintFlows() || a.failed || a.warned {
 		a.printFlows(a.Source())
 		a.printFlows(a.Destination())
+	}
+	if a.failed {
+		a.printMonitors()
 	}
 }
 
@@ -192,8 +232,7 @@ func (a *Action) ExecInPod(ctx context.Context, cmd []string) {
 
 	a.Debug("Executing command", cmd)
 
-	// Warning: ExecInPod* does not use ctx, command cannot be cancelled.
-	stdout, stderr, err := pod.K8sClient.ExecInPodWithStderr(context.TODO(),
+	stdout, stderr, err := pod.K8sClient.ExecInPodWithStderr(ctx,
 		pod.Pod.Namespace, pod.Pod.Name, pod.Pod.Labels["name"], cmd)
 
 	cmdName := cmd[0]

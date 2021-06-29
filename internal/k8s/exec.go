@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -34,6 +35,9 @@ type ExecParameters struct {
 	Pod       string
 	Container string
 	Command   []string
+	TTY       bool
+	Stdin     io.Reader
+	Stdout    io.Writer
 }
 
 func (c *Client) execInPod(ctx context.Context, p ExecParameters) (*ExecResult, error) {
@@ -49,10 +53,10 @@ func (c *Client) execInPod(ctx context.Context, p ExecParameters) (*ExecResult, 
 	req.VersionedParams(&corev1.PodExecOptions{
 		Command:   p.Command,
 		Container: p.Container,
-		Stdin:     false,
+		Stdin:     p.Stdin != nil,
 		Stdout:    true,
 		Stderr:    true,
-		TTY:       false,
+		TTY:       p.TTY,
 	}, parameterCodec)
 
 	exec, err := remotecommand.NewSPDYExecutor(c.Config, "POST", req.URL())
@@ -61,11 +65,16 @@ func (c *Client) execInPod(ctx context.Context, p ExecParameters) (*ExecResult, 
 	}
 	result := &ExecResult{}
 
+	// Use stdout from params if provided
+	stdout := p.Stdout
+	if stdout == nil {
+		stdout = &result.Stdout
+	}
 	err = exec.Stream(remotecommand.StreamOptions{
-		Stdin:  nil,
-		Stdout: &result.Stdout,
+		Stdin:  p.Stdin,
+		Stdout: stdout,
 		Stderr: &result.Stderr,
-		Tty:    false,
+		Tty:    p.TTY,
 	})
 	return result, err
 }
