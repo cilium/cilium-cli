@@ -1,0 +1,17 @@
+{{- if .Values.output.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.output.pvc.name }}
+  namespace: kube-system
+spec:
+  {{- if .Values.output.pvc.storageClassName }}
+  storageClassName: {{ .Values.output.pvc.storageClassName }}
+  {{- end }}
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.output.pvc.size }}
+{{- end }}

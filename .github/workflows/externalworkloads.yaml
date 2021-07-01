@@ -106,7 +106,8 @@ jobs:
             --set job_name=cilium-cli-install \
             --set test_script_cm=cilium-cli-test-script-install \
             --set vm_name=${{ env.vmName }} \
-            --set cluster_cidr=${{ steps.cluster.outputs.cluster_cidr }}
+            --set cluster_cidr=${{ steps.cluster.outputs.cluster_cidr }} \
+            --set output.enabled=false
 
       - name: Wait for install job
         run: |
@@ -148,9 +149,17 @@ jobs:
             --set job_name=cilium-cli \
             --set test_script_cm=cilium-cli-test-script
 
-      - name: Wait for test job
+      - name: Ensure that the job terminates successfully
         run: |
           kubectl -n kube-system wait job/cilium-cli --for=condition=complete --timeout=10m
+
+      - name: Copy the sysdump
+        run: |
+          helm install .github/cilium-cli-output \
+            --generate-name \
+            --set tag=${{ steps.vars.outputs.sha }}
+          kubectl wait pod/cilium-cli-output --for=condition=Ready --timeout 5m
+          kubectp cp pod/cilium-cli-output:/output/cilium-sysdump-out.zip cilium-sysdump-out.zip
 
       - name: Post-test installation logs
         if: ${{ failure() }}
@@ -166,8 +175,6 @@ jobs:
           kubectl get pods --all-namespaces -o wide
           kubectl get cew --all-namespaces -o wide
           kubectl get cep --all-namespaces -o wide
-          curl -sLO https://github.com/cilium/cilium-sysdump/releases/latest/download/cilium-sysdump.zip
-          python cilium-sysdump.zip --output cilium-sysdump-out
         shell: bash {0} # Disable default fail-fast behaviour so that all commands run independently
 
       - name: Clean up GKE

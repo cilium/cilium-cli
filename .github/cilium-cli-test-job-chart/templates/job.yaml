@@ -19,6 +19,10 @@ spec:
             mountPath: /root/.kube
           - name: test-script
             mountPath: /root/test
+          {{- if .Values.output.enabled }}
+          - name: output
+            mountPath: /output
+          {{- end }}
         env:
           - name: KUBECONFIG
             value: /root/.kube/config
@@ -52,3 +56,8 @@ spec:
       - name: test-script
         configMap:
           name: {{ .Values.test_script_cm }}
+      {{- if .Values.output.enabled }}
+      - name: output
+        persistentVolumeClaim:
+          claimName: {{ .Values.output.pvc.name }}
+      {{- end }}

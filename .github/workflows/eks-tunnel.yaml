@@ -78,7 +78,8 @@ jobs:
             --set tag=${{ steps.vars.outputs.sha }} \
             --set cluster_name=${{ env.clusterName }} \
             --set job_name=cilium-cli-install \
-            --set test_script_cm=cilium-cli-test-script-install
+            --set test_script_cm=cilium-cli-test-script-install \
+            --set output.enabled=false
 
       - name: Add managed spot nodegroup
         run: |
@@ -107,9 +108,17 @@ jobs:
             --set tag=${{ steps.vars.outputs.sha }} \
             --set cluster_name=${{ env.clusterName }}
 
-      - name: Wait for test job
+      - name: Ensure that the job terminates successfully
         run: |
           kubectl -n kube-system wait job/cilium-cli --for=condition=complete --timeout=10m
+
+      - name: Copy the sysdump
+        run: |
+          helm install .github/cilium-cli-output \
+            --generate-name \
+            --set tag=${{ steps.vars.outputs.sha }}
+          kubectl wait pod/cilium-cli-output --for=condition=Ready --timeout 5m
+          kubectp cp pod/cilium-cli-output:/output/cilium-sysdump-out.zip cilium-sysdump-out.zip
 
       - name: Post-test information gathering
         if: ${{ failure() }}
@@ -117,8 +126,6 @@ jobs:
           kubectl logs --timestamps -n kube-system job/cilium-cli-install
           kubectl logs --timestamps -n kube-system job/cilium-cli
           kubectl get pods --all-namespaces -o wide
-          curl -sLO https://github.com/cilium/cilium-sysdump/releases/latest/download/cilium-sysdump.zip
-          python cilium-sysdump.zip --output cilium-sysdump-out
         shell: bash {0} # Disable default fail-fast behaviour so that all commands run independently
 
       - name: Uninstall and make sure the 'aws-node' DaemonSet blocking nodeSelector was removed

@@ -1,0 +1,23 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ .Values.pod.name }}
+  namespace: kube-system
+spec:
+  containers:
+  - args:
+    - sleep
+    - 900
+    image: quay.io/cilium/cilium-cli-ci:{{ .Values.tag }}
+    imagePullPolicy: Always
+    name: test
+    volumeMounts:
+      - name: output
+        mountPath: /output
+  tolerations:
+  - operator: Exists
+  volumes:
+  - name: output
+    persistentVolumeClaim:
+      claimName: {{ .Values.pvc.name }}

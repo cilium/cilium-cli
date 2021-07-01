@@ -124,23 +124,24 @@ jobs:
             --set cluster_name_1=${{ env.clusterName1 }} \
             --set cluster_name_2=${{ env.clusterName2 }} \
 
-      - name: Wait for test job
+      - name: Ensure that the job terminates successfully
         run: |
           kubectl -n kube-system wait job/cilium-cli --for=condition=complete --timeout=20m
+
+      - name: Copy the sysdump
+        run: |
+          helm install .github/cilium-cli-output \
+            --generate-name \
+            --set tag=${{ steps.vars.outputs.sha }}
+          kubectl wait pod/cilium-cli-output --for=condition=Ready --timeout 5m
+          kubectp cp pod/cilium-cli-output:/output/cilium-sysdump-out-1.zip cilium-sysdump-out-1.zip
+          kubectp cp pod/cilium-cli-output:/output/cilium-sysdump-out-2.zip cilium-sysdump-out-2.zip
 
       - name: Post-test information gathering
         if: ${{ failure() }}
         run: |
           kubectl logs --timestamps -n kube-system job/cilium-cli
-
-          curl -sLO https://github.com/cilium/cilium-sysdump/releases/latest/download/cilium-sysdump.zip
-          export KUBECONFIG=kubeconfig-cluster1
           kubectl get pods --all-namespaces -o wide
-          python cilium-sysdump.zip --output cilium-sysdump-cluster1
-
-          export KUBECONFIG=kubeconfig-cluster2
-          kubectl get pods --all-namespaces -o wide
-          python cilium-sysdump.zip --output cilium-sysdump-cluster2
         shell: bash {0} # Disable default fail-fast behaviour so that all commands run independently
 
       - name: Clean up GKE
@@ -151,14 +152,20 @@ jobs:
           gcloud container clusters delete ${{ env.clusterName2 }} --zone ${{ env.zone }} --quiet --async
         shell: bash {0} # Disable default fail-fast behaviour so that all commands run independently
 
-      - name: Upload artifacts
+      - name: Upload artifacts (1)
         if: ${{ failure() }}
         uses: actions/upload-artifact@ee69f02b3dfdecd58bb31b4d133da38ba6fe3700
         with:
-          name: cilium-sysdump-out.zip
-          path: |
-            cilium-sysdump-cluster1.zip
-            cilium-sysdump-cluster2.zip
+          name: cilium-sysdump-out-1.zip
+          path: cilium-sysdump-out-1.zip
+          retention-days: 5
+
+      - name: Upload artifacts (2)
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ee69f02b3dfdecd58bb31b4d133da38ba6fe3700
+        with:
+          name: cilium-sysdump-out-2.zip
+          path: cilium-sysdump-out-2.zip
           retention-days: 5
 
       - name: Send slack notification

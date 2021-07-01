@@ -59,3 +59,9 @@ cilium --context "${CONTEXT1}" status
 cilium --context "${CONTEXT1}" clustermesh status
 cilium --context "${CONTEXT2}" status
 cilium --context "${CONTEXT2}" clustermesh status
+
+# Grab a sysdump and move it to the persistent volume.
+cilium --context "${CONTEXT1}" sysdump --output-filename cilium-sysdump-out-1
+mv cilium-sysdump-out-1.zip /output/cilium-sysdump-out-1.zip
+cilium --context "${CONTEXT2}" sysdump --output-filename cilium-sysdump-out-2
+mv cilium-sysdump-out-2.zip /output/cilium-sysdump-out-2.zip
