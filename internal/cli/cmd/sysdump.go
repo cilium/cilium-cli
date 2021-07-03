@@ -67,6 +67,12 @@ func newCmdSysdump() *cobra.Command {
 	cmd.Flags().BoolVar(&sysdumpOptions.Debug,
 		"debug", sysdump.DefaultDebug,
 		"Whether to enable debug logging")
+	cmd.Flags().BoolVar(&sysdumpOptions.Encrypt,
+		"encrypt", sysdump.DefaultEncrypt,
+		"Whether to encrypt the resulting zip file")
+	cmd.Flags().StringSliceVar(&sysdumpOptions.EncryptionKeys,
+		"encryption-key", []string{sysdump.DefaultEncryptionKey},
+		"The path to the OpenPGP-compliant public key to use for encrypting the resulting zip file. Defaults to an embeded OpenPGP-compliant public key")
 	cmd.Flags().StringVar(&sysdumpOptions.HubbleLabelSelector,
 		"hubble-label-selector", sysdump.DefaultHubbleLabelSelector,
 		"The labels used to target Hubble pods")

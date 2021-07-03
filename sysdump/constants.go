@@ -65,6 +65,7 @@ const (
 	kubernetesVersionInfoFileName            = "k8s-version-<ts>.txt"
 	securityGroupPoliciesFileName            = "aws-securitygrouppolicies-<ts>.yaml"
 	timestampPlaceholderFileName             = "<ts>"
+	outputZipFilename                        = "cilium-sysdump-<ts>.zip"
 )
 
 const (

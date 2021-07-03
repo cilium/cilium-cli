@@ -30,6 +30,7 @@ require (
 	github.com/mholt/archiver/v3 v3.5.0
 	github.com/pkg/browser v0.0.0-20210606212950-a7b7a6107d32
 	github.com/spf13/cobra v1.1.1
+	golang.org/x/crypto v0.0.0-20201012173705-84dcc777aaee
 	google.golang.org/grpc v1.34.0
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
 	k8s.io/api v0.19.11
