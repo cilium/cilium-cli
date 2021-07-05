@@ -500,7 +500,7 @@ func (ct *ConnectivityTest) waitForDNS(ctx context.Context, pod Pod) error {
 		// Don't retry lookups more often than once per second.
 		r := time.After(time.Second)
 
-		target := "kube-dns.kube-system.svc.cluster.local"
+		target := "kube-dns.kube-system.svc"
 		stdout, _, err := pod.K8sClient.ExecInPodWithStderr(ctx, pod.Pod.Namespace, pod.Pod.Name,
 			"", []string{"nslookup", target})
 		if err == nil {
