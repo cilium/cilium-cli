@@ -126,7 +126,7 @@ jobs:
 
       - name: Ensure that the job terminates successfully
         run: |
-          kubectl -n kube-system wait job/cilium-cli --for=condition=complete --timeout=20m
+          kubectl -n kube-system wait job/cilium-cli --for=condition=complete --timeout=25m
 
       - name: Copy the sysdump
         run: |
@@ -142,6 +142,7 @@ jobs:
         run: |
           kubectl logs --timestamps -n kube-system job/cilium-cli
           kubectl get pods --all-namespaces -o wide
+          kubectl get pvc --all-namespaces -o wide
         shell: bash {0} # Disable default fail-fast behaviour so that all commands run independently
 
       - name: Clean up GKE
