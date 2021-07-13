@@ -17,6 +17,8 @@ package install
 import (
 	"bytes"
 	"context"
+	"sync"
+
 	"fmt"
 	"io"
 	"strings"
@@ -34,6 +36,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -988,7 +991,7 @@ type k8sInstallerImplementation interface {
 	CreateNamespace(ctx context.Context, namespace string, opts metav1.CreateOptions) (*corev1.Namespace, error)
 	GetNamespace(ctx context.Context, namespace string, options metav1.GetOptions) (*corev1.Namespace, error)
 	ListPods(ctx context.Context, namespace string, options metav1.ListOptions) (*corev1.PodList, error)
-	DeletePod(ctx context.Context, namespace, name string, options metav1.DeleteOptions) error
+	EvictPod(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error
 	ExecInPod(ctx context.Context, namespace, pod, container string, command []string) (bytes.Buffer, error)
 	CreateSecret(ctx context.Context, namespace string, secret *corev1.Secret, opts metav1.CreateOptions) (*corev1.Secret, error)
 	DeleteSecret(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error
@@ -1463,15 +1466,83 @@ func (k *K8sInstaller) deployResourceQuotas(ctx context.Context) error {
 	return nil
 }
 
-func (k *K8sInstaller) restartUnmanagedPods(ctx context.Context) error {
-	var printed bool
+func tail(pods []*corev1.Pod) []*corev1.Pod {
+	if len(pods) <= 1 {
+		pods = nil
+	} else {
+		pods = pods[1:]
+	}
+	return pods
+}
 
+func groupPodsByNamespace(pods *corev1.PodList) map[string][]*corev1.Pod {
+	nsToPods := make(map[string][]*corev1.Pod)
+	for idx, p := range pods.Items {
+		nsToPods[p.Namespace] = append(nsToPods[p.Namespace], &pods.Items[idx])
+	}
+	return nsToPods
+}
+
+func (k *K8sInstaller) runEvictions(ctx context.Context, cepMap map[string]struct{}, pods *corev1.PodList) {
+	nsToPods := groupPodsByNamespace(pods)
+	var wg sync.WaitGroup
+	for ns, pods := range nsToPods {
+		ns := ns
+		pods := pods
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			k.Log("♻️  Restarting unmanaged pods on namespace=%s", ns)
+			var retry int
+			maxRetry := 5
+			for len(pods) > 0 {
+				pod := pods[0]
+				if pod.Spec.HostNetwork {
+					pods = tail(pods)
+					continue
+				}
+
+				if _, ok := cepMap[pod.Namespace+"/"+pod.Name]; ok {
+					pods = tail(pods)
+					continue
+				}
+
+				err := k.client.EvictPod(ctx, pod.Namespace, pod.Name, metav1.DeleteOptions{})
+				if err != nil {
+					if errors.IsTooManyRequests(err) { //PodDisruptionBudget enforcement
+						waitTime := time.Duration(*pod.Spec.TerminationGracePeriodSeconds)
+						if retry > maxRetry {
+							k.Log("⚠️  Unable to restart pods in namespace %q, after %d retries every %ds.", pod.Namespace, maxRetry, waitTime)
+							return
+						}
+						k.Log("ℹ️  Restarting %s/%s would violate PodDisruptionBudget. Sleeping %ds before retrying.", pod.Namespace, pod.Name, waitTime)
+						time.Sleep(waitTime * time.Second)
+						retry++
+						continue
+					} else if errors.IsInternalError(err) {
+						k.Log("⚠️  Could not restart pod %s/%s. Please take manual action: %s", pod.Namespace, pod.Name, err)
+					} else {
+						k.Log("⚠️  Unable to restart pod %s/%s: %s.", pod.Namespace, pod.Name, err)
+					}
+					pods = tail(pods)
+					continue
+				}
+				k.Log("♻️  Restarted unmanaged pod %s/%s", pod.Namespace, pod.Name)
+				retry = 0
+				pods = tail(pods)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+func (k *K8sInstaller) restartUnmanagedPods(ctx context.Context) error {
 	pods, err := k.client.ListPods(ctx, "", metav1.ListOptions{})
 	if err != nil {
 		return fmt.Errorf("unable to list pods: %w", err)
 	}
 
-	// If not pods are running, skip. This avoids attemptingm to retrieve
+	// If no pods are running, skip. This avoids attempting to retrieve
 	// CiliumEndpoints if no pods are present at all. Cilium will not be
 	// running either.
 	if len(pods.Items) == 0 {
@@ -1492,27 +1563,8 @@ func (k *K8sInstaller) restartUnmanagedPods(ctx context.Context) error {
 		}
 	}
 
-	for _, pod := range pods.Items {
-		if !pod.Spec.HostNetwork {
-			if _, ok := cepMap[pod.Namespace+"/"+pod.Name]; ok {
-				continue
-			}
-
-			if !printed {
-				k.Log("♻️  Restarting unmanaged pods...")
-				printed = true
-			}
-			err := k.client.DeletePod(ctx, pod.Namespace, pod.Name, metav1.DeleteOptions{})
-			if err != nil {
-				k.Log("⚠️  Unable to restart pod %s/%s: %s", pod.Namespace, pod.Name, err)
-			} else {
-				k.Log("♻️  Restarted unmanaged pod %s/%s", pod.Namespace, pod.Name)
-			}
-		}
-	}
-
+	k.runEvictions(ctx, cepMap, pods)
 	return nil
-
 }
 
 func (k *K8sInstaller) Install(ctx context.Context) error {
