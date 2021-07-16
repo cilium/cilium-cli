@@ -168,6 +168,10 @@ func (a *Action) Run(f func(*Action)) {
 		a.printFlows(a.Source())
 		a.printFlows(a.Destination())
 	}
+	if a.failed && a.test.ctx.params.PauseOnFail {
+		a.Log("Pausing after test case failure, press the Enter key to continue:")
+		fmt.Scanln()
+	}
 }
 
 // fail marks the Action as failed.
@@ -195,21 +199,37 @@ func (a *Action) ExecInPod(ctx context.Context, cmd []string) {
 	cmdName := cmd[0]
 	cmdStr := strings.Join(cmd, " ")
 
-	if stderr.Len() > 0 {
-		a.test.Debugf("%s stderr: %s", cmdName, stderr.String())
-	} else if stdout.Len() > 0 {
-		a.test.Debugf("%s stdout: %s", cmdName, stdout.String())
-	}
-
 	if err != nil || stderr.Len() > 0 {
 		if a.shouldSucceed() {
 			a.Failf("command %q failed: %s", cmdStr, err)
 		} else {
-			a.test.Debugf("command %q failed as expected: %s", cmdStr, err)
+			a.test.Infof("command %q failed as expected: %s", cmdStr, err)
 		}
 	} else {
 		if !a.shouldSucceed() {
 			a.Failf("command %q succeeded while it should have failed: %s", cmdStr, stdout.String())
+		}
+	}
+	if stderr.Len() > 0 {
+		// Debug level logs are only shown when running with `--debug`,
+		// which is proper for succeeding actions. Log at the fail
+		// level when the action has failed to always log the failing
+		// output.
+		if a.failed {
+			a.Failf("%s stderr: %s", cmdName, stderr.String())
+		} else {
+			a.Debugf("%s stderr: %s", cmdName, stderr.String())
+		}
+	}
+	if stdout.Len() > 0 {
+		// Debug level logs are only shown when running with `--debug`,
+		// which is proper for succeeding actions. Log at the fail
+		// level when the action has failed to always log the failing
+		// output.
+		if a.failed {
+			a.Failf("%s stdout: %s", cmdName, stdout.String())
+		} else {
+			a.Debugf("%s stdout: %s", cmdName, stdout.String())
 		}
 	}
 }
