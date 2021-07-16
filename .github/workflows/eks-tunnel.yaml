@@ -2,7 +2,7 @@ name: EKS (tunnel)
 
 # Any change in triggers needs to be reflected in the concurrency group.
 on:
-  pull_request_target: {}
+  pull_request: {}
   # Run every 6 hours
   schedule:
     - cron:  '30 1/6 * * *'
@@ -106,6 +106,8 @@ jobs:
 
       - name: Make sure the 'aws-node' DaemonSet exists but has no scheduled pods
         run: |
+          kubectl -n kube-system get ds
+          kubectl -n kube-system get pods
           kubectl -n kube-sytem wait --for=delete pods -l k8s-app=aws-node
           [[ $(kubectl -n kube-system get ds/aws-node -o jsonpath='{.status.currentNumberScheduled}') == 0 ]]
 
