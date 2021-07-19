@@ -684,7 +684,15 @@ func (k *K8sInstaller) generateAgentDaemonSet() *appsv1.DaemonSet {
 
 	}
 
-	mountCmd := `mount | grep "/sys/fs/bpf type bpf" || { echo "Mounting eBPF filesystem..."; mount bpffs /sys/fs/bpf -t bpf; }`
+	var mountCmd string
+
+	switch k.flavor.Kind {
+	case k8s.KindK3D:
+		mountCmd = `/bin/busybox mount | grep "/sys/fs/bpf type bpf" || { echo "Mounting eBPF filesystem..."; /bin/busybox mount bpffs /sys/fs/bpf -t bpf; /bin/busybox mount --make-shared /sys/fs/bpf; }`
+	default:
+		mountCmd = `mount | grep "/sys/fs/bpf type bpf" || { echo "Mounting eBPF filesystem..."; mount bpffs /sys/fs/bpf -t bpf; }`
+	}
+
 	nodeInitContainers = append(nodeInitContainers, corev1.Container{
 		Name:            "ebpf-mount",
 		Image:           k.fqAgentImage(),
