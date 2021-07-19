@@ -55,7 +55,7 @@ jobs:
           echo ::set-output name=sha::${SHA}
           echo ::set-output name=owner::${OWNER}
 
-      - name: Create EKS cluster nodegroup
+      - name: Create EKS cluster with nodegroup
         run: |
           cat <<EOF > eks-config.yaml
           apiVersion: eksctl.io/v1alpha5
@@ -106,6 +106,7 @@ jobs:
 
       - name: Make sure the 'aws-node' DaemonSet exists but has no scheduled pods
         run: |
+          kubectl -n kube-system wait job/cilium-cli-install --for=condition=complete --timeout=10m
           [[ $(kubectl -n kube-system get ds/aws-node -o jsonpath='{.status.currentNumberScheduled}') == 0 ]]
 
       - name: Load cilium cli script in configmap

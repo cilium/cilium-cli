@@ -106,6 +106,7 @@ jobs:
 
       - name: Make sure the 'aws-node' DaemonSet exists but has no scheduled pods
         run: |
+          kubectl -n kube-system wait job/cilium-cli-install --for=condition=complete --timeout=10m
           [[ $(kubectl -n kube-system get ds/aws-node -o jsonpath='{.status.currentNumberScheduled}') == 0 ]]
 
       - name: Load cilium cli script in configmap
