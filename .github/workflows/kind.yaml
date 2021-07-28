@@ -63,45 +63,53 @@ jobs:
           sleep 10s
           [[ $(pgrep -f "cilium.*hubble.*port-forward|kubectl.*port-forward.*hubble-relay" | wc -l) == 2 ]]
 
-      - name: Connectivity Test
-        run: |
-          cilium connectivity test --debug --all-flows
+          #- name: Connectivity Test
+          #  run: |
+          #    cilium connectivity test --debug --all-flows
+          #
+          #      - name: Uninstall cilium
+          #        run: |
+          #          cilium uninstall --wait
+          #
+          #- name: Install Cilium with IPsec Encryption
+          #  run: |
+          #    cilium install --encryption=ipsec --kube-proxy-replacement=probe
 
-      - name: Uninstall cilium
-        run: |
-          cilium uninstall --wait
+          #- name: Enable Relay
+          #  run: |
+          #    cilium hubble enable
 
-      - name: Install Cilium with IPsec Encryption
-        run: |
-          cilium install --encryption=ipsec --kube-proxy-replacement=probe
+          #- name: Status
+          #  run: |
+          #    cilium status --wait
 
-      - name: Enable Relay
-        run: |
-          cilium hubble enable
+          #- name: Relay Port Forward
+          #  run: |
+          #    pkill -f "cilium.*hubble.*port-forward|kubectl.*port-forward.*hubble-relay"
+          #    sleep 1s
+          #    cilium hubble port-forward&
+          #    sleep 10s
+          #    [[ $(pgrep -f "cilium.*hubble.*port-forward|kubectl.*port-forward.*hubble-relay" | wc -l) == 2 ]]
 
-      - name: Status
-        run: |
-          cilium status --wait
-
-      - name: Relay Port Forward
-        run: |
-          pkill -f "cilium.*hubble.*port-forward|kubectl.*port-forward.*hubble-relay"
-          sleep 1s
-          cilium hubble port-forward&
-          sleep 10s
-          [[ $(pgrep -f "cilium.*hubble.*port-forward|kubectl.*port-forward.*hubble-relay" | wc -l) == 2 ]]
-
-      - name: Connectivity test
-        run: |
-          cilium connectivity test --debug --force-deploy --all-flows
+          #- name: Connectivity test
+          #  run: |
+          #    cilium connectivity test --debug --force-deploy --all-flows
 
       - name: Cleanup
         if: ${{ always() }}
+        shell: 'script -q -e -c "bash --noprofile --norc -eo pipefail {0}"'
         run: |
           cilium status
           kubectl get pods --all-namespaces -o wide
           cilium sysdump --output-filename cilium-sysdump-out
-        shell: bash {0} # Disable default fail-fast behaviour so that all commands run independently
+          cd /tmp
+          version="$(curl -sL0 'https://api.github.com/repos/cilium/hubble/releases/latest' | jq -r .tag_name)"
+          curl -sLO "https://github.com/cilium/hubble/releases/download/${version}/hubble-linux-amd64.tar.gz"
+          tar zxf hubble-linux-amd64.tar.gz
+          chmod +x ./hubble
+          ./hubble status 2>&1
+          ./hubble observe --last 20 --debug --server localhost:4245 2>&1
+          ./hubble list nodes
 
       - name: Upload Artifacts
         if: ${{ !success() }}
