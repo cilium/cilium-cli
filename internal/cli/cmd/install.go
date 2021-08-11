@@ -64,6 +64,7 @@ cilium install --context kind-cluster1 --cluster-id 1 --cluster-name cluster1
 	cmd.Flags().StringVar(&params.BaseVersion, "base-version", "",
 		"Specify the base Cilium version for configuration purpose in case the --version flag doesn't indicate the actual Cilium version")
 	cmd.Flags().MarkHidden("base-version")
+	cmd.Flags().BoolVar(&params.DevMode, "dev", false, "Enable developer mode (--version flag is not validated)")
 	cmd.Flags().StringVar(&params.DatapathMode, "datapath-mode", "", "Datapath mode to use")
 	cmd.Flags().StringVar(&params.IPAM, "ipam", "", "IP Address Management (IPAM) mode")
 	cmd.Flags().StringVar(&params.NativeRoutingCIDR, "native-routing-cidr", "", "CIDR within which native routing is possible")
@@ -159,6 +160,7 @@ cilium upgrade --version v1.10.2
 	cmd.Flags().DurationVar(&params.WaitDuration, "wait-duration", 15*time.Minute, "Maximum time to wait for status")
 	cmd.Flags().StringVar(&params.AgentImage, "agent-image", "", "Image path to use for Cilium agent")
 	cmd.Flags().StringVar(&params.OperatorImage, "operator-image", "", "Image path to use for Cilium operator")
+	cmd.Flags().BoolVar(&params.DevMode, "dev", false, "Enable developer mode (--version flag is not validated)")
 
 	return cmd
 }

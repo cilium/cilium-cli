@@ -1040,6 +1040,7 @@ type Parameters struct {
 	Version              string
 	AgentImage           string
 	OperatorImage        string
+	DevMode              bool
 	InheritCA            string
 	Wait                 bool
 	WaitDuration         time.Duration
@@ -1079,7 +1080,7 @@ func (p *Parameters) validate() error {
 	}
 	if p.AgentImage != "" || p.OperatorImage != "" {
 		return nil
-	} else if !utils.CheckVersion(p.Version) && p.Version != "" {
+	} else if !p.DevMode && !utils.CheckVersion(p.Version) && p.Version != "" {
 		return fmt.Errorf("invalid syntax %q for image tag", p.Version)
 	}
 
@@ -1172,7 +1173,10 @@ func (k *K8sInstaller) getCiliumVersion() semver.Version {
 		ersion = strings.TrimPrefix(k.params.Version, "v")
 	}
 	v, err := versioncheck.Version(ersion)
-	if err != nil {
+	switch {
+	case k.params.DevMode:
+		return v
+	case err != nil:
 		// TODO: Don't hard code version here, get it from stable.txt.
 		k.Log("Unable to parse the provided version %q, assuming it's =1.10.0", k.params.Version)
 		v = versioncheck.MustVersion("1.10.0")
