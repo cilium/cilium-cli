@@ -42,7 +42,7 @@ import (
 )
 
 var (
-	agentMaxUnavailable                = intstr.FromInt(2)
+agentMaxUnavailable                = intstr.FromInt(2)
 	varTrue                            = true
 	hostToContainer                    = corev1.MountPropagationHostToContainer
 	agentTerminationGracePeriodSeconds = int64(1)
