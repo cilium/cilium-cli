@@ -34,7 +34,7 @@ func (s *podToWorld) Name() string {
 func (s *podToWorld) Run(ctx context.Context, t *check.Test) {
 	chttp := check.HTTPEndpoint("cilium-io-http", "http://cilium.io")
 	chttps := check.HTTPEndpoint("cilium-io-https", "https://cilium.io")
-	jhttp := check.HTTPEndpoint("jenkins-cilium-io-http", "http://jenkins.cilium.io")
+	dhttp := check.HTTPEndpoint("docs-cilium-io-http", "http://docs.cilium.io")
 
 	fp := check.FlowParameters{
 		DNSRequired: true,
@@ -57,8 +57,8 @@ func (s *podToWorld) Run(ctx context.Context, t *check.Test) {
 		})
 
 		// With http to jenkins.cilium.io.
-		t.NewAction(s, fmt.Sprintf("http-to-jenkins-cilium-%d", i), &client, jhttp).Run(func(a *check.Action) {
-			a.ExecInPod(ctx, curl(jhttp))
+		t.NewAction(s, fmt.Sprintf("http-to-docs-cilium-%d", i), &client, dhttp).Run(func(a *check.Action) {
+			a.ExecInPod(ctx, curl(dhttp))
 			a.ValidateFlows(ctx, client, a.GetEgressRequirements(fp))
 		})
 
