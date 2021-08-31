@@ -6,6 +6,7 @@ set -e
 # Install Cilium
 cilium install \
   --cluster-name "${CLUSTER_NAME}" \
+  --config hubble-event-buffer-capacity=65535 \
   --config monitor-aggregation=none \
   --native-routing-cidr="${CLUSTER_CIDR}"
 

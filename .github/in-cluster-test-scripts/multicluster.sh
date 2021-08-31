@@ -12,6 +12,7 @@ cilium install \
   --context "${CONTEXT1}" \
   --cluster-name "${CLUSTER_NAME_1}" \
   --cluster-id 1 \
+  --config hubble-event-buffer-capacity=65535 \
   --config monitor-aggregation=none \
   --native-routing-cidr=10.0.0.0/9
 
@@ -20,6 +21,7 @@ cilium install \
   --context "${CONTEXT2}" \
   --cluster-name "${CLUSTER_NAME_2}" \
   --cluster-id 2 \
+  --config hubble-event-buffer-capacity=65535 \
   --config monitor-aggregation=none \
   --native-routing-cidr=10.0.0.0/9 \
   --inherit-ca "${CONTEXT1}"

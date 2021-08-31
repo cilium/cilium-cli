@@ -7,6 +7,7 @@ set -e
 cilium install \
   --cluster-name "${CLUSTER_NAME}" \
   --wait=false \
+  --config hubble-event-buffer-capacity=65535 \
   --config monitor-aggregation=none
 
 # Enable Relay

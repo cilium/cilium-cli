@@ -8,6 +8,7 @@ cilium install \
   --cluster-name "${CLUSTER_NAME}" \
   --wait=false \
   --config monitor-aggregation=none \
+  --config hubble-event-buffer-capacity=65535 \
   --datapath-mode=tunnel \
   --ipam cluster-pool
 
