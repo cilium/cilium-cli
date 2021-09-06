@@ -12,4 +12,5 @@ cilium install \
   --azure-client-id "${AZURE_CLIENT_ID}" \
   --azure-client-secret "${AZURE_CLIENT_SECRET}" \
   --wait=false \
+  --config bpf-map-dynamic-size-ratio="0.9" \
   --config monitor-aggregation=none

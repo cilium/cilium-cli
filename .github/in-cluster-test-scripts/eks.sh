@@ -7,6 +7,7 @@ set -e
 cilium install \
   --cluster-name "${CLUSTER_NAME}" \
   --wait=false \
+  --config bpf-map-dynamic-size-ratio="0.9" \
   --config monitor-aggregation=none
 
 # Enable Relay

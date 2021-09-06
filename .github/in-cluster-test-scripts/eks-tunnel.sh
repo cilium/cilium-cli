@@ -9,6 +9,7 @@ cilium install \
   --wait=false \
   --config monitor-aggregation=none \
   --datapath-mode=tunnel \
+  --config bpf-map-dynamic-size-ratio="0.9" \
   --ipam cluster-pool
 
 # Enable Relay

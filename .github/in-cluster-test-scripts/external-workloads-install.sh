@@ -9,6 +9,7 @@ cilium install \
   --config monitor-aggregation=none \
   --config tunnel=vxlan \
   --kube-proxy-replacement=strict \
+  --config bpf-map-dynamic-size-ratio="0.9" \
   --native-routing-cidr="${CLUSTER_CIDR}"
 
 # Enable Relay
