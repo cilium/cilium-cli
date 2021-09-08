@@ -121,6 +121,8 @@ func newCmdConnectivityTest() *cobra.Command {
 	cmd.Flags().BoolVarP(&params.PauseOnFail, "pause-on-fail", "p", false, "Pause execution on test failure")
 	cmd.Flags().BoolVar(&params.SkipIPCacheCheck, "skip-ip-cache-check", true, "Skip IPCache check")
 	cmd.Flags().MarkHidden("skip-ip-cache-check")
+	cmd.Flags().StringVar(&params.CurlImage, "curl-image", defaults.ConnectivityCheckCurlImage, "Docker image to use for connectivity test client pods")
+	cmd.Flags().MarkHidden("curl-image")
 
 	return cmd
 }

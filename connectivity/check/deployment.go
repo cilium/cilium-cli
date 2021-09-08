@@ -241,8 +241,8 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 			Name:    ClientDeploymentName,
 			Kind:    kindClientName,
 			Port:    8080,
-			Image:   defaults.ConnectivityCheckAlpineCurlImage,
-			Command: []string{"/bin/ash", "-c", "sleep 10000000"},
+			Image:   ct.params.CurlImage,
+			Command: []string{"/bin/sh", "-c", "sleep 10000000"},
 		})
 		_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, clientDeployment, metav1.CreateOptions{})
 		if err != nil {
@@ -258,8 +258,8 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 			Name:    Client2DeploymentName,
 			Kind:    kindClientName,
 			Port:    8080,
-			Image:   defaults.ConnectivityCheckAlpineCurlImage,
-			Command: []string{"/bin/ash", "-c", "sleep 10000000"},
+			Image:   ct.params.CurlImage,
+			Command: []string{"/bin/sh", "-c", "sleep 10000000"},
 			Labels:  map[string]string{"other": "client"},
 		})
 		_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, clientDeployment, metav1.CreateOptions{})
