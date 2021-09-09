@@ -36,8 +36,6 @@ type Options struct {
 	ClustermeshApiserverLabelSelector string
 	// Whether to enable debug logging.
 	Debug bool
-	// The labels used to target Hubble pods.
-	HubbleLabelSelector string
 	// Number of Hubble flows to collect.
 	HubbleFlowsCount int64
 	// Timeout for collecting Hubble flows.
@@ -385,24 +383,6 @@ func (c *Collector) Run() error {
 			},
 		},
 		{
-			Description: "Collecting the Hubble daemonset",
-			Quick:       true,
-			Task: func(ctx context.Context) error {
-				v, err := c.client.GetDaemonSet(ctx, c.options.CiliumNamespace, hubbleDaemonSetName, metav1.GetOptions{})
-				if err != nil {
-					if errors.IsNotFound(err) {
-						c.logDebug("Daemonset %q not found in namespace %q - this is expected in recent versions of Cilium", hubbleDaemonSetName, c.options.CiliumNamespace)
-						return nil
-					}
-					return fmt.Errorf("failed to collect the Hubble daemonset: %w", err)
-				}
-				if err := writeYaml(absoluteTempPath(hubbleDaemonsetFileName), v); err != nil {
-					return fmt.Errorf("failed to collect the Hubble daemonset: %w", err)
-				}
-				return nil
-			},
-		},
-		{
 			Description: "Collecting the Hubble Relay deployment",
 			Quick:       true,
 			Task: func(ctx context.Context) error {
@@ -489,23 +469,6 @@ func (c *Collector) Run() error {
 		},
 		{
 			CreatesSubtasks: true,
-			Description:     "Collecting gops stats from Hubble pods",
-			Quick:           true,
-			Task: func(ctx context.Context) error {
-				p, err := c.client.ListPods(ctx, c.options.CiliumNamespace, metav1.ListOptions{
-					LabelSelector: c.options.HubbleLabelSelector,
-				})
-				if err != nil {
-					return fmt.Errorf("failed to get Hubble pods: %w", err)
-				}
-				if err := c.submitGopsSubtasks(ctx, filterPods(p, nodeList), hubbleContainerName, absoluteTempPath); err != nil {
-					return fmt.Errorf("failed to collect Hubble gops: %w", err)
-				}
-				return nil
-			},
-		},
-		{
-			CreatesSubtasks: true,
 			Description:     "Collecting gops stats from Hubble Relay pods",
 			Quick:           true,
 			Task: func(ctx context.Context) error {
@@ -585,23 +548,6 @@ func (c *Collector) Run() error {
 				}
 				if err := c.submitLogsTasks(ctx, filterPods(p, nodeList), c.options.LogsSinceTime, c.options.LogsLimitBytes, absoluteTempPath); err != nil {
 					return fmt.Errorf("failed to collect logs from 'clustermesh-apiserver' pods")
-				}
-				return nil
-			},
-		},
-		{
-			CreatesSubtasks: true,
-			Description:     "Collecting logs from Hubble pods",
-			Quick:           false,
-			Task: func(ctx context.Context) error {
-				p, err := c.client.ListPods(ctx, c.options.CiliumNamespace, metav1.ListOptions{
-					LabelSelector: c.options.HubbleLabelSelector,
-				})
-				if err != nil {
-					return fmt.Errorf("failed to get logs from Hubble pods")
-				}
-				if err := c.submitLogsTasks(ctx, filterPods(p, nodeList), c.options.LogsSinceTime, c.options.LogsLimitBytes, absoluteTempPath); err != nil {
-					return fmt.Errorf("failed to collect logs from Hubble pods")
 				}
 				return nil
 			},

@@ -21,8 +21,6 @@ const (
 	ciliumEtcdSecretsSecretName        = "cilium-etcd-secrets"
 	ciliumOperatorDeploymentName       = defaults.OperatorDeploymentName
 	clustermeshApiserverDeploymentName = defaults.ClusterMeshDeploymentName
-	hubbleContainerName                = "hubble"
-	hubbleDaemonSetName                = "hubble"
 	hubbleRelayContainerName           = defaults.RelayContainerName
 	hubbleRelayDeploymentName          = defaults.RelayDeploymentName
 	hubbleUIDeploymentName             = defaults.HubbleUIDeploymentName
@@ -46,7 +44,6 @@ const (
 	clustermeshApiserverDeploymentFileName   = "clustermesh-apiserver-deployment-<ts>.yaml"
 	eniconfigsFileName                       = "aws-eniconfigs-<ts>.yaml"
 	gopsFileName                             = "gops-%s-%s-<ts>-%s.txt"
-	hubbleDaemonsetFileName                  = "hubble-daemonset-<ts>.yaml"
 	hubbleFlowsFileName                      = "hubble-flows-%s-<ts>.json"
 	hubbleRelayDeploymentFileName            = "hubble-relay-deployment-<ts>.yaml"
 	hubbleUIDeploymentFileName               = "hubble-ui-deployment-<ts>.yaml"
