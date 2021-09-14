@@ -5,6 +5,7 @@ package check
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -158,9 +159,23 @@ func (a *Action) Run(f func(*Action)) {
 		a.printFlows(a.Source())
 		a.printFlows(a.Destination())
 	}
+	if a.test.ctx.params.Debug {
+		a.dumpRawFlows()
+
+	}
 	if a.failed && a.test.ctx.params.PauseOnFail {
 		a.Log("Pausing after action failure, press the Enter key to continue:")
 		fmt.Scanln()
+	}
+}
+
+func (a *Action) dumpRawFlows() {
+	var b strings.Builder
+	e := json.NewEncoder(&b)
+	for _, f := range a.flows {
+		e.Encode(&observer.GetFlowsResponse{ResponseTypes: f})
+		a.Logf("RAW_FLOW: %s/%s %s", a.scenario.Name(), a.name, strings.TrimSuffix(b.String(), "\n"))
+		b.Reset()
 	}
 }
 
