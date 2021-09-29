@@ -492,6 +492,7 @@ func DNS(query string, rcode uint32) FlowFilterImplementation {
 }
 
 type httpFilter struct {
+	dir      flowpb.L7FlowType
 	code     uint32
 	method   string
 	url      string
@@ -507,6 +508,10 @@ func (h *httpFilter) Match(flow *flowpb.Flow, fc *FlowContext) bool {
 
 	http := l7.GetHttp()
 	if http == nil {
+		return false
+	}
+
+	if l7.Type != h.dir {
 		return false
 	}
 
@@ -542,6 +547,7 @@ func (h *httpFilter) Match(flow *flowpb.Flow, fc *FlowContext) bool {
 
 func (h *httpFilter) String(fc *FlowContext) string {
 	var s []string
+	s = append(s, h.dir.String())
 	if h.code != math.MaxUint32 {
 		s = append(s, fmt.Sprintf("code=%d", h.code))
 	}
@@ -564,7 +570,12 @@ func (h *httpFilter) String(fc *FlowContext) string {
 	return "http(" + strings.Join(s, ",") + ")"
 }
 
-// HTTP matches on proxied HTTP packets containing a specific value, if any
-func HTTP(code uint32, method, url string) FlowFilterImplementation {
-	return &httpFilter{code: code, method: method, url: url}
+// HTTPRequest matches on proxied HTTP requests containing a specific values, if any
+func HTTPRequest(method, url string) FlowFilterImplementation {
+	return &httpFilter{dir: flowpb.L7FlowType_REQUEST, code: math.MaxUint32, method: method, url: url}
+}
+
+// HTTPResponse matches on proxied HTTP requests containing a specific values, if any
+func HTTPResponse(code uint32, method, url string) FlowFilterImplementation {
+	return &httpFilter{dir: flowpb.L7FlowType_RESPONSE, code: code, method: method, url: url}
 }
