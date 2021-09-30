@@ -156,6 +156,7 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 		WithPolicy(clientEgressL7HTTPPolicyYAML).  // L7 allow policy with HTTP introspection
 		WithScenarios(
 			tests.PodToPod(""),
+			tests.PodToService(""),
 			tests.PodToWorld(""),
 		).
 		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
