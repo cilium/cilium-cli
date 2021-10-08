@@ -353,6 +353,8 @@ func (a *Action) matchFlowRequirements(ctx context.Context, flows flowsSet, req 
 
 		flowCtx := filters.NewFlowContext()
 
+		// First match can fix wildcarded source port & destination IP,
+		// all other requirements must have the same values.
 		index, matched, _ := match(true, req.First, &flowCtx)
 		if !matched {
 			r.NeedMoreFlows = true
@@ -360,6 +362,8 @@ func (a *Action) matchFlowRequirements(ctx context.Context, flows flowsSet, req 
 			break
 		}
 		r.FirstMatch = index
+		// Fix wildcards if any
+		flowCtx.FixWildcards(flows[index].Flow)
 
 		for _, f := range req.Middle {
 			if f.SkipOnAggregation && a.test.ctx.FlowAggregation() {

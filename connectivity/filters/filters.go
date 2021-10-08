@@ -19,21 +19,31 @@ type FlowContext struct {
 	// This value is fixed when a wildcarded source port is filled in to the ports maps.
 	dstIP string
 
-	// tcpPorts is filled in when matching a wildcarded source port for a TCP SYN.
-	// Subsequent non-SYN TCP matches using the same FlowContext will match this stored port number.
-	// Keyed by the known destination port so that we can track multiple connections at the same time
-	tcpPorts portMap
-
-	// udpPorts is filled in when matching a wildcarded source port for a UDP request.
-	// Subsequent UDP matches using the same FlowContext will match this stored port number.
-	// Keyed by the known destination port so that we can track multiple connections at the same time
-	udpPorts portMap
+	// ports is filled in when matching a wildcarded source port for an L4 packet.
+	ports portMap
 }
 
 func NewFlowContext() FlowContext {
 	return FlowContext{
-		tcpPorts: make(portMap, 1),
-		udpPorts: make(portMap, 1),
+		ports: make(portMap, 1),
+	}
+}
+
+func (fc *FlowContext) FixWildcards(flow *flowpb.Flow) {
+	ip := flow.GetIP()
+	if ip != nil {
+		fc.dstIP = ip.Destination
+	}
+	l4 := flow.GetL4()
+	if l4 != nil {
+		udp := l4.GetUDP()
+		if udp != nil {
+			fc.ports[udp.DestinationPort] = udp.SourcePort
+		}
+		tcp := l4.GetTCP()
+		if tcp != nil {
+			fc.ports[tcp.DestinationPort] = tcp.SourcePort
+		}
 	}
 }
 
@@ -234,11 +244,15 @@ func (u *udpFilter) Match(flow *flowpb.Flow, fc *FlowContext) bool {
 	}
 
 	if u.srcPort == 0 { // wildcarded source port
-		fc.udpPorts[udp.DestinationPort] = udp.SourcePort
+		if srcPort, exists := fc.ports[udp.DestinationPort]; exists && udp.SourcePort != srcPort {
+			return false
+		}
 	}
 	// Match previously seen (ephemeral) source port as the destination port?
-	if u.dstPort == 0 && fc.udpPorts[udp.SourcePort] != udp.DestinationPort {
-		return false
+	if u.dstPort == 0 {
+		if dstPort, exists := fc.ports[udp.SourcePort]; exists && udp.DestinationPort != dstPort {
+			return false
+		}
 	}
 
 	return true
@@ -248,14 +262,14 @@ func (u *udpFilter) String(fc *FlowContext) string {
 	var s []string
 	srcPort := u.srcPort
 	if srcPort == 0 {
-		srcPort = int(fc.udpPorts[uint32(u.dstPort)])
+		srcPort = int(fc.ports[uint32(u.dstPort)])
 	}
 	if srcPort != 0 {
 		s = append(s, fmt.Sprintf("srcPort=%d", srcPort))
 	}
 	dstPort := u.dstPort
 	if dstPort == 0 {
-		dstPort = int(fc.udpPorts[uint32(u.srcPort)])
+		dstPort = int(fc.ports[uint32(u.srcPort)])
 	}
 	if dstPort != 0 {
 		s = append(s, fmt.Sprintf("dstPort=%d", dstPort))
@@ -345,7 +359,7 @@ func (i *ipFilter) Match(flow *flowpb.Flow, fc *FlowContext) bool {
 	if i.srcIP != "" && ip.Source != i.srcIP {
 		return false
 	}
-	// Match wildcarded source IP (on a reply direction) seen in the SYN message
+	// Match wildcarded source IP (on a reply direction)
 	if i.srcIP == "" && fc.dstIP != "" && ip.Source != fc.dstIP {
 		return false
 	}
@@ -397,28 +411,22 @@ func (t *tcpFilter) Match(flow *flowpb.Flow, fc *FlowContext) bool {
 		return false
 	}
 
-	if t.dstPort != 0 && tcp.DestinationPort != uint32(t.dstPort) {
-		return false
-	}
-
 	if t.srcPort == 0 {
-		// save wildcarded source port but only if not already set. This fixes the wildcard port to the first
-		// SYN flow within the tested flows.
-		sourcePort, exists := fc.tcpPorts[tcp.DestinationPort]
-		if !exists && tcp.Flags != nil && tcp.Flags.SYN && !tcp.Flags.ACK && !tcp.Flags.FIN && !tcp.Flags.RST {
-			fc.tcpPorts[tcp.DestinationPort] = tcp.SourcePort
-			ip := flow.GetIP()
-			if ip != nil {
-				fc.dstIP = ip.Destination
-			}
-		} else if tcp.SourcePort != sourcePort {
+		if sourcePort, exists := fc.ports[tcp.DestinationPort]; exists && tcp.SourcePort != sourcePort {
 			return false
 		}
 	}
 
-	// Match previously seen (ephemeral) source port as the destination port?
-	if t.dstPort == 0 && tcp.DestinationPort != fc.tcpPorts[tcp.SourcePort] {
+	if t.dstPort != 0 && tcp.DestinationPort != uint32(t.dstPort) {
 		return false
+	}
+
+	// Match previously seen (ephemeral) source port as the destination port?
+	if t.dstPort == 0 {
+
+		if dstPort, exists := fc.ports[tcp.SourcePort]; exists && tcp.DestinationPort != dstPort {
+			return false
+		}
 	}
 
 	return true
