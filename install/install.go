@@ -35,12 +35,14 @@ var (
 	varTrue                            = true
 	hostToContainer                    = corev1.MountPropagationHostToContainer
 	agentTerminationGracePeriodSeconds = int64(1)
+	hostPathDirectory                  = corev1.HostPathDirectory
 	hostPathDirectoryOrCreate          = corev1.HostPathDirectoryOrCreate
 	hostPathFileOrCreate               = corev1.HostPathFileOrCreate
 	secretDefaultMode                  = int32(0400)
 	operatorReplicas                   = int32(1)
 	operatorMaxSurge                   = intstr.FromInt(1)
 	operatorMaxUnavailable             = intstr.FromInt(1)
+	cgroupRoot                         = "/run/cilium/cgroupv2"
 )
 
 const (
@@ -399,6 +401,10 @@ func (k *K8sInstaller) generateAgentDaemonSet() *appsv1.DaemonSet {
 									Name:      "bpf-maps",
 									MountPath: "/sys/fs/bpf",
 								},
+								//{
+								//	Name:      "cilium-cgroup",
+								//	MountPath: cgroupRoot,
+								//},
 								{
 									Name:      "cilium-run",
 									MountPath: "/var/run/cilium",
@@ -441,6 +447,41 @@ func (k *K8sInstaller) generateAgentDaemonSet() *appsv1.DaemonSet {
 					},
 					InitContainers: []corev1.Container{
 						{
+							Name: "mount-cgroup",
+							Command: []string{
+								"nsenter",
+								"--cgroup=/hostpid1ns/cgroup",
+								"--mount=/hostpid1ns/mnt",
+								"--",
+								"sh",
+								"-c",
+								"mount | grep \"$CGROUP_ROOT type cgroup2\" || { echo \"Mounting cgroup filesystem...\"; mount -t cgroup2 none $CGROUP_ROOT; }",
+							},
+							Image:           k.fqAgentImage(),
+							ImagePullPolicy: corev1.PullIfNotPresent,
+							Env: []corev1.EnvVar{
+								{
+									Name: "CGROUP_ROOT",
+									ValueFrom: &corev1.EnvVarSource{
+										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: "cilium-config",
+											},
+											Key: "cgroup-root",
+										},
+									},
+								},
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "host-proc-ns",
+									MountPath: "/hostpid1ns",
+								},
+							},
+							SecurityContext: &corev1.SecurityContext{
+								Privileged: &varTrue,
+							},
+						}, {
 							Name:            "clean-cilium-state",
 							Command:         []string{"/init-container.sh"},
 							Image:           k.fqAgentImage(),
@@ -495,6 +536,12 @@ func (k *K8sInstaller) generateAgentDaemonSet() *appsv1.DaemonSet {
 									MountPath:        "/sys/fs/bpf",
 									MountPropagation: &hostToContainer,
 								},
+								// Required to mount cgroup filesystem from the host to cilium agent pod
+								{
+									Name:             "cilium-cgroup",
+									MountPath:        cgroupRoot,
+									MountPropagation: &hostToContainer,
+								},
 								{
 									Name:      "cilium-run",
 									MountPath: "/var/run/cilium",
@@ -525,6 +572,26 @@ func (k *K8sInstaller) generateAgentDaemonSet() *appsv1.DaemonSet {
 							VolumeSource: corev1.VolumeSource{
 								HostPath: &corev1.HostPathVolumeSource{
 									Path: "/sys/fs/bpf",
+									Type: &hostPathDirectoryOrCreate,
+								},
+							},
+						},
+						{
+							// To mount cgroup2 filesystem on the host
+							Name: "host-proc-ns",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Path: "/proc/1/ns",
+									Type: &hostPathDirectory,
+								},
+							},
+						},
+						{
+							// To keep state between restarts / upgrades for cgroup2 filesystem
+							Name: "cilium-cgroup",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Path: cgroupRoot,
 									Type: &hostPathDirectoryOrCreate,
 								},
 							},
@@ -1256,6 +1323,8 @@ func (k *K8sInstaller) generateConfigMap() (*corev1.ConfigMap, error) {
 			// Unique ID of the cluster. Must be unique across all conneted clusters and
 			// in the range of 1 and 255. Only relevant when building a mesh of clusters.
 			"cluster-id": "",
+
+			"cgroup-root": cgroupRoot,
 
 			// Enables L7 proxy for L7 policy enforcement and visibility
 			"enable-l7-proxy": "true",
