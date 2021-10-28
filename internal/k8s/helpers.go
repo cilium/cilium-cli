@@ -4,8 +4,10 @@
 package k8s
 
 import (
+	"github.com/cilium/cilium-cli/defaults"
 	//appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 
 	//"k8s.io/apimachinery/pkg/api/resource"
@@ -37,6 +39,17 @@ func NewClusterRoleBinding(name, namespace, serviceAccount string) *rbacv1.Clust
 				Name:      serviceAccount,
 				Namespace: namespace,
 			},
+		},
+	}
+}
+
+func NewIngressClass(name string) *v1.IngressClass {
+	return &v1.IngressClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: v1.IngressClassSpec{
+			Controller: defaults.IngressControllerName,
 		},
 	}
 }
