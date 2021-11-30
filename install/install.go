@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path"
 	"strings"
 	"time"
 
@@ -33,7 +34,7 @@ import (
 var (
 	agentMaxUnavailable                = intstr.FromInt(2)
 	varTrue                            = true
-	hostToContainer                    = corev1.MountPropagationHostToContainer
+	bidirectional                      = corev1.MountPropagationBidirectional
 	agentTerminationGracePeriodSeconds = int64(1)
 	hostPathDirectoryOrCreate          = corev1.HostPathDirectoryOrCreate
 	hostPathFileOrCreate               = corev1.HostPathFileOrCreate
@@ -492,9 +493,14 @@ func (k *K8sInstaller) generateAgentDaemonSet() *appsv1.DaemonSet {
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
-									Name:             "bpf-maps",
-									MountPath:        "/sys/fs/bpf",
-									MountPropagation: &hostToContainer,
+									Name:      "bpf-maps",
+									MountPath: "/sys/fs/bpf",
+									// Bidirectional propagation is required to mount
+									// BPF filesystem if not mounted already.
+									//
+									// See https://github.com/cilium/cilium/blob/master/pkg/bpf/bpffs_linux.go
+									// for reference.
+									MountPropagation: &bidirectional,
 								},
 								{
 									Name:      "cilium-run",
@@ -672,36 +678,97 @@ func (k *K8sInstaller) generateAgentDaemonSet() *appsv1.DaemonSet {
 				},
 			},
 		})
-
 	}
 
-	mountCmd := `mount | grep "/sys/fs/bpf type bpf" || { echo "Mounting eBPF filesystem..."; mount bpffs /sys/fs/bpf -t bpf; }`
-	nodeInitContainers = append(nodeInitContainers, corev1.Container{
-		Name:            "ebpf-mount",
-		Image:           k.fqAgentImage(),
-		ImagePullPolicy: corev1.PullIfNotPresent,
-		Command:         []string{"nsenter", "--mount=/hostproc/1/ns/mnt", "--", "sh", "-c", mountCmd},
-		SecurityContext: &corev1.SecurityContext{
-			Privileged: &varTrue,
-			// This doesn't work yet for some reason. It would allow to drop privileged mode:w
-			//
-			// Capabilities: &corev1.Capabilities{
-			// Add: []corev1.Capability{"SYS_PTRACE", "SYS_ADMIN", "SYS_CHROOT"},
-			// },
-		},
-		VolumeMounts: []corev1.VolumeMount{
-			{
-				Name:      "host-proc",
-				MountPath: "/hostproc",
+	{
+		// Required to mount cgroup2 filesystem on the underlying Kubernetes node.
+		// We use nsenter command with host's cgroup and mount namespaces enabled.
+		//
+		// The statically linked Go program binary is invoked to avoid any
+		// dependency on utilities like sh and mount that can be missing on certain
+		// distros installed on the underlying host. Copy the binary to the
+		// same directory where we install cilium cni plugin so that exec permissions
+		// are available.
+		//
+		// See https://github.com/cilium/cilium/issues/17883
+		const (
+			bin     = "cilium-mount"
+			usrBin  = "/usr/bin/"
+			hostBin = "/hostbin/"
+		)
+		mountPath := path.Join(k.cniBinPathOnHost(), bin)
+		script := strings.Join([]string{
+			"cp", path.Join(usrBin, bin), path.Join(hostBin, bin), "&&",
+
+			"nsenter",
+			"--cgroup=/hostproc/1/ns/cgroup",
+			"--mount=/hostproc/1/ns/mnt",
+			mountPath, "/run/cilium/cgroupv2;",
+
+			"rm", path.Join(hostBin, bin),
+		}, " ")
+		container := corev1.Container{
+			Name:            "mount-cgroup",
+			Image:           k.fqAgentImage(),
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command: []string{
+				"sh", "-ec", script,
 			},
-		},
-		Resources: corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("100m"),
-				corev1.ResourceMemory: resource.MustParse("100Mi"),
+			SecurityContext: &corev1.SecurityContext{
+				Privileged: &varTrue,
 			},
-		},
-	})
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "host-proc",
+					MountPath: "/hostproc",
+				},
+				{
+					Name:      "cni-path",
+					MountPath: "/hostbin",
+				},
+			},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("100m"),
+					corev1.ResourceMemory: resource.MustParse("100Mi"),
+				},
+			},
+		}
+		// Check that current version contains cilium-mount binary.
+		var (
+			version    = k.getCiliumVersion()
+			minVersion = versioncheck.MustVersion("1.10.3")
+		)
+		if version.GTE(minVersion) {
+			nodeInitContainers = append(nodeInitContainers, container)
+		}
+	}
+
+	if k.flavor.Kind == k8s.KindKind {
+		// HACK(ernado): can't make kind work without this init container.
+		mountCmd := `mount | grep "/sys/fs/bpf type bpf" || { echo "Mounting eBPF filesystem..."; mount bpffs /sys/fs/bpf -t bpf; }`
+		nodeInitContainers = append(nodeInitContainers, corev1.Container{
+			Name:            "ebpf-mount",
+			Image:           k.fqAgentImage(),
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"nsenter", "--mount=/hostproc/1/ns/mnt", "--", "sh", "-c", mountCmd},
+			SecurityContext: &corev1.SecurityContext{
+				Privileged: &varTrue,
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "host-proc",
+					MountPath: "/hostproc",
+				},
+			},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("100m"),
+					corev1.ResourceMemory: resource.MustParse("100Mi"),
+				},
+			},
+		})
+	}
 
 	auxVolumes = append(auxVolumes, corev1.Volume{
 		Name: "host-proc",
