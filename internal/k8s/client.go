@@ -679,13 +679,13 @@ func (c *Client) GetPlatform(ctx context.Context) (*Platform, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get Kubernetes version: %w", err)
 	}
-	fileds := strings.Split(v.Platform, "/")
-	if len(fileds) != 2 {
+	fields := strings.Split(v.Platform, "/")
+	if len(fields) != 2 {
 		return nil, fmt.Errorf("unknown platform type")
 	}
 	return &Platform{
-		OS:   fileds[0],
-		Arch: fileds[1],
+		OS:   fields[0],
+		Arch: fields[1],
 	}, err
 
 }
