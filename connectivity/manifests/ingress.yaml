@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress
+  namespace: cilium-test
+spec:
+  ingressClassName: cilium
+  rules:
+  - http:
+      paths:
+      - backend:
+          service:
+            name: echo-same-node
+            port:
+              number: 8080
+        path: /publiz
+        pathType: Exact
+      - backend:
+          service:
+            name: echo-other-node
+            port:
+              number: 8080
+        path: /
+        pathType: Prefix
