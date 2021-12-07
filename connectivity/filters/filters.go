@@ -15,21 +15,35 @@ type portMap map[uint32]uint32
 
 // FlowContext can carry state from one filter to another.
 type FlowContext struct {
-	// tcpPorts is filled in when matching a wildcarded source port for a TCP SYN.
-	// Subsequent non-SYN TCP matches using the same FlowContext will match this stored port number.
-	// Keyed by the known destination port so that we can track multiple connections at the same time
-	tcpPorts portMap
+	// dstIP is used to match the destination IP on when the filter specifies it as a wildcard.
+	// This value is fixed when a wildcarded source port is filled in to the ports maps.
+	dstIP string
 
-	// udpPorts is filled in when matching a wildcarded source port for a UDP request.
-	// Subsequent UDP matches using the same FlowContext will match this stored port number.
-	// Keyed by the known destination port so that we can track multiple connections at the same time
-	udpPorts portMap
+	// ports is filled in when matching a wildcarded source port for an L4 packet.
+	ports portMap
 }
 
 func NewFlowContext() FlowContext {
 	return FlowContext{
-		tcpPorts: make(portMap, 1),
-		udpPorts: make(portMap, 1),
+		ports: make(portMap, 1),
+	}
+}
+
+func (fc *FlowContext) FixWildcards(flow *flowpb.Flow) {
+	ip := flow.GetIP()
+	if ip != nil {
+		fc.dstIP = ip.Destination
+	}
+	l4 := flow.GetL4()
+	if l4 != nil {
+		udp := l4.GetUDP()
+		if udp != nil {
+			fc.ports[udp.DestinationPort] = udp.SourcePort
+		}
+		tcp := l4.GetTCP()
+		if tcp != nil {
+			fc.ports[tcp.DestinationPort] = tcp.SourcePort
+		}
 	}
 }
 
@@ -230,11 +244,15 @@ func (u *udpFilter) Match(flow *flowpb.Flow, fc *FlowContext) bool {
 	}
 
 	if u.srcPort == 0 { // wildcarded source port
-		fc.udpPorts[udp.DestinationPort] = udp.SourcePort
+		if srcPort, exists := fc.ports[udp.DestinationPort]; exists && udp.SourcePort != srcPort {
+			return false
+		}
 	}
 	// Match previously seen (ephemeral) source port as the destination port?
-	if u.dstPort == 0 && fc.udpPorts[udp.SourcePort] != udp.DestinationPort {
-		return false
+	if u.dstPort == 0 {
+		if dstPort, exists := fc.ports[udp.SourcePort]; exists && udp.DestinationPort != dstPort {
+			return false
+		}
 	}
 
 	return true
@@ -244,14 +262,14 @@ func (u *udpFilter) String(fc *FlowContext) string {
 	var s []string
 	srcPort := u.srcPort
 	if srcPort == 0 {
-		srcPort = int(fc.udpPorts[uint32(u.dstPort)])
+		srcPort = int(fc.ports[uint32(u.dstPort)])
 	}
 	if srcPort != 0 {
 		s = append(s, fmt.Sprintf("srcPort=%d", srcPort))
 	}
 	dstPort := u.dstPort
 	if dstPort == 0 {
-		dstPort = int(fc.udpPorts[uint32(u.srcPort)])
+		dstPort = int(fc.ports[uint32(u.srcPort)])
 	}
 	if dstPort != 0 {
 		s = append(s, fmt.Sprintf("dstPort=%d", dstPort))
@@ -341,8 +359,16 @@ func (i *ipFilter) Match(flow *flowpb.Flow, fc *FlowContext) bool {
 	if i.srcIP != "" && ip.Source != i.srcIP {
 		return false
 	}
+	// Match wildcarded source IP (on a reply direction)
+	if i.srcIP == "" && fc.dstIP != "" && ip.Source != fc.dstIP {
+		return false
+	}
 
 	if i.dstIP != "" && ip.Destination != i.dstIP {
+		return false
+	}
+	// Match wildcarded destination IP seen in the SYN message
+	if i.dstIP == "" && fc.dstIP != "" && ip.Destination != fc.dstIP {
 		return false
 	}
 
@@ -385,22 +411,22 @@ func (t *tcpFilter) Match(flow *flowpb.Flow, fc *FlowContext) bool {
 		return false
 	}
 
-	if t.dstPort != 0 && tcp.DestinationPort != uint32(t.dstPort) {
-		return false
-	}
-
 	if t.srcPort == 0 {
-		if tcp.Flags != nil && tcp.Flags.SYN && !tcp.Flags.ACK && !tcp.Flags.FIN && !tcp.Flags.RST {
-			// save wildcarded source port
-			fc.tcpPorts[tcp.DestinationPort] = tcp.SourcePort
-		} else if tcp.SourcePort != fc.tcpPorts[tcp.DestinationPort] {
+		if sourcePort, exists := fc.ports[tcp.DestinationPort]; exists && tcp.SourcePort != sourcePort {
 			return false
 		}
 	}
 
-	// Match previously seen (ephemeral) source port as the destination port?
-	if t.dstPort == 0 && tcp.DestinationPort != fc.tcpPorts[tcp.SourcePort] {
+	if t.dstPort != 0 && tcp.DestinationPort != uint32(t.dstPort) {
 		return false
+	}
+
+	// Match previously seen (ephemeral) source port as the destination port?
+	if t.dstPort == 0 {
+
+		if dstPort, exists := fc.ports[tcp.SourcePort]; exists && tcp.DestinationPort != dstPort {
+			return false
+		}
 	}
 
 	return true
@@ -466,6 +492,7 @@ func DNS(query string, rcode uint32) FlowFilterImplementation {
 }
 
 type httpFilter struct {
+	dir      flowpb.L7FlowType
 	code     uint32
 	method   string
 	url      string
@@ -481,6 +508,10 @@ func (h *httpFilter) Match(flow *flowpb.Flow, fc *FlowContext) bool {
 
 	http := l7.GetHttp()
 	if http == nil {
+		return false
+	}
+
+	if l7.Type != h.dir {
 		return false
 	}
 
@@ -516,6 +547,7 @@ func (h *httpFilter) Match(flow *flowpb.Flow, fc *FlowContext) bool {
 
 func (h *httpFilter) String(fc *FlowContext) string {
 	var s []string
+	s = append(s, h.dir.String())
 	if h.code != math.MaxUint32 {
 		s = append(s, fmt.Sprintf("code=%d", h.code))
 	}
@@ -538,7 +570,12 @@ func (h *httpFilter) String(fc *FlowContext) string {
 	return "http(" + strings.Join(s, ",") + ")"
 }
 
-// HTTP matches on proxied HTTP packets containing a specific value, if any
-func HTTP(code uint32, method, url string) FlowFilterImplementation {
-	return &httpFilter{code: code, method: method, url: url}
+// HTTPRequest matches on proxied HTTP requests containing a specific values, if any
+func HTTPRequest(method, url string) FlowFilterImplementation {
+	return &httpFilter{dir: flowpb.L7FlowType_REQUEST, code: math.MaxUint32, method: method, url: url}
+}
+
+// HTTPResponse matches on proxied HTTP requests containing a specific values, if any
+func HTTPResponse(code uint32, method, url string) FlowFilterImplementation {
+	return &httpFilter{dir: flowpb.L7FlowType_RESPONSE, code: code, method: method, url: url}
 }

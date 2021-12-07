@@ -679,13 +679,20 @@ func (c *Client) GetPlatform(ctx context.Context) (*Platform, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get Kubernetes version: %w", err)
 	}
-	fileds := strings.Split(v.Platform, "/")
-	if len(fileds) != 2 {
+	fields := strings.Split(v.Platform, "/")
+	if len(fields) != 2 {
 		return nil, fmt.Errorf("unknown platform type")
 	}
 	return &Platform{
-		OS:   fileds[0],
-		Arch: fileds[1],
+		OS:   fields[0],
+		Arch: fields[1],
 	}, err
+}
 
+func (c *Client) CreateIngressClass(ctx context.Context, ingressClass *networkingv1.IngressClass, opts metav1.CreateOptions) (*networkingv1.IngressClass, error) {
+	return c.Clientset.NetworkingV1().IngressClasses().Create(ctx, ingressClass, opts)
+}
+
+func (c *Client) DeleteIngressClass(ctx context.Context, name string, opts metav1.DeleteOptions) error {
+	return c.Clientset.NetworkingV1().IngressClasses().Delete(ctx, name, opts)
 }
