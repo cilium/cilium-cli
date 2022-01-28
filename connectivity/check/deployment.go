@@ -678,6 +678,18 @@ func (ct *ConnectivityTest) waitForNodePorts(ctx context.Context, nodeIP string,
 	ctx, cancel := context.WithTimeout(ctx, ct.params.serviceReadyTimeout())
 	defer cancel()
 
+	found := false
+	for name, pod := range ct.echoPods {
+		if pod.Pod.Status.HostIP == nodeIP && strings.HasPrefix(name, service.Service.Name) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		ct.Debugf("Skipping NodePort %s as it doesn't reside on node with IP %s", service.Name(), nodeIP)
+		return nil
+	}
+
 	for _, port := range service.Service.Spec.Ports {
 		nodePort := port.NodePort
 		if nodePort == 0 {
