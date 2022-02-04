@@ -23,6 +23,12 @@ import (
 )
 
 const (
+	PerfClientName = "PerfClient"
+	PerfServerName = "PerfServer"
+
+	PerfClientDeploymentName = "perf-client"
+	PerfServerDeploymentName = "perf-server"
+
 	ClientDeploymentName  = "client"
 	Client2DeploymentName = "client2"
 
@@ -30,6 +36,7 @@ const (
 	echoOtherNodeDeploymentName = "echo-other-node"
 	kindEchoName                = "echo"
 	kindClientName              = "client"
+	kindServerName              = "server"
 )
 
 type deploymentParameters struct {
@@ -232,6 +239,43 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 		_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, echoDeployment, metav1.CreateOptions{})
 		if err != nil {
 			return fmt.Errorf("unable to create deployment %s: %s", echoSameNodeDeploymentName, err)
+		}
+	}
+
+	_, err = ct.clients.src.GetDeployment(ctx, ct.params.TestNamespace, PerfServerName, metav1.GetOptions{})
+	serverIP := ""
+	if err != nil {
+		ct.Logf("✨ [%s] Deploying Perf Server deployment...", ct.clients.src.ClusterName())
+		perfServerDeployment := newDeployment(deploymentParameters{
+			Name:    PerfServerDeploymentName,
+			Kind:    kindServerName,
+			Port:    5001,
+			Image:   defaults.ConnectivityPerformanceImage,
+			Command: []string{"/bin/bash", "-c", "iperf3 -s"},
+		})
+		var appsv1.Deployment server
+		server, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, perfServerDeployment, metav1.CreateOptions{})
+		if err != nil {
+			return fmt.Errorf("unable to create deployment %s: %s", perfServerDeployment, err)
+		} else {
+			serverIP=server.PodIP
+		}
+	}
+
+	// Possibly use naked pods instead?
+	_, err = ct.clients.src.GetDeployment(ctx, ct.params.TestNamespace, PerfClientName, metav1.GetOptions{})
+	if err != nil {
+		ct.Logf("✨ [%s] Deploying Perf Client deployment...", ct.clients.src.ClusterName())
+		perfClientDeployment := newDeployment(deploymentParameters{
+			Name:    PerfClientDeploymentName,
+			Kind:    kindClientName,
+			Port:    80,
+			Image:   defaults.ConnectivityPerformanceImage,
+			Command: []string{"/bin/bash", "-c", fmt.Sprintf("iperf3 -c %s", server.PodIP)},
+		})
+		_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, perfClientDeployment, metav1.CreateOptions{})
+		if err != nil {
+			return fmt.Errorf("unable to create deployment %s: %s", perfClientDeployment, err)
 		}
 	}
 
