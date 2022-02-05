@@ -36,7 +36,7 @@ const (
 	echoOtherNodeDeploymentName = "echo-other-node"
 	kindEchoName                = "echo"
 	kindClientName              = "client"
-	kindServerName              = "server"
+	kindPerfName                = "perf"
 )
 
 type deploymentParameters struct {
@@ -242,36 +242,34 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 		}
 	}
 
-	_, err = ct.clients.src.GetDeployment(ctx, ct.params.TestNamespace, PerfServerName, metav1.GetOptions{})
-	serverIP := ""
+	_, err = ct.clients.src.GetDeployment(ctx, ct.params.TestNamespace, PerfServerDeploymentName, metav1.GetOptions{})
 	if err != nil {
 		ct.Logf("✨ [%s] Deploying Perf Server deployment...", ct.clients.src.ClusterName())
 		perfServerDeployment := newDeployment(deploymentParameters{
 			Name:    PerfServerDeploymentName,
-			Kind:    kindServerName,
+			Kind:    kindPerfName,
 			Port:    5001,
 			Image:   defaults.ConnectivityPerformanceImage,
 			Command: []string{"/bin/bash", "-c", "iperf3 -s"},
 		})
-		var appsv1.Deployment server
-		server, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, perfServerDeployment, metav1.CreateOptions{})
+		_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, perfServerDeployment, metav1.CreateOptions{})
 		if err != nil {
 			return fmt.Errorf("unable to create deployment %s: %s", perfServerDeployment, err)
-		} else {
-			serverIP=server.PodIP
 		}
 	}
 
 	// Possibly use naked pods instead?
-	_, err = ct.clients.src.GetDeployment(ctx, ct.params.TestNamespace, PerfClientName, metav1.GetOptions{})
+	// Need to capture the IP of the Server Deployment, and pass to the client to execute benchmark
+	_, err = ct.clients.src.GetDeployment(ctx, ct.params.TestNamespace, PerfClientDeploymentName, metav1.GetOptions{})
 	if err != nil {
 		ct.Logf("✨ [%s] Deploying Perf Client deployment...", ct.clients.src.ClusterName())
+		_, err = ct.clients.src.GetDeployment(ctx, ct.params.TestNamespace, PerfServerName, metav1.GetOptions{})
 		perfClientDeployment := newDeployment(deploymentParameters{
 			Name:    PerfClientDeploymentName,
-			Kind:    kindClientName,
+			Kind:    kindPerfName,
 			Port:    80,
 			Image:   defaults.ConnectivityPerformanceImage,
-			Command: []string{"/bin/bash", "-c", fmt.Sprintf("iperf3 -c %s", server.PodIP)},
+			Command: []string{"/bin/bash", "-c", "sleep 10000000"},
 		})
 		_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, perfClientDeployment, metav1.CreateOptions{})
 		if err != nil {
@@ -381,10 +379,10 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 
 // deploymentList returns 2 lists of Deployments to be used for running tests with.
 func (ct *ConnectivityTest) deploymentList() (srcList []string, dstList []string) {
-	srcList = []string{ClientDeploymentName, Client2DeploymentName, echoSameNodeDeploymentName}
+	srcList = []string{ClientDeploymentName, Client2DeploymentName, echoSameNodeDeploymentName, PerfClientDeploymentName}
 
 	if ct.params.MultiCluster != "" || !ct.params.SingleNode {
-		dstList = append(dstList, echoOtherNodeDeploymentName)
+		dstList = append(dstList, echoOtherNodeDeploymentName, PerfServerDeploymentName)
 	}
 
 	return srcList, dstList
@@ -454,6 +452,23 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 		ct.clientPods[pod.Name] = Pod{
 			K8sClient: ct.client,
 			Pod:       pod.DeepCopy(),
+		}
+	}
+
+	perfPods, err := ct.client.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindPerfName})
+	if err != nil {
+		return fmt.Errorf("unable to list perf pods: %s", err)
+	}
+	for _, perfPod := range perfPods.Items {
+		ctx, cancel := context.WithTimeout(ctx, ct.params.ciliumEndpointTimeout())
+		defer cancel()
+		if err := ct.waitForCiliumEndpoint(ctx, ct.clients.src, ct.params.TestNamespace, perfPod.Name); err != nil {
+			return err
+		}
+
+		ct.perfPods[perfPod.Name] = Pod{
+			K8sClient: ct.client,
+			Pod:       perfPod.DeepCopy(),
 		}
 	}
 
