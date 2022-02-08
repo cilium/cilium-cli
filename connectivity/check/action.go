@@ -63,6 +63,9 @@ type Action struct {
 
 	// failed is true when Fail was called on the Action
 	failed bool
+
+	// Output from action if there is any
+	cmdOutput string
 }
 
 func newAction(t *Test, name string, s Scenario, src *Pod, dst TestPeer) *Action {
@@ -105,6 +108,10 @@ func (a *Action) Source() TestPeer {
 
 func (a *Action) Destination() TestPeer {
 	return a.dst
+}
+
+func (a *Action) CmdOutput() string {
+	return a.cmdOutput
 }
 
 // Run executes function f.
@@ -187,7 +194,7 @@ func (a *Action) ExecInPod(ctx context.Context, cmd []string) {
 
 	cmdName := cmd[0]
 	cmdStr := strings.Join(cmd, " ")
-
+	a.cmdOutput = output.String()
 	showOutput := false
 	expectedExitCode := a.expectedExitCode()
 	if err != nil {
