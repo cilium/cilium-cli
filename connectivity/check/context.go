@@ -41,6 +41,7 @@ type ConnectivityTest struct {
 	clientPods        map[string]Pod
 	perfClientPods    map[string]Pod
 	perfServerPod     map[string]Pod
+	PerfResults       map[string]map[string]string
 	echoServices      map[string]Service
 	externalWorkloads map[string]ExternalWorkload
 
@@ -140,6 +141,7 @@ func NewConnectivityTest(client *k8s.Client, p Parameters) (*ConnectivityTest, e
 		perfClientPods:     make(map[string]Pod),
 		perfServerPod:      make(map[string]Pod),
 		echoServices:       make(map[string]Service),
+		PerfResults:        make(map[string]map[string]string),
 		externalWorkloads:  make(map[string]ExternalWorkload),
 		tests:              []*Test{},
 		testNames:          make(map[string]struct{}),
@@ -292,6 +294,16 @@ func (ct *ConnectivityTest) report() error {
 		}
 
 		return fmt.Errorf("%d tests failed", nf)
+	}
+	// Report Performance results
+	if len(ct.PerfResults) > 0 {
+		for t, r := range ct.PerfResults {
+			ct.Logf("🔥 Performance Test : %s", t)
+			ct.Logf("📋 Test Type: %s", r["test"])
+			ct.Logf("📋 Test Protocol: %s", r["protocol"])
+			ct.Logf("📋 Test Iteration: %s", r["iteration"])
+			ct.Logf("📋 Test Result (in Mbps): %s", r["bps"])
+		}
 	}
 
 	ct.Headerf("✅ All %d tests (%d actions) successful, %d tests skipped, %d scenarios skipped.", nt-nst, na, nst, nss)
