@@ -84,6 +84,7 @@ type Parameters struct {
 	Context          string // Only for 'kubectl' pass-through commands
 	Wait             bool
 	WaitDuration     time.Duration
+	DebugMode        bool
 }
 
 func (p *Parameters) Log(format string, a ...interface{}) {

@@ -250,6 +250,7 @@ func (k *K8sClusterMesh) generateDeployment(clustermeshApiserverArgs []string) *
 							Name:    "apiserver",
 							Command: []string{"/usr/bin/clustermesh-apiserver"},
 							Args: append(clustermeshApiserverArgs,
+								"--debug="+strconv.FormatBool(k.params.DebugMode),
 								"--cluster-name="+k.clusterName,
 								"--cluster-id="+k.clusterID,
 								"--kvstore-opt",
@@ -458,6 +459,7 @@ type Parameters struct {
 	All                  bool
 	ConfigOverwrites     []string
 	Retries              int
+	DebugMode            bool
 }
 
 func (p Parameters) validateParams() error {

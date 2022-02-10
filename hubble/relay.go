@@ -6,6 +6,7 @@ package hubble
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/cloudflare/cfssl/config"
@@ -100,6 +101,7 @@ func (k *K8sHubble) generateRelayDeployment() *appsv1.Deployment {
 							Command: []string{"hubble-relay"},
 							Args: []string{
 								"serve",
+								"--debug=" + strconv.FormatBool(k.params.DebugMode),
 							},
 							Image:           k.relayImage(utils.ImagePathIncludeDigest),
 							ImagePullPolicy: corev1.PullIfNotPresent,

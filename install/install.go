@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -412,7 +413,7 @@ func (k *K8sInstaller) generateAgentDaemonSet() *appsv1.DaemonSet {
 							Lifecycle: &corev1.Lifecycle{
 								PostStart: &corev1.LifecycleHandler{
 									Exec: &corev1.ExecAction{
-										Command: []string{"/cni-install.sh", "--enable-debug=false"},
+										Command: []string{"/cni-install.sh", fmt.Sprintf("--enable-debug=%t", k.params.DebugMode)},
 									},
 								},
 								PreStop: &corev1.LifecycleHandler{
@@ -1081,6 +1082,7 @@ type Parameters struct {
 	ConfigOverwrites      []string
 	configOverwrites      map[string]string
 	Rollback              bool
+	DebugMode             bool
 
 	// CiliumReadyTimeout defines the wait timeout for Cilium to become ready
 	// after installing.
@@ -1226,8 +1228,7 @@ func (k *K8sInstaller) generateConfigMap() (*corev1.ConfigMap, error) {
 			"identity-allocation-mode":    "crd",
 			"cilium-endpoint-gc-interval": "5m0s",
 
-			// If you want to run cilium in debug mode change this value to true
-			"debug": "false",
+			"debug": strconv.FormatBool(k.params.DebugMode),
 			// The agent can be put into the following three policy enforcement modes
 			// default, always and never.
 			// https://docs.cilium.io/en/latest/policy/intro/#policy-enforcement-modes

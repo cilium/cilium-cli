@@ -60,6 +60,7 @@ func newCmdClusterMeshEnable() *cobra.Command {
 	cmd.Flags().BoolVar(&params.CreateCA, "create-ca", true, "Automatically create CA if needed")
 	cmd.Flags().StringVar(&contextName, "context", "", "Kubernetes configuration context")
 	cmd.Flags().StringSliceVar(&params.ConfigOverwrites, "config", []string{}, "clustermesh-apiserver config entries (key=value)")
+	cmd.Flags().BoolVar(&params.DebugMode, "debug-mode", false, "Enabled debug mode for clustermesh-apiserver")
 
 	return cmd
 }

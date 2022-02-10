@@ -72,6 +72,7 @@ cilium install --context kind-cluster1 --cluster-id 1 --cluster-name cluster1
 	cmd.Flags().DurationVar(&params.CiliumReadyTimeout, "cilium-ready-timeout", 5*time.Minute,
 		"Timeout for Cilium to become ready before restarting unmanaged pods")
 	cmd.Flags().BoolVar(&params.Rollback, "rollback", true, "Roll back installed resources on failure")
+	cmd.Flags().BoolVar(&params.DebugMode, "debug-mode", false, "Enable debug mode for cilium related component(s)")
 
 	cmd.Flags().StringVar(&params.Azure.ResourceGroupName, "azure-resource-group", "", "Azure resource group name the cluster is in (required)")
 	cmd.Flags().StringVar(&params.Azure.AKSNodeResourceGroup, "azure-node-resource-group", "", "Azure node resource group name the cluster is in. Bypasses `--azure-resource-group` if provided.")

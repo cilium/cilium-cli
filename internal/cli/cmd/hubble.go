@@ -61,7 +61,7 @@ func newCmdHubbleEnable() *cobra.Command {
 	cmd.Flags().StringVar(&contextName, "context", "", "Kubernetes configuration context")
 	cmd.Flags().BoolVar(&params.Wait, "wait", true, "Wait for status to report success (no errors)")
 	cmd.Flags().DurationVar(&params.WaitDuration, "wait-duration", defaults.StatusWaitDuration, "Maximum time to wait for status")
-
+	cmd.Flags().BoolVar(&params.DebugMode, "debug-mode", false, "Enabled debug mode for hubble")
 	return cmd
 }
 
