@@ -10,7 +10,7 @@ import (
 	"github.com/cilium/cilium-cli/connectivity/check"
 )
 
-// TCP Network perforamnce between pods
+// TCP Network Performance
 func TCPPodtoPod(n string, ct *check.ConnectivityTest) check.Scenario {
 	return &tcpPodToPod{
 		name:             n,
@@ -33,16 +33,16 @@ func (s *tcpPodToPod) Name() string {
 
 func (s *tcpPodToPod) Run(ctx context.Context, t *check.Test) {
 	for _, c := range t.Context().PerfClientPods() {
+		c := c
 		for _, server := range t.Context().PerfServerPod() {
 			t.NewAction(s, "iperf-tcp", &c, server).Run(func(a *check.Action) {
-				iperfStream(server.Pod.Status.PodIP, ctx, c.Pod.Name, a, s.connectivityTest, 1, false)
+				iperfStream(ctx, server.Pod.Status.PodIP, c.Pod.Name, a, s.connectivityTest, 1, false)
 			})
 		}
 	}
 }
 
-// UDP Network performance between
-// TCP Network perforamnce between pods
+// UDP Network pPerformance
 func UDPPodtoPod(n string, ct *check.ConnectivityTest) check.Scenario {
 	return &udpPodtoPod{
 		name:             n,
@@ -65,15 +65,16 @@ func (s *udpPodtoPod) Name() string {
 
 func (s *udpPodtoPod) Run(ctx context.Context, t *check.Test) {
 	for _, c := range t.Context().PerfClientPods() {
+		c := c
 		for _, server := range t.Context().PerfServerPod() {
 			t.NewAction(s, "iperf-udp", &c, server).Run(func(a *check.Action) {
-				iperfStream(server.Pod.Status.PodIP, ctx, c.Pod.Name, a, s.connectivityTest, 1, true)
+				iperfStream(ctx, server.Pod.Status.PodIP, c.Pod.Name, a, s.connectivityTest, 1, true)
 			})
 		}
 	}
 }
 
-func iperfStream(sip string, ctx context.Context, podname string, a *check.Action, ct *check.ConnectivityTest, samples int, udp bool) {
+func iperfStream(ctx context.Context, sip string, podname string, a *check.Action, ct *check.ConnectivityTest, samples int, udp bool) {
 	// Allow the user to override the number of samples to capture
 	env, _ := strconv.Atoi(os.Getenv("samples"))
 	if samples < env {

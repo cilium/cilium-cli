@@ -248,7 +248,6 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 	_, err = ct.clients.src.GetDeployment(ctx, ct.params.TestNamespace, PerfClientDeploymentName, metav1.GetOptions{})
 	if err != nil {
 		ct.Logf("✨ [%s] Deploying Perf Client deployment...", ct.clients.src.ClusterName())
-		_, err = ct.clients.src.GetDeployment(ctx, ct.params.TestNamespace, PerfServerName, metav1.GetOptions{})
 		perfClientDeployment := newDeployment(deploymentParameters{
 			Name:  PerfClientDeploymentName,
 			Kind:  kindPerfName,
