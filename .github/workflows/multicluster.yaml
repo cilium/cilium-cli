@@ -41,7 +41,7 @@ jobs:
         uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
 
       - name: Set up gcloud CLI
-        uses: google-github-actions/setup-gcloud@e0f83f24f541c30f1e9fe3c966963a10b8e647f5
+        uses: google-github-actions/setup-gcloud@37a9333538a8350a13fe9d8fa03e0d4742a1ad2e
         with:
           project_id: ${{ secrets.GCP_PR_PROJECT_ID }}
           service_account_key: ${{ secrets.GCP_PR_SA_KEY }}
@@ -52,7 +52,7 @@ jobs:
           gcloud info
 
       - name: Set up Go
-        uses: actions/setup-go@424fc82d43fa5a37540bae62709ddcc23d9520d4
+        uses: actions/setup-go@bfdd3570ce990073878bf10f6b2d79082de49492
         with:
           go-version: 1.17.6
 
