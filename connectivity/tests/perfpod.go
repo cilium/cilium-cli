@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/cilium/cilium-cli/connectivity/check"
+	"github.com/cilium/cilium-cli/defaults"
 )
 
 // TCP Network Performance
@@ -75,17 +76,23 @@ func (s *udpPodtoPod) Run(ctx context.Context, t *check.Test) {
 }
 
 func iperfStream(ctx context.Context, sip string, podname string, a *check.Action, ct *check.ConnectivityTest, samples int, udp bool) {
-	// Allow the user to override the number of samples to capture
-	env, _ := strconv.Atoi(os.Getenv("samples"))
-	if samples < env {
-		samples = env
+	// Allow the user to override aspects of the test
+	iteration, _ := strconv.Atoi(os.Getenv("samples"))
+	duration, _ := strconv.Atoi(os.Getenv("duration"))
+
+	if samples < iteration {
+		samples = iteration
+	}
+	if duration <= 0 {
+		duration = defaults.PerfTestDuration
 	}
 	for i := 0; i < samples; i++ {
+		// Result data
 		r := make(map[string]string)
-		r["test"] = "stream"
-		exec := []string{"/usr/bin/iperf3", "-c", sip, "-t", "60", "-Z", "--no-delay", "-J"}
+
+		exec := []string{"/usr/bin/iperf3", "-c", sip, "-t", fmt.Sprintf("%d", duration), "-J"}
 		if udp {
-			exec = []string{"/usr/bin/iperf3", "-u", "-c", sip, "-t", "5", "-Z", "--no-delay", "-J"}
+			exec = []string{"/usr/bin/iperf3", "-u", "-c", sip, "-t", fmt.Sprintf("%d", duration), "-J"}
 		}
 		a.ExecInPod(ctx, exec)
 		var payload map[string]interface{}
@@ -93,7 +100,10 @@ func iperfStream(ctx context.Context, sip string, podname string, a *check.Actio
 		if err != nil {
 			a.Fatal("unable to parse output from iperf3")
 		}
+
 		r["iteration"] = fmt.Sprintf("%d", i)
+		r["test"] = "stream"
+		r["duration"] = fmt.Sprintf("%d", duration)
 		if !udp {
 			r["protocol"] = "tcp"
 			r["bps"] = fmt.Sprintf("%f", (payload["end"].(map[string]interface{})["sum_sent"].(map[string]interface{})["bits_per_second"]).(float64)/1000000.0)

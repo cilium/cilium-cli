@@ -73,6 +73,8 @@ const (
 	Version         = "v1.11.1"
 	HubbleUIVersion = "v0.8.5"
 
+	PerfTestDuration = 30
+
 	TunnelType = "vxlan"
 
 	StatusWaitDuration = 5 * time.Minute

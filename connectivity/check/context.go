@@ -301,6 +301,7 @@ func (ct *ConnectivityTest) report() error {
 			ct.Logf("🔥 Performance Test : %s", t)
 			ct.Logf("📋 Test Type: %s", r["test"])
 			ct.Logf("📋 Test Protocol: %s", r["protocol"])
+			ct.Logf("📋 Test Duration: %s", r["duration"])
 			ct.Logf("📋 Test Iteration: %s", r["iteration"])
 			ct.Logf("📋 Test Result (in Mbps): %s", r["bps"])
 		}
