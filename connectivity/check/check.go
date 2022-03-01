@@ -35,6 +35,9 @@ type Parameters struct {
 	Debug                 bool
 	PauseOnFail           bool
 	SkipIPCacheCheck      bool
+	Perf                  bool
+	Duration              int
+	Samples               int
 	CiliumBaseVersion     string
 }
 

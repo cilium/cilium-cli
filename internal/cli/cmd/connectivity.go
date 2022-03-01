@@ -50,13 +50,14 @@ func newCmdConnectivityTest() *cobra.Command {
 				if strings.HasPrefix(test, "!") {
 					rgx, err := regexp.Compile(strings.TrimPrefix(test, "!"))
 					if err != nil {
-						return fmt.Errorf("Test filter: %w", err)
+						return fmt.Errorf("test filter: %w", err)
 					}
 					params.SkipTests = append(params.SkipTests, rgx)
 				} else {
+
 					rgx, err := regexp.Compile(test)
 					if err != nil {
-						return fmt.Errorf("Test filter: %w", err)
+						return fmt.Errorf("test filter: %w", err)
 					}
 					params.RunTests = append(params.RunTests, rgx)
 				}
@@ -96,7 +97,7 @@ func newCmdConnectivityTest() *cobra.Command {
 			}
 
 			if err != nil {
-				return fmt.Errorf("Connectivity test failed: %w", err)
+				return fmt.Errorf("connectivity test failed: %w", err)
 			}
 
 			return nil
@@ -120,6 +121,9 @@ func newCmdConnectivityTest() *cobra.Command {
 	cmd.Flags().BoolVarP(&params.Debug, "debug", "d", false, "Show debug messages")
 	cmd.Flags().BoolVarP(&params.PauseOnFail, "pause-on-fail", "p", false, "Pause execution on test failure")
 	cmd.Flags().BoolVar(&params.SkipIPCacheCheck, "skip-ip-cache-check", true, "Skip IPCache check")
+	cmd.Flags().BoolVar(&params.Perf, "perf", false, "Run network Performance tests")
+	cmd.Flags().IntVar(&params.Duration, "duration", 30, "Duration for the Performance test to run, Default:30s")
+	cmd.Flags().IntVar(&params.Samples, "samples", 1, "Number of Performance samples to capture (how many times to run each test), Default:1")
 	cmd.Flags().MarkHidden("skip-ip-cache-check")
 	cmd.Flags().StringVar(&params.CiliumBaseVersion, "base-version", defaults.Version,
 		"Specify the base Cilium version for configuration purpose in case image tag doesn't indicate the actual Cilium version")

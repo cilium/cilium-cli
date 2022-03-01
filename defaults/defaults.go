@@ -66,11 +66,14 @@ const (
 	ConnectivityCheckNamespace = "cilium-test"
 
 	ConnectivityCheckAlpineCurlImage = "quay.io/cilium/alpine-curl:v1.4.0@sha256:2550c747831ff575f2147149b088ea981c06f9b6bcd188756d1b82cc10997956"
+	ConnectivityPerformanceImage     = "quay.io/jtaleric/network-perf:latest@sha256:db30603e9ff45e24c44fdfb4813c17e3431fc0e61d0eaac52a629ba59cd8e555"
 	ConnectivityCheckJSONMockImage   = "quay.io/cilium/json-mock:v1.3.0@sha256:2729064827fa9dbfface8d3df424feb6c792a0ba07117b844349635c93c06d2b"
 
 	ConfigMapName   = "cilium-config"
 	Version         = "v1.11.2"
 	HubbleUIVersion = "v0.8.5"
+
+	PerfTestDuration = 30
 
 	TunnelType = "vxlan"
 

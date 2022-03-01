@@ -15,6 +15,7 @@ env:
   KIND_CONFIG: .github/kind-config.yaml
   TIMEOUT: 2m
   LOG_TIME: 30m
+  duration: 5
 
 jobs:
   installation-and-connectivity:

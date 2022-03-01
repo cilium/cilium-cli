@@ -19,3 +19,6 @@ sleep 10s
 
 # Run connectivity test
 cilium connectivity test --debug --all-flows
+
+# Run performance test
+cilium connectivity test --perf --duration 1
