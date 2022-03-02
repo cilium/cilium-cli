@@ -7,4 +7,4 @@ set -e
 cilium connectivity test --debug --all-flows
 
 # Run performance test
-cilium connectivity test --perf --duration 1
+cilium connectivity test --perf --perf-duration 1

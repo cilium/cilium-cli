@@ -481,7 +481,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 
 			_, err = ct.clients.dst.CreateDeployment(ctx, ct.params.TestNamespace, echoOtherNodeDeployment, metav1.CreateOptions{})
 			if err != nil {
-				return fmt.Errorf("unable to create deployment %s: %s", echoOtherNodeDeploymentName, err)
+				return fmt.Errorf("unable to create deployment %s: %w", echoOtherNodeDeploymentName, err)
 			}
 		}
 	}
@@ -543,7 +543,7 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 	for _, client := range ct.clients.clients() {
 		ciliumPods, err := client.ListPods(ctx, ct.params.CiliumNamespace, metav1.ListOptions{LabelSelector: "k8s-app=cilium"})
 		if err != nil {
-			return fmt.Errorf("unable to list Cilium pods: %s", err)
+			return fmt.Errorf("unable to list Cilium pods: %w", err)
 		}
 		for _, ciliumPod := range ciliumPods.Items {
 			// TODO: Can Cilium pod names collide across clusters?
@@ -574,7 +574,7 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 
 	perfPods, err := ct.client.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindPerfName})
 	if err != nil {
-		return fmt.Errorf("unable to list perf pods: %s", err)
+		return fmt.Errorf("unable to list perf pods: %w", err)
 	}
 	for _, perfPod := range perfPods.Items {
 		ctx, cancel := context.WithTimeout(ctx, ct.params.ciliumEndpointTimeout())
@@ -600,7 +600,7 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 	for _, client := range ct.clients.clients() {
 		echoPods, err := client.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindEchoName})
 		if err != nil {
-			return fmt.Errorf("unable to list echo pods: %s", err)
+			return fmt.Errorf("unable to list echo pods: %w", err)
 		}
 		for _, echoPod := range echoPods.Items {
 			ctx, cancel := context.WithTimeout(ctx, ct.params.ciliumEndpointTimeout())
@@ -621,7 +621,7 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 	for _, client := range ct.clients.clients() {
 		echoServices, err := client.ListServices(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindEchoName})
 		if err != nil {
-			return fmt.Errorf("unable to list echo services: %s", err)
+			return fmt.Errorf("unable to list echo services: %w", err)
 		}
 
 		for _, echoService := range echoServices.Items {
@@ -667,7 +667,7 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 			})
 			continue
 		} else if err != nil {
-			return fmt.Errorf("unable to list external workloads: %s", err)
+			return fmt.Errorf("unable to list external workloads: %w", err)
 		}
 		for _, externalWorkload := range externalWorkloads.Items {
 			ct.externalWorkloads[externalWorkload.Name] = ExternalWorkload{

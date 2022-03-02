@@ -65,7 +65,7 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 	ct.Infof("Cilium version: %v", v)
 
 	// Network Performance Test
-	if (ct.Params()).Perf {
+	if ct.Params().Perf {
 		ct.NewTest("network-perf").WithScenarios(
 			tests.NetperfPodtoPod(""),
 		)
