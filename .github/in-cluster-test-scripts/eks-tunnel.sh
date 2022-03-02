@@ -32,4 +32,4 @@ cilium connectivity test --debug --all-flows \
   # - cilium-cli default cilium version has been updated to pick up the fix
 
 # Run performance test
-cilium connectivity test --perf --perf-duration 1
+cilium connectivity test --perf --perf-duration 1s

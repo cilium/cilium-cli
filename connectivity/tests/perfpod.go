@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cilium/cilium-cli/connectivity/check"
 )
@@ -39,8 +40,8 @@ func (s *netPerfPodtoPod) Name() string {
 }
 
 func (s *netPerfPodtoPod) Run(ctx context.Context, t *check.Test) {
-	samples := t.Context().Params().Samples
-	duration := t.Context().Params().Duration
+	samples := t.Context().Params().PerfSamples
+	duration := t.Context().Params().PerfDuration
 	for _, c := range t.Context().PerfClientPods() {
 		c := c
 		for _, server := range t.Context().PerfServerPod() {
@@ -57,7 +58,7 @@ func (s *netPerfPodtoPod) Run(ctx context.Context, t *check.Test) {
 	}
 }
 
-func netperf(ctx context.Context, sip string, podname string, test string, a *check.Action, result map[check.PerfTests]check.PerfResult, samples int, duration int) {
+func netperf(ctx context.Context, sip string, podname string, test string, a *check.Action, result map[check.PerfTests]check.PerfResult, samples int, duration time.Duration) {
 	// Define test about to be executed and from which pod
 	k := check.PerfTests{
 		Pod:  podname,
@@ -68,7 +69,7 @@ func netperf(ctx context.Context, sip string, podname string, test string, a *ch
 		metric = "Mb/s"
 	}
 
-	exec := []string{"/usr/local/bin/netperf", "-H", sip, "-l", fmt.Sprintf("%d", duration), "-t", test, "--", "-R", "1", "-m", fmt.Sprintf("%d", messageSize)}
+	exec := []string{"/usr/local/bin/netperf", "-H", sip, "-l", duration.String(), "-t", test, "--", "-R", "1", "-m", fmt.Sprintf("%d", messageSize)}
 	//  recv socketsize		send socketsize 	msg size|okmsg	duration	value
 	values := []float64{}
 	// Result data

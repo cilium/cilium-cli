@@ -36,8 +36,8 @@ type Parameters struct {
 	PauseOnFail           bool
 	SkipIPCacheCheck      bool
 	Perf                  bool
-	Duration              int
-	Samples               int
+	PerfDuration          time.Duration
+	PerfSamples           int
 	CiliumBaseVersion     string
 }
 

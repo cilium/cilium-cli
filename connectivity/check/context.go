@@ -58,7 +58,7 @@ type PerfTests struct {
 
 type PerfResult struct {
 	Metric   string
-	Duration int
+	Duration time.Duration
 	Samples  int
 	Values   []float64
 	Avg      float64
@@ -322,7 +322,7 @@ func (ct *ConnectivityTest) report() error {
 		ct.Logf("📋 %-50s | %-15s | %-15s | %-15s | %-15s", "Scenario", "Test", "Num Samples", "Duration", "Avg value")
 		ct.Logf("%s", strings.Repeat("-", 125))
 		for p, d := range ct.PerfResults {
-			ct.Logf("📋 %-50s | %-15s | %-15d | %-15d | %.2f (%s)", p.Pod, p.Test, d.Samples, d.Duration, d.Avg, d.Metric)
+			ct.Logf("📋 %-50s | %-15s | %-15d | %-15s | %.2f (%s)", p.Pod, p.Test, d.Samples, d.Duration, d.Avg, d.Metric)
 			ct.Debugf("Individual Values from run : %s", d.Values)
 		}
 		ct.Logf("%s", strings.Repeat("-", 125))
