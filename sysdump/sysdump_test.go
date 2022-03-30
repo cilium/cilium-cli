@@ -149,7 +149,7 @@ func (c *fakeClient) CopyFromPod(ctx context.Context, namespace, pod, container 
 	panic("implement me")
 }
 
-func (c *fakeClient) AutodetectFlavor(ctx context.Context) (f k8s.Flavor, err error) {
+func (c *fakeClient) AutodetectFlavor(ctx context.Context) k8s.Flavor {
 	panic("implement me")
 }
 
