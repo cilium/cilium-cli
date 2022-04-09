@@ -181,7 +181,6 @@ func GenManifests(ctx context.Context, helmChartDirectory, k8sVersion, ciliumVer
 // Both 'helmMapOpts', 'helmValues', 'extraConfigMapOpts' can be nil.
 func MergeVals(
 	logger utils.Logger,
-	printHelmTemplate bool,
 	helmFlagOpts values.Options,
 	helmMapOpts map[string]string,
 	helmValues map[string]interface{},
@@ -192,6 +191,9 @@ func MergeVals(
 	// Create helm values from helmMapOpts
 	var helmOpts []string
 	for k, v := range helmMapOpts {
+		if v == "" {
+			panic(fmt.Sprintf("empty value form helm option %q", k))
+		}
 		helmOpts = append(helmOpts, fmt.Sprintf("%s=%s", k, v))
 	}
 
@@ -229,12 +231,10 @@ func MergeVals(
 
 	valsStr := valuesToString("", vals)
 
-	if printHelmTemplate {
-		if helmChartDirectory != "" {
-			logger.Log("ℹ️  helm template --namespace %s cilium %q --version %s --set %s", namespace, helmChartDirectory, ciliumVer, valsStr)
-		} else {
-			logger.Log("ℹ️  helm template --namespace %s cilium cilium/cilium --version %s --set %s", namespace, ciliumVer, valsStr)
-		}
+	if helmChartDirectory != "" {
+		logger.Log("ℹ️  helm template --namespace %s cilium %q --version %s --set %s", namespace, helmChartDirectory, ciliumVer, valsStr)
+	} else {
+		logger.Log("ℹ️  helm template --namespace %s cilium cilium/cilium --version %s --set %s", namespace, ciliumVer, valsStr)
 	}
 
 	// Store the current helm-opts used in this installation in Cilium's
