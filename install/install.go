@@ -711,7 +711,11 @@ func (k *K8sInstaller) Install(ctx context.Context) error {
 		// DaemonSet is up and running to guarantee the CNI configuration and binary
 		// are deployed on the node.  See https://github.com/cilium/cilium/issues/14128
 		// for details.
-		k.Log("⌛ Waiting for Cilium to be installed and ready...")
+		reason := ""
+		if !k.params.Wait {
+			reason = " before restarting unmanaged pods"
+		}
+		k.Log("⌛ Waiting for Cilium to be installed and ready%s...", reason)
 		collector, err := status.NewK8sStatusCollector(k.client, status.K8sStatusParameters{
 			Namespace:       k.params.Namespace,
 			Wait:            true,
