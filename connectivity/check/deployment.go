@@ -572,6 +572,16 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 		}
 	}
 
+	// Set the timeout for all DNS lookup retries
+	dnsCtx, cancel := context.WithTimeout(ctx, ct.params.ipCacheTimeout())
+	defer cancel()
+	for _, cp := range ct.clientPods {
+		err := ct.waitForDNS(dnsCtx, cp)
+		if err != nil {
+			return err
+		}
+	}
+
 	perfPods, err := ct.client.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindPerfName})
 	if err != nil {
 		return fmt.Errorf("unable to list perf pods: %w", err)
@@ -689,16 +699,6 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-		}
-	}
-
-	// Set the timeout for all DNS lookup retries
-	dnsCtx, cancel := context.WithTimeout(ctx, ct.params.ipCacheTimeout())
-	defer cancel()
-	for _, cp := range ct.clientPods {
-		err := ct.waitForDNS(dnsCtx, cp)
-		if err != nil {
-			return err
 		}
 	}
 
