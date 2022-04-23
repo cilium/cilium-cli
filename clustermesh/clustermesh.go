@@ -234,6 +234,14 @@ func (k *K8sClusterMesh) generateDeployment(clustermeshApiserverArgs []string) *
 							Image:           k.etcdImage(),
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							Env:             k.etcdEnvs(),
+							LivenessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									HTTPGet: &corev1.HTTPGetAction{
+										Path: "/health",
+										Port: intstr.FromInt(2379),
+									},
+								},
+							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "etcd-server-secrets",
@@ -289,6 +297,14 @@ func (k *K8sClusterMesh) generateDeployment(clustermeshApiserverArgs []string) *
 											},
 											Key: "identity-allocation-mode",
 										},
+									},
+								},
+							},
+							LivenessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									HTTPGet: &corev1.HTTPGetAction{
+										Path: "/healthz",
+										Port: intstr.FromInt(80),
 									},
 								},
 							},
