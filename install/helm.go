@@ -228,7 +228,7 @@ func (k *K8sInstaller) generateManifests(ctx context.Context) error {
 	// Store all the options passed by --config into helm extraConfig
 	extraConfigMap := map[string]interface{}{}
 	for k, v := range deprecatedCfgOpts {
-		extraConfigMap[k] = v
+		extraConfigMap[k] = string(v)
 	}
 
 	vals, err := helm.MergeVals(k, true, k.params.HelmOpts, helmMapOpts, nil, extraConfigMap, k.params.HelmChartDirectory, ciliumVer.String(), k.params.Namespace)
