@@ -1470,8 +1470,8 @@ while [ $cilium_started = false ]; do
             cilium_started=true
             break
         fi
-        sleep 5s
         echo "Waiting for Cilium daemon to come up..."
+        sleep 5s
     done
 
     echo "Cilium status:"
@@ -1496,8 +1496,8 @@ for ((i = 0 ; i < 24; i++)); do
     if [ -n "$kubedns" ] ; then
         break
     fi
-    sleep 5s
     echo "Waiting for kube-dns service to come available..."
+    sleep 5s
 done
 
 namespace=$(cilium endpoint get -l reserved:host -o jsonpath='{$[0].status.identity.labels}' | tr -d "[]\"" | tr "," "\n" | grep io.kubernetes.pod.namespace | cut -d= -f2)
@@ -1520,6 +1520,19 @@ EOF
 	    ${SUDO} systemctl reenable systemd-resolved.service
 	    ${SUDO} service systemd-resolved restart
 	    ${SUDO} ln -fs /run/systemd/resolve/resolv.conf /etc/resolv.conf
+
+	    for ((i = 0 ; i < 24; i++)); do
+		dns_servers=$(systemd-resolve --status | grep "Current DNS Server:" | cut -d':' -f2)
+		# Remove leading whitespace and pick up the first DNS server
+		dns=$(echo "${dns_servers##+([[:space:]])}" | cut -d' ' -f1)
+		if [ "$dns" = "$kubedns" ] ; then
+		    echo "Current DNS server(s): $dns_servers"
+		    break
+		fi
+		echo "Current DNS Server ($dns) is not kube-dns ($kubedns)"
+		echo "Waiting for kube-dns to become configured by systemd..."
+		sleep 5s
+	    done
 	else
 	    echo "Adding kube-dns IP $kubedns to /etc/resolv.conf"
 	    ${SUDO} cp /etc/resolv.conf /etc/resolv.conf.orig
