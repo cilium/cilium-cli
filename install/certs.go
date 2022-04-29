@@ -6,60 +6,14 @@ package install
 import (
 	"context"
 	"fmt"
-	"strings"
-	"time"
 
-	"github.com/cloudflare/cfssl/config"
-	"github.com/cloudflare/cfssl/csr"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/cilium/cilium-cli/defaults"
 	"github.com/cilium/cilium-cli/k8s"
 )
 
-func (k *K8sInstaller) createHubbleServerCertificate(ctx context.Context) error {
-	commonName := fmt.Sprintf("*.%s.hubble-grpc.cilium.io", strings.ReplaceAll(k.params.ClusterName, ".", "-"))
-	certReq := &csr.CertificateRequest{
-		Names:      []csr.Name{{C: "US", ST: "San Francisco", L: "CA"}},
-		KeyRequest: csr.NewKeyRequest(),
-		Hosts:      []string{commonName},
-		CN:         commonName,
-	}
-
-	signConf := &config.Signing{
-		Default: &config.SigningProfile{Expiry: 5 * 365 * 24 * time.Hour},
-		Profiles: map[string]*config.SigningProfile{
-			defaults.HubbleServerSecretName: {
-				Expiry: 3 * 365 * 24 * time.Hour,
-				Usage:  []string{"signing", "key encipherment", "server auth", "client auth"},
-			},
-		},
-	}
-
-	cert, key, err := k.certManager.GenerateCertificate(defaults.HubbleServerSecretName, certReq, signConf)
-	if err != nil {
-		return fmt.Errorf("unable to generate certificate %s: %w", defaults.HubbleServerSecretName, err)
-	}
-
-	data := map[string][]byte{
-		corev1.TLSCertKey:         cert,
-		corev1.TLSPrivateKeyKey:   key,
-		defaults.CASecretCertName: k.certManager.CACertBytes(),
-	}
-
-	_, err = k.client.CreateSecret(ctx, k.params.Namespace, k8s.NewTLSSecret(defaults.HubbleServerSecretName, k.params.Namespace, data), metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("unable to create secret %s/%s: %w", k.params.Namespace, defaults.HubbleServerSecretName, err)
-	}
-
-	return nil
-}
-
 func (k *K8sUninstaller) uninstallCerts(ctx context.Context) (err error) {
-	if err = k.client.DeleteSecret(ctx, k.params.Namespace, defaults.HubbleServerSecretName, metav1.DeleteOptions{}); err != nil {
-		err = fmt.Errorf("unable to delete secret %s/%s: %w", k.params.Namespace, defaults.HubbleServerSecretName, err)
-	}
 	if err2 := k.client.DeleteSecret(ctx, k.params.Namespace, defaults.CASecretName, metav1.DeleteOptions{}); err2 != nil {
 		err2 = fmt.Errorf("unable to delete CA secret %s/%s: %w", k.params.Namespace, defaults.CASecretName, err2)
 		if err == nil {
@@ -116,16 +70,6 @@ func (k *K8sInstaller) installCerts(ctx context.Context) error {
 			k.Log("🔑 Found CA in secret %s", caSecret.Name)
 		}
 	}
-
-	k.Log("🔑 Generating certificates for Hubble...")
-	if err := k.createHubbleServerCertificate(ctx); err != nil {
-		return err
-	}
-	k.pushRollbackStep(func(ctx context.Context) {
-		if err := k.client.DeleteSecret(ctx, k.params.Namespace, defaults.HubbleServerSecretName, metav1.DeleteOptions{}); err != nil {
-			k.Log("Cannot delete %s Secret: %s", defaults.HubbleServerSecretName, err)
-		}
-	})
 
 	return nil
 }

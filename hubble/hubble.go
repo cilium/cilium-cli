@@ -72,6 +72,7 @@ type K8sHubble struct {
 	manifests           map[string]string
 	semVerCiliumVersion semver.Version
 	helmYAMLValues      string
+	rollbackSteps       []rollbackStep
 }
 
 var (
@@ -132,6 +133,7 @@ type Parameters struct {
 
 	// RedactHelmCertKeys does not print helm certificate keys into the terminal.
 	RedactHelmCertKeys bool
+	Rollback           bool
 }
 
 func (p *Parameters) Log(format string, a ...interface{}) {
@@ -291,6 +293,21 @@ func (k *K8sHubble) Disable(ctx context.Context) error {
 		k.client.DeleteService(ctx, peerSvc.GetNamespace(), peerSvc.GetName(), metav1.DeleteOptions{})
 	}
 
+	k.Log("🔥 Deleting hubble certificates...")
+	if err = k.client.DeleteSecret(ctx, k.params.Namespace, defaults.HubbleServerSecretName, metav1.DeleteOptions{}); err != nil {
+		err = fmt.Errorf("unable to delete secret %s/%s: %w", k.params.Namespace, defaults.HubbleServerSecretName, err)
+	}
+	ciliumVer := k.semVerCiliumVersion
+	switch {
+	case versioncheck.MustCompile(">1.8.99 <1.9.90")(ciliumVer):
+		cm, err := k.generateHubbleCAConfigMap()
+		if err == nil {
+			if err := k.client.DeleteConfigMap(ctx, cm.GetNamespace(), cm.GetName(), metav1.DeleteOptions{}); err != nil {
+				k.Log("Cannot delete %s/%s ConfigMap: %s", cm.GetNamespace(), cm.GetName(), err)
+			}
+		}
+	}
+
 	// Now that we have delete all UI and Relay's resource names then we can
 	// generate the manifests with UI and Relay disabled.
 	err = k.generateManifestsDisable(ctx, vals)
@@ -401,8 +418,6 @@ func (k *K8sHubble) generateManifestsEnable(ctx context.Context, printHelmTempla
 		}
 
 		helmMapOpts["hubble.enabled"] = "true"
-		helmMapOpts["hubble.tls.ca.cert"] = certs.EncodeCertBytes(k.certManager.CACertBytes())
-		helmMapOpts["hubble.tls.ca.key"] = certs.EncodeCertBytes(k.certManager.CAKeyBytes())
 
 		if k.params.UI {
 			helmMapOpts["hubble.ui.enabled"] = "true"
@@ -531,6 +546,26 @@ func (k *K8sHubble) Enable(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	k.Log("🔑 Generating certificates for Hubble...")
+	if err := k.createHubbleServerCertificate(ctx); err != nil {
+		return err
+	}
+	k.pushRollbackStep(func(ctx context.Context) {
+		if err := k.client.DeleteSecret(ctx, k.params.Namespace, defaults.HubbleServerSecretName, metav1.DeleteOptions{}); err != nil {
+			k.Log("Cannot delete %s Secret: %s", defaults.HubbleServerSecretName, err)
+		}
+		ciliumVer := k.semVerCiliumVersion
+		switch {
+		case versioncheck.MustCompile(">1.8.99 <1.9.90")(ciliumVer):
+			cm, err := k.generateHubbleCAConfigMap()
+			if err == nil {
+				if err := k.client.DeleteConfigMap(ctx, cm.GetNamespace(), cm.GetName(), metav1.DeleteOptions{}); err != nil {
+					k.Log("Cannot delete %s/%s ConfigMap: %s", cm.GetNamespace(), cm.GetName(), err)
+				}
+			}
+		}
+	})
 
 	if err := k.enableHubble(ctx); err != nil {
 		return err
@@ -703,4 +738,96 @@ func (k *K8sHubble) NewClusterRoleBinding(crbName string) *rbacv1.ClusterRoleBin
 	var crb rbacv1.ClusterRoleBinding
 	utils.MustUnmarshalYAML([]byte(crbFile), &crb)
 	return &crb
+}
+
+func (k *K8sHubble) generateHubbleCAConfigMap() (corev1.ConfigMap, error) {
+	var (
+		hubbleCAConfigMap string
+	)
+
+	ciliumVer := k.semVerCiliumVersion
+
+	switch {
+	case versioncheck.MustCompile(">1.8.99 <1.9.90")(ciliumVer):
+		hubbleCAConfigMap = "templates/hubble-ca-configmap.yaml"
+	}
+
+	relayFile := k.manifests[hubbleCAConfigMap]
+
+	var cm corev1.ConfigMap
+	utils.MustUnmarshalYAML([]byte(relayFile), &cm)
+	return cm, nil
+}
+
+func (k *K8sHubble) generateHubbleServerCertificate(name string) (corev1.Secret, error) {
+	var (
+		relaySecretFilename string
+	)
+
+	ciliumVer := k.semVerCiliumVersion
+
+	switch {
+	case versioncheck.MustCompile(">1.10.99")(ciliumVer):
+		switch name {
+		case defaults.HubbleServerSecretName:
+			relaySecretFilename = "templates/hubble/tls-helm/server-secret.yaml"
+		}
+	case versioncheck.MustCompile(">1.8.99")(ciliumVer):
+		switch name {
+		case defaults.HubbleServerSecretName:
+			relaySecretFilename = "templates/hubble-server-secret.yaml"
+		}
+	}
+
+	relayFile := k.manifests[relaySecretFilename]
+
+	var secret corev1.Secret
+	utils.MustUnmarshalYAML([]byte(relayFile), &secret)
+	return secret, nil
+}
+
+func (k *K8sHubble) createHubbleServerCertificate(ctx context.Context) error {
+	ciliumVer := k.semVerCiliumVersion
+	switch {
+	case versioncheck.MustCompile(">1.8.99 <1.9.90")(ciliumVer):
+		cm, err := k.generateHubbleCAConfigMap()
+		if err != nil {
+			return err
+		}
+		_, err = k.client.CreateConfigMap(ctx, cm.GetNamespace(), &cm, metav1.CreateOptions{})
+		if err != nil {
+			return fmt.Errorf("unable to create secret %s/%s: %w", k.params.Namespace, defaults.HubbleServerSecretName, err)
+		}
+	}
+
+	secret, err := k.generateHubbleServerCertificate(defaults.HubbleServerSecretName)
+	if err != nil {
+		return err
+	}
+	_, err = k.client.CreateSecret(ctx, secret.GetNamespace(), &secret, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("unable to create secret %s/%s: %w", k.params.Namespace, defaults.HubbleServerSecretName, err)
+	}
+
+	return nil
+}
+
+type rollbackStep func(context.Context)
+
+func (k *K8sHubble) pushRollbackStep(step rollbackStep) {
+	// Prepend the step to the steps slice so that, in case rollback is
+	// performed, steps are rolled back in the reverse order
+	k.rollbackSteps = append([]rollbackStep{step}, k.rollbackSteps...)
+}
+
+func (k *K8sHubble) RollbackInstallation(ctx context.Context) {
+	if !k.params.Rollback {
+		k.Log("ℹ️  Rollback disabled with '--rollback=false', leaving installed resources behind")
+		return
+	}
+	k.Log("↩️ Rolling back installation...")
+
+	for _, r := range k.rollbackSteps {
+		r(ctx)
+	}
 }
