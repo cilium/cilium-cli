@@ -222,6 +222,10 @@ func (k *K8sInstaller) generateManifests(ctx context.Context) error {
 			}
 		}
 
+		// Hubble should not be enabled with cilium install since there is a
+		// flag, cilium hubble enable, that enables hubble on-demand.
+		helmMapOpts["hubble.enable"] = "false"
+
 	default:
 		return fmt.Errorf("cilium version unsupported %s", ciliumVer.String())
 	}
