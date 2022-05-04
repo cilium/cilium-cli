@@ -39,6 +39,7 @@ type Parameters struct {
 	PerfDuration          time.Duration
 	PerfCRR               bool
 	PerfSamples           int
+	PerfPolicyFiles       []string
 	CiliumBaseVersion     string
 }
 

@@ -6,6 +6,8 @@ package connectivity
 import (
 	"context"
 	_ "embed"
+	"fmt"
+	"os"
 
 	"github.com/cilium/cilium/pkg/versioncheck"
 
@@ -66,7 +68,18 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 
 	// Network Performance Test
 	if ct.Params().Perf {
-		ct.NewTest("network-perf").WithScenarios(
+		netperfTest := ct.NewTest("network-perf")
+		for _, perfPolicyFile := range ct.Params().PerfPolicyFiles {
+			policyYAML, err := os.ReadFile(perfPolicyFile)
+			if err != nil {
+				return fmt.Errorf(
+					"unable to read user given policy file '%s' for performance tests: %w",
+					perfPolicyFile, err,
+				)
+			}
+			netperfTest.WithPolicy(string(policyYAML))
+		}
+		netperfTest.WithScenarios(
 			tests.NetperfPodtoPod(""),
 		)
 		return ct.Run(ctx)
