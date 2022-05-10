@@ -30,6 +30,7 @@ env:
   vmName: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-vm
   zone: us-west2-a
   vmStartupScript: .github/gcp-vm-startup.sh
+  cilium_cli_version: v0.10.4
   kubectl_version: v1.23.6
 
 jobs:
@@ -222,8 +223,8 @@ jobs:
           gcloud compute ssh ${{ env.vmName }} --zone ${{ env.zone }} --command "cilium status"
           gcloud compute ssh ${{ env.vmName }} --zone ${{ env.zone }} --command "sudo docker logs cilium --timestamps"
 
-          echo "=== Install latest stable CLI ==="
-          curl -sSL --remote-name-all https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz{,.sha256sum}
+          echo "=== Install ${{ env.cilium_cli_version }} CLI ==="
+          curl -sSL --remote-name-all https://github.com/cilium/cilium-cli/releases/download/${{ env.cilium_cli_version }}/cilium-linux-amd64.tar.gz{,.sha256sum}
           sha256sum --check cilium-linux-amd64.tar.gz.sha256sum
           sudo tar xzvfC cilium-linux-amd64.tar.gz /usr/bin
           rm cilium-linux-amd64.tar.gz{,.sha256sum}
