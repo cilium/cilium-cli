@@ -69,9 +69,6 @@ type Manager interface {
 
 // NewV3 returns a new snapshot Manager for v3.x snapshot.
 func NewV3(lg *zap.Logger) Manager {
-	if lg == nil {
-		lg = zap.NewExample()
-	}
 	return &v3Manager{lg: lg}
 }
 
@@ -479,6 +476,6 @@ func (s *v3Manager) updateCIndex(commit uint64, term uint64) error {
 	be := backend.NewDefaultBackend(s.outDbPath())
 	defer be.Close()
 
-	cindex.UpdateConsistentIndex(be.BatchTx(), commit, term, false)
+	cindex.UpdateConsistentIndex(be.BatchTx(), commit, term)
 	return nil
 }
