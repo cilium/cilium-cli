@@ -27,8 +27,9 @@ const (
 	OperatorImageAWS           = "quay.io/cilium/operator-aws"
 	OperatorImageAzure         = "quay.io/cilium/operator-azure"
 
-	HubbleSocketPath       = "/var/run/cilium/hubble.sock"
-	HubbleServerSecretName = "hubble-server-certs"
+	HubbleSocketPath        = "/var/run/cilium/hubble.sock"
+	HubbleServerSecretName  = "hubble-server-certs"
+	HubbleListenAddressPort = 4244
 
 	RelayContainerName        = "hubble-relay"
 	RelayDeploymentName       = "hubble-relay"
@@ -43,6 +44,9 @@ const (
 	RelayServiceTLSPort       = 443
 	RelayServerSecretName     = "hubble-relay-server-certs"
 	RelayClientSecretName     = "hubble-relay-client-certs"
+
+	PeerServiceName = "hubble-peer"
+	PeerServicePort = 4254
 
 	HubbleUIServiceName        = "hubble-ui"
 	HubbleUIClusterRoleName    = "hubble-ui"
@@ -102,6 +106,11 @@ var (
 	// RelayDeploymentLabels are the labels set on the Hubble Relay Deployment by default.
 	RelayDeploymentLabels = map[string]string{
 		"k8s-app": "hubble-relay",
+	}
+
+	// HubblePeerServiceLabels are the labels set on the Hubble Peer Service by default.
+	HubblePeerServiceLabels = map[string]string{
+		"k8s-app": "cilium",
 	}
 
 	// HubbleUIDeploymentLabels are the labels set on the Hubble UI Deployment by default.

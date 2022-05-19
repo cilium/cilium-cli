@@ -164,7 +164,7 @@ var hubbleCfg = map[string]string{
 	// UNIX domain socket for Hubble server to listen to.
 	"hubble-socket-path": defaults.HubbleSocketPath,
 	// An additional address for Hubble server to listen to (e.g. ":4244").
-	"hubble-listen-address":      ":4244",
+	"hubble-listen-address":      fmt.Sprintf(":%d", defaults.HubbleListenAddressPort),
 	"hubble-disable-tls":         "false",
 	"hubble-tls-cert-file":       "/var/lib/cilium/tls/hubble/server.crt",
 	"hubble-tls-key-file":        "/var/lib/cilium/tls/hubble/server.key",
@@ -209,6 +209,11 @@ func (k *K8sHubble) Disable(ctx context.Context) error {
 
 	if err := k.disableRelay(ctx); err != nil {
 		return err
+	}
+
+	if peerSvc := k.generatePeerService(); peerSvc != nil {
+		k.Log("🔥 Deleting Peer Service...")
+		k.client.DeleteService(ctx, peerSvc.GetNamespace(), peerSvc.GetName(), metav1.DeleteOptions{})
 	}
 
 	if err := k.disableHubble(ctx); err != nil {
@@ -295,6 +300,13 @@ func (k *K8sHubble) Enable(ctx context.Context) error {
 		s, err := collector.Status(ctx)
 		if err != nil {
 			fmt.Println(s.Format())
+			return err
+		}
+	}
+
+	if peerSvc := k.generatePeerService(); peerSvc != nil {
+		k.Log("🚀 Creating Peer Service...")
+		if _, err := k.client.CreateService(ctx, k.params.Namespace, peerSvc, metav1.CreateOptions{}); err != nil {
 			return err
 		}
 	}

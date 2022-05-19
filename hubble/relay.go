@@ -30,6 +30,7 @@ var (
 	secretDefaultMode        = int32(0400)
 	relayReplicas            = int32(1)
 	relayPortIntstr          = intstr.FromInt(defaults.RelayPort)
+	servicePortIntstr        = intstr.FromInt(defaults.HubbleListenAddressPort)
 	deploymentMaxSurge       = intstr.FromInt(1)
 	deploymentMaxUnavailable = intstr.FromInt(1)
 )
@@ -66,6 +67,26 @@ func (k *K8sHubble) generateRelayService() *corev1.Service {
 		},
 	}
 	return s
+}
+
+func (k *K8sHubble) generatePeerService() *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   defaults.PeerServiceName,
+			Labels: defaults.HubblePeerServiceLabels,
+		},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeClusterIP,
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "peer-service",
+					Port:       int32(defaults.PeerServicePort),
+					TargetPort: servicePortIntstr,
+				},
+			},
+			Selector: defaults.HubblePeerServiceLabels,
+		},
+	}
 }
 
 func (k *K8sHubble) generateRelayDeployment() *appsv1.Deployment {
@@ -207,7 +228,7 @@ func (k *K8sHubble) generateRelayDeployment() *appsv1.Deployment {
 func (k *K8sHubble) generateRelayConfigMap() *corev1.ConfigMap {
 
 	var config = `
-peer-service: ` + defaults.HubbleSocketPath + `
+peer-service: ` + fmt.Sprintf("hubble-peer.%s.svc.cluster.local:%d", k.params.Namespace, defaults.PeerServicePort) + `
 listen-address: ` + fmt.Sprintf("%s:%d", defaults.RelayListenHost, defaults.RelayPort) + `
 dial-timeout: ~
 retry-timeout: ~
