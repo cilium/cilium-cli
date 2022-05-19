@@ -1,34 +1,10 @@
 # Code owners groups and a brief description of their areas:
-# @cilium/azure              Integration with Azure
 # @cilium/ci-structure       Continuous integration, testing
-# @cilium/cli                Commandline interfaces
-# @cilium/contributing       Developer documentation & tools
 # @cilium/github-sec         GitHub security (handling of secrets, consequences of pull_request_target, etc.)
-# @cilium/hubble             Hubble integration
-# @cilium/kubernetes         K8s integration, K8s CNI plugin
-# @cilium/sig-clustermesh    Clustermesh and external workloads
-# @cilium/vendor             Vendoring, dependency management
+# @cilium/tophat             Catch-all for code not otherwise owned
 
 # The following filepaths should be sorted so that more specific paths occur
 # after the less specific paths, otherwise the ownership for the specific paths
 # is not properly picked up in Github.
-* @cilium/cli
-/CODEOWNERS @cilium/contributing
-/.github/ @cilium/contributing
-/.github/cilium-cli-test-job-chart/ @cilium/github-sec @cilium/ci-structure
-/.github/gcp-vm-startup.sh @cilium/ci-structure
-/.github/get-kubeconfig.sh @cilium/github-sec @cilium/ci-structure
-/.github/in-cluster-test-scripts/ @cilium/ci-structure
-/.github/kind-config*.yaml @cilium/ci-structure
-/.github/tools/ @cilium/ci-structure
+* @cilium/tophat
 /.github/workflows/ @cilium/github-sec @cilium/ci-structure
-/cmd/ @cilium/cli
-/clustermesh/ @cilium/sig-clustermesh
-/connectivity/ @cilium/cli
-/hubble/ @cilium/hubble
-/install/azure.go @cilium/azure
-/internal/cli/ @cilium/cli
-/internal/k8s/ @cilium/kubernetes
-/go.sum @cilium/vendor
-/go.mod @cilium/vendor
-/vendor/ @cilium/vendor
