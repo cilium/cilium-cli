@@ -1,3 +1,5 @@
+auto-label:
+  - "backport/0.10"
 require-msgs-in-commit:
   - msg: "Signed-off-by"
     helper: "https://docs.cilium.io/en/stable/contributing/development/contributing_guide/#developer-s-certificate-of-origin"
