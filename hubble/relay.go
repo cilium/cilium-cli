@@ -207,7 +207,7 @@ func (k *K8sHubble) generateRelayDeployment() *appsv1.Deployment {
 func (k *K8sHubble) generateRelayConfigMap() *corev1.ConfigMap {
 
 	var config = `
-peer-service: ` + defaults.HubbleSocketPath + `
+peer-service: unix://` + defaults.HubbleSocketPath + `
 listen-address: ` + fmt.Sprintf("%s:%d", defaults.RelayListenHost, defaults.RelayPort) + `
 dial-timeout: ~
 retry-timeout: ~

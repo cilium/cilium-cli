@@ -74,7 +74,7 @@ var ciliumClusterRole = &rbacv1.ClusterRole{
 		},
 		{
 			APIGroups: []string{""},
-			Resources: []string{"namespaces", "services", "endpoints"},
+			Resources: []string{"namespaces", "services", "endpoints", "nodes"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
 		{
@@ -84,12 +84,7 @@ var ciliumClusterRole = &rbacv1.ClusterRole{
 		},
 		{
 			APIGroups: []string{""},
-			Resources: []string{"nodes"},
-			Verbs:     []string{"get", "list", "watch", "update"},
-		},
-		{
-			APIGroups: []string{""},
-			Resources: []string{"nodes", "nodes/status"},
+			Resources: []string{"nodes/status"},
 			Verbs:     []string{"patch"},
 		},
 		{
@@ -140,6 +135,16 @@ var operatorClusterRole = &rbacv1.ClusterRole{
 			APIGroups: []string{""},
 			Resources: []string{"pods"},
 			Verbs:     []string{"get", "list", "watch", "delete"},
+		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"nodes"},
+			Verbs:     []string{"list", "watch"},
+		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"nodes", "nodes/status"},
+			Verbs:     []string{"patch"},
 		},
 		{
 			APIGroups: []string{"discovery.k8s.io"},
@@ -1315,6 +1320,7 @@ func (k *K8sInstaller) generateConfigMap() (*corev1.ConfigMap, error) {
 			"enable-remote-node-identity":         "true",
 			"operator-api-serve-addr":             "127.0.0.1:9234",
 			"disable-cnp-status-updates":          "true",
+			"remove-cilium-node-taints":           "true",
 		},
 	}
 
