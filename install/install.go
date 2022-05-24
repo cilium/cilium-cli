@@ -241,6 +241,15 @@ var operatorClusterRole = &rbacv1.ClusterRole{
 }
 
 func (k *K8sInstaller) generateAgentDaemonSet() *appsv1.DaemonSet {
+	healthCheckPort := 9876
+
+	version, err := utils.ParseCiliumVersion(k.params.Version, k.params.BaseVersion)
+	if err != nil {
+		k.Log("Unable to parse the provided version %q, assuming %v for health checking port compatibility", k.params.Version, defaults.Version)
+	} else if version.GE(versioncheck.MustVersion("v1.10.12")) {
+		healthCheckPort = 9879
+	}
+
 	ds := &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: defaults.AgentDaemonSetName,
@@ -305,7 +314,7 @@ func (k *K8sInstaller) generateAgentDaemonSet() *appsv1.DaemonSet {
 									HTTPGet: &corev1.HTTPGetAction{
 										Host:   "127.0.0.1",
 										Path:   "/healthz",
-										Port:   intstr.FromInt(9876),
+										Port:   intstr.FromInt(healthCheckPort),
 										Scheme: corev1.URISchemeHTTP,
 										HTTPHeaders: []corev1.HTTPHeader{
 											{
@@ -326,7 +335,7 @@ func (k *K8sInstaller) generateAgentDaemonSet() *appsv1.DaemonSet {
 									HTTPGet: &corev1.HTTPGetAction{
 										Host:   "127.0.0.1",
 										Path:   "/healthz",
-										Port:   intstr.FromInt(9876),
+										Port:   intstr.FromInt(healthCheckPort),
 										Scheme: corev1.URISchemeHTTP,
 										HTTPHeaders: []corev1.HTTPHeader{
 											{
