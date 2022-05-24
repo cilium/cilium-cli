@@ -13,6 +13,8 @@ RELEASE_GID ?= $(shell id -g)
 GOLANGCILINT_WANT_VERSION = 1.46.0
 GOLANGCILINT_VERSION = $(shell golangci-lint version 2>/dev/null)
 
+DLV = $(shell which dlv 2> /dev/null)
+
 $(TARGET):
 	$(GO_BUILD) $(if $(GO_TAGS),-tags $(GO_TAGS)) \
 		-ldflags "-w -s \
@@ -72,6 +74,13 @@ test:
 bench:
 	$(GO) test -timeout=30s -bench=. $$($(GO) list ./...)
 
+debug:
+ifeq (, $(DLV))
+	@echo "dlv not available"
+else
+	dlv debug ./cmd/cilium -- $(DLV_ARGS)
+endif
+
 ifneq (,$(findstring $(GOLANGCILINT_WANT_VERSION),$(GOLANGCILINT_VERSION)))
 check:
 	golangci-lint run
@@ -80,4 +89,4 @@ check:
 	docker run --rm -v `pwd`:/app -w /app docker.io/golangci/golangci-lint:v$(GOLANGCILINT_WANT_VERSION) golangci-lint run
 endif
 
-.PHONY: $(TARGET) release local-release install clean test bench check
+.PHONY: $(TARGET) release local-release install clean test bench check debug
