@@ -94,6 +94,8 @@ jobs:
             --machine-type e2-custom-2-4096 \
             --disk-type pd-standard \
             --disk-size 10GB \
+            --enable-ip-alias \
+            --create-subnetwork="" \
             --node-taints node.cilium.io/agent-not-ready=true:NoExecute \
             --preemptible \
             --enable-ip-alias
