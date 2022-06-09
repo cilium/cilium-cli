@@ -1344,7 +1344,8 @@ CILIUM_IMAGE=${1:-%[1]s}
 CLUSTER_ADDR=${2:-%[2]s}
 CONFIG_OVERWRITES=${3:-%[3]s}
 
-set -e
+PS4='+[\t] '
+set -ex
 shopt -s extglob
 
 # Run without sudo if not available (e.g., running as root)
@@ -1466,10 +1467,13 @@ while [ $cilium_started = false ]; do
 
     # Wait for cilium agent to become available
     for ((i = 0 ; i < 12; i++)); do
-        if ${SUDO} cilium status --brief > /dev/null 2>&1; then
+        echo "about to run cilium status. brace yourself"
+        if ${SUDO} cilium status --brief; then
+            echo "cilium status succeeded"
             cilium_started=true
             break
         fi
+	echo "cilium status failed :-("
         sleep 5s
         echo "Waiting for Cilium daemon to come up..."
     done
