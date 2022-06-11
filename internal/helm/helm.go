@@ -142,6 +142,22 @@ func valuesToString(prevKey string, b map[string]interface{}) string {
 }
 
 func sliceValuesToString(prevKey string, b []interface{}) string {
+	// Handle case where b is slice of strings to set it like key={v1,v2,v3}.
+	var str []string
+Iter:
+	for _, v := range b {
+		switch v := v.(type) {
+		case string:
+			str = append(str, v)
+		default:
+			// Non-homogenous slice, falling back to default logic.
+			str = nil
+			break Iter
+		}
+	}
+	if str != nil {
+		return fmt.Sprintf("%s={%s}", prevKey, strings.Join(str, ","))
+	}
 	var out []string
 	for i, v := range b {
 		switch v := v.(type) {
