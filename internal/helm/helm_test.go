@@ -19,7 +19,7 @@ func TestValuesToString(t *testing.T) {
 		{
 			name: "str-slice",
 			in:   map[string]interface{}{"hubble": map[string]interface{}{"enabled": true, "metrics": map[string]interface{}{"enabled": []interface{}{"dns", "drop", "tcp", "flow", "icmp", "http"}}}},
-			out:  "hubble.enabled=true,hubble.metrics.enabled={dns,drop,tcp,flow,icmp,http}",
+			out:  `hubble.enabled=true,hubble.metrics.enabled="{dns,drop,tcp,flow,icmp,http}"`,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
