@@ -564,6 +564,7 @@ func (k *K8sHubble) Enable(ctx context.Context) error {
 			fmt.Println(s.Format())
 			return err
 		}
+		fmt.Print(s.Format())
 	}
 
 	k.Log("ℹ️  Storing helm values file in %s/%s Secret", k.params.Namespace, k.params.HelmValuesSecretName)
