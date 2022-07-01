@@ -178,7 +178,7 @@ func (k *K8sHubble) Log(format string, a ...interface{}) {
 	fmt.Fprintf(k.params.Writer, format+"\n", a...)
 }
 
-func (k *K8sHubble) () *corev1.Service {
+func (k *K8sHubble) generatePeerService() *corev1.Service {
 	var (
 		svcFilename string
 	)
