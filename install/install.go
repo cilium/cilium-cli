@@ -32,6 +32,7 @@ import (
 	"github.com/cilium/cilium-cli/internal/utils"
 	"github.com/cilium/cilium-cli/k8s"
 	"github.com/cilium/cilium-cli/status"
+	"github.com/cilium/cilium-cli/hubble"
 )
 
 const (
@@ -783,6 +784,10 @@ func (k *K8sInstaller) Install(ctx context.Context) error {
 					k.Log("Cannot delete %s RoleBinding: %s", rb.GetName(), err)
 				}
 			})
+		}
+		if peerSvc := k.generatePeerService(); peerSvc != nil {
+			k.Log("🔥 Deleting Peer Service...")
+			k.client.DeleteService(ctx, peerSvc.GetNamespace(), peerSvc.GetName(), metav1.DeleteOptions{})
 		}
 	}
 
