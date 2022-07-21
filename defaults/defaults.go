@@ -82,9 +82,6 @@ const (
 
 	PolicyWaitTimeout = 15 * time.Second
 
-	ConfigMapKeyMonitorAggregation      = "monitor-aggregation"
-	ConfigMapValueMonitorAggregatonNone = "none"
-
 	IngressClassName        = "cilium"
 	IngressControllerName   = "cilium.io/ingress-controller"
 	IngressSecretsNamespace = "cilium-secrets"
