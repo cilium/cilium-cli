@@ -8,3 +8,5 @@ spec:
   egress:
   - toEndpoints:
     - {}
+  - toCIDR:
+    - 0.0.0.0/0

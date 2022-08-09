@@ -38,6 +38,7 @@ type Parameters struct {
 	PauseOnFail           bool
 	SkipIPCacheCheck      bool
 	Perf                  bool
+	DenyPolicy            bool
 	PerfDuration          time.Duration
 	PerfCRR               bool
 	PerfHostNet           bool
