@@ -1,0 +1,13 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  namespace: cilium-test
+  name: client-ingress-from-client2-deny
+spec:
+  endpointSelector:
+    matchLabels:
+      kind: client
+  ingressDeny:
+  - fromEndpoints:
+    - matchLabels:
+        other: client

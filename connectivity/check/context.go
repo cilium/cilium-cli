@@ -582,3 +582,7 @@ func (ct *ConnectivityTest) NodesWithoutCilium() []string {
 	copy(out, ct.nodesWithoutCilium)
 	return out
 }
+
+func (ct *ConnectivityTest) DenyPolicy() bool {
+	return ct.params.DenyPolicy
+}

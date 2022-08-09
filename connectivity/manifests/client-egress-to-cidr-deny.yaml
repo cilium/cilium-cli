@@ -1,0 +1,12 @@
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  namespace: cilium-test
+  name: client-egress-to-cidr-deny
+spec:
+  endpointSelector:
+    matchLabels:
+      kind: client
+  egressDeny:
+  - toCIDRSet:
+    - cidr: 1.0.0.0/8

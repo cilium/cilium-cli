@@ -26,6 +26,7 @@ const (
 	ExitAnyError    ExitCode = -1
 	ExitInvalidCode ExitCode = -2
 
+	ExistInvalidHost  ExitCode = 6
 	ExitCurlHTTPError ExitCode = 22
 	ExitCurlTimeout   ExitCode = 28
 )
@@ -202,6 +203,9 @@ type Result struct {
 
 	// DNSProxy is true when DNS Proxy is to be expected, only valid for egress
 	DNSProxy bool
+
+	// DNSProxyDrop is true when DNS Proxy is to be expected, and dns request is dropped, only valid for egress
+	DNSProxyDrop bool
 
 	// L7Proxy is true when L7 proxy (e.g., Envoy) is to be expected
 	L7Proxy bool
