@@ -88,6 +88,7 @@ type deploymentParameters struct {
 	Kind           string
 	Image          string
 	Replicas       int
+	NamedPort      string
 	Port           int
 	HostPort       int
 	Command        []string
@@ -100,6 +101,9 @@ type deploymentParameters struct {
 func newDeployment(p deploymentParameters) *appsv1.Deployment {
 	if p.Replicas == 0 {
 		p.Replicas = 1
+	}
+	if len(p.NamedPort) == 0 {
+		p.NamedPort = fmt.Sprintf("port-%d", p.Port)
 	}
 	replicas32 := int32(p.Replicas)
 	dep := &appsv1.Deployment{
@@ -125,9 +129,10 @@ func newDeployment(p deploymentParameters) *appsv1.Deployment {
 							Name: p.Name,
 							Env: []corev1.EnvVar{
 								{Name: "PORT", Value: fmt.Sprintf("%d", p.Port)},
+								{Name: "NAMED_PORT", Value: p.NamedPort},
 							},
 							Ports: []corev1.ContainerPort{
-								{ContainerPort: int32(p.Port), HostPort: int32(p.HostPort)},
+								{Name: p.NamedPort, ContainerPort: int32(p.Port), HostPort: int32(p.HostPort)},
 							},
 							Image:           p.Image,
 							ImagePullPolicy: corev1.PullIfNotPresent,
@@ -170,8 +175,8 @@ func newDeploymentWithDNSTestServer(p deploymentParameters, DNSTestServerImage s
 			Args: []string{"-conf", "/etc/coredns/Corefile"},
 			Name: DNSTestServerContainerName,
 			Ports: []corev1.ContainerPort{
-				{ContainerPort: 53},
-				{ContainerPort: 53, Protocol: corev1.ProtocolUDP},
+				{ContainerPort: 53, Name: "dns-53"},
+				{ContainerPort: 53, Name: "dns-udp-53", Protocol: corev1.ProtocolUDP},
 			},
 			Image:           DNSTestServerImage,
 			ImagePullPolicy: corev1.PullIfNotPresent,
@@ -411,12 +416,13 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 		ct.Logf("✨ [%s] Deploying same-node deployment...", ct.clients.src.ClusterName())
 		containerPort := 8080
 		echoDeployment := newDeploymentWithDNSTestServer(deploymentParameters{
-			Name:     echoSameNodeDeploymentName,
-			Kind:     kindEchoName,
-			Port:     containerPort,
-			HostPort: hostPort,
-			Image:    ct.params.JSONMockImage,
-			Labels:   map[string]string{"other": "echo"},
+			Name:      echoSameNodeDeploymentName,
+			Kind:      kindEchoName,
+			Port:      containerPort,
+			NamedPort: "http-8080",
+			HostPort:  hostPort,
+			Image:     ct.params.JSONMockImage,
+			Labels:    map[string]string{"other": "echo"},
 			Affinity: &corev1.Affinity{
 				PodAffinity: &corev1.PodAffinity{
 					RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
@@ -475,10 +481,11 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 		if err != nil {
 			ct.Logf("✨ [%s] Deploying %s deployment...", ct.clients.src.ClusterName(), nm.ClientName())
 			perfClientDeployment := newDeployment(deploymentParameters{
-				Name:  nm.ClientName(),
-				Kind:  kindPerfName,
-				Port:  80,
-				Image: ct.params.PerformanceImage,
+				Name:      nm.ClientName(),
+				Kind:      kindPerfName,
+				NamedPort: "http-80",
+				Port:      80,
+				Image:     ct.params.PerformanceImage,
 				Labels: map[string]string{
 					"client": "role",
 				},
@@ -599,11 +606,12 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 	if err != nil {
 		ct.Logf("✨ [%s] Deploying %s deployment...", ct.clients.src.ClusterName(), clientDeploymentName)
 		clientDeployment := newDeployment(deploymentParameters{
-			Name:    clientDeploymentName,
-			Kind:    kindClientName,
-			Port:    8080,
-			Image:   ct.params.CurlImage,
-			Command: []string{"/bin/ash", "-c", "sleep 10000000"},
+			Name:      clientDeploymentName,
+			Kind:      kindClientName,
+			NamedPort: "http-8080",
+			Port:      8080,
+			Image:     ct.params.CurlImage,
+			Command:   []string{"/bin/ash", "-c", "sleep 10000000"},
 		})
 		_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, clientDeployment, metav1.CreateOptions{})
 		if err != nil {
@@ -616,12 +624,13 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 	if err != nil {
 		ct.Logf("✨ [%s] Deploying %s deployment...", ct.clients.src.ClusterName(), client2DeploymentName)
 		clientDeployment := newDeployment(deploymentParameters{
-			Name:    client2DeploymentName,
-			Kind:    kindClientName,
-			Port:    8080,
-			Image:   ct.params.CurlImage,
-			Command: []string{"/bin/ash", "-c", "sleep 10000000"},
-			Labels:  map[string]string{"other": "client"},
+			Name:      client2DeploymentName,
+			Kind:      kindClientName,
+			NamedPort: "http-8080",
+			Port:      8080,
+			Image:     ct.params.CurlImage,
+			Command:   []string{"/bin/ash", "-c", "sleep 10000000"},
+			Labels:    map[string]string{"other": "client"},
 			Affinity: &corev1.Affinity{
 				PodAffinity: &corev1.PodAffinity{
 					RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
@@ -665,11 +674,12 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 			ct.Logf("✨ [%s] Deploying other-node deployment...", ct.clients.dst.ClusterName())
 			containerPort := 8080
 			echoOtherNodeDeployment := newDeploymentWithDNSTestServer(deploymentParameters{
-				Name:     echoOtherNodeDeploymentName,
-				Kind:     kindEchoName,
-				Port:     containerPort,
-				HostPort: hostPort,
-				Image:    ct.params.JSONMockImage,
+				Name:      echoOtherNodeDeploymentName,
+				Kind:      kindEchoName,
+				NamedPort: "http-8080",
+				Port:      containerPort,
+				HostPort:  hostPort,
+				Image:     ct.params.JSONMockImage,
 				Affinity: &corev1.Affinity{
 					PodAntiAffinity: &corev1.PodAntiAffinity{
 						RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
