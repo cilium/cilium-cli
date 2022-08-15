@@ -1,0 +1,32 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  namespace: cilium-test
+  name: client-egress-to-echo-expression
+spec:
+  endpointSelector:
+    matchExpressions:
+      - {key: 'kind', operator: Exists}
+  egressDeny:
+  - toPorts:
+    - ports:
+      - port: "8080"
+        protocol: TCP
+    toEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: cilium-test
+        kind: echo
+  - toPorts:
+    - ports:
+      - port: "53"
+        protocol: ANY
+    toEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: kube-system
+        k8s-app: kube-dns
+    - matchLabels:
+        io.kubernetes.pod.namespace: kube-system
+        k8s-app: coredns
+    - matchLabels:
+        io.kubernetes.pod.namespace: kube-system
+        k8s-app: node-local-dns

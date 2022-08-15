@@ -28,8 +28,14 @@ var (
 	//go:embed manifests/client-egress-to-echo.yaml
 	clientEgressToEchoPolicyYAML string
 
+	//go:embed manifests/client-egress-to-echo-expression.yaml
+	clientEgressToEchoExpressionPolicyYAML string
+
 	//go:embed manifests/client-egress-to-echo-deny.yaml
 	clientEgressToEchoDenyPolicyYAML string
+
+	//go:embed manifests/client-egress-to-echo-expression-deny.yaml
+	clientEgressToEchoExpressionDenyPolicyYAML string
 
 	//go:embed manifests/client-egress-to-echo-deny-named-port.yaml
 	clientEgressToEchoDenyNamedPortPolicyYAML string
@@ -210,6 +216,12 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 			tests.PodToPod(),
 		)
 
+	// This policy allows port 8080 from client to echo (using label match expression, so this should succeed
+	ct.NewTest("client-egress-expression").WithPolicy(clientEgressToEchoExpressionPolicyYAML).
+		WithScenarios(
+			tests.PodToPod(),
+		)
+
 	// This policy allows UDP to kube-dns and port 80 TCP to all 'world' endpoints.
 	ct.NewTest("to-entities-world").
 		WithPolicy(clientEgressToEntitiesWorldPolicyYAML).
@@ -328,6 +340,19 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 
 		// This policy denies port 8080 from client to echo
 		ct.NewTest("client-egress-deny").WithPolicy(clientEgressToEchoDenyPolicyYAML).
+			WithScenarios(
+				tests.PodToPod(),
+			).
+			WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+				if a.Destination().HasLabel("kind", "echo") &&
+					a.Source().HasLabel("kind", "client") {
+					return check.ResultDrop, check.ResultNone
+				}
+				return check.ResultOK, check.ResultOK
+			})
+
+		// This policy denies port 8080 from client (using expression) to echo
+		ct.NewTest("client-egress-expression-deny").WithPolicy(clientEgressToEchoExpressionDenyPolicyYAML).
 			WithScenarios(
 				tests.PodToPod(),
 			).
