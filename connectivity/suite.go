@@ -31,6 +31,9 @@ var (
 	//go:embed manifests/client-egress-to-echo-deny.yaml
 	clientEgressToEchoDenyPolicyYAML string
 
+	//go:embed manifests/client-egress-to-echo-deny-named-port.yaml
+	clientEgressToEchoDenyNamedPortPolicyYAML string
+
 	//go:embed manifests/client-ingress-from-client2.yaml
 	clientIngressFromClient2PolicyYAML string
 
@@ -58,8 +61,14 @@ var (
 	//go:embed manifests/client-egress-l7-http.yaml
 	clientEgressL7HTTPPolicyYAML string
 
+	//go:embed manifests/client-egress-l7-http-named-port.yaml
+	clientEgressL7HTTPNamedPortPolicyYAML string
+
 	//go:embed manifests/echo-ingress-l7-http.yaml
 	echoIngressL7HTTPPolicyYAML string
+
+	//go:embed manifests/echo-ingress-l7-http-named-port.yaml
+	echoIngressL7HTTPNamedPortPolicyYAML string
 
 	//go:embed manifests/echo-ingress-icmp.yaml
 	echoIngressICMPPolicyYAML string
@@ -254,6 +263,30 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 			return check.ResultDrop, check.ResultNone
 		})
 
+	// Test L7 HTTP introspection using an ingress policy on echo pods.
+	ct.NewTest("echo-ingress-l7-named-port").
+		WithFeatureRequirements(check.RequireFeatureEnabled(check.FeatureL7Proxy)).
+		WithPolicy(echoIngressL7HTTPNamedPortPolicyYAML). // L7 allow policy with HTTP introspection (named port)
+		WithScenarios(
+			tests.PodToPodWithEndpoints(),
+		).
+		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			if a.Source().HasLabel("other", "client") { // Only client2 is allowed to make HTTP calls.
+				// Trying to access private endpoint without "secret" header set
+				// should lead to a drop.
+				if a.Destination().Path() == "/private" && !a.Destination().HasLabel("X-Very-Secret-Token", "42") {
+					return check.ResultDropCurlHTTPError, check.ResultNone
+				}
+				egress = check.ResultOK
+				// Expect all curls from client2 to be proxied and to be GET calls.
+				egress.HTTP = check.HTTP{
+					Method: "GET",
+				}
+				return egress, check.ResultNone
+			}
+			return check.ResultDrop, check.ResultNone
+		})
+
 	// Tests with deny policy
 	if ct.DenyPolicy() {
 		// This policy denies ingress into client from client2.
@@ -306,6 +339,19 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 				return check.ResultOK, check.ResultOK
 			})
 
+		// This policy denies port http-8080 from client to echo
+		ct.NewTest("client-egress-deny-named-port").WithPolicy(clientEgressToEchoDenyNamedPortPolicyYAML).
+			WithScenarios(
+				tests.PodToPod(),
+			).
+			WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+				if a.Destination().HasLabel("kind", "echo") &&
+					a.Source().HasLabel("kind", "client") {
+					return check.ResultDrop, check.ResultNone
+				}
+				return check.ResultOK, check.ResultOK
+			})
+
 		// This policy denies L3 traffic to 1.0.0.1/8 CIDR from client to echo
 		ct.NewTest("to-cidr-deny").
 			WithPolicy(clientEgressToCIDRDenyPolicyYAML).
@@ -329,6 +375,34 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 		WithFeatureRequirements(check.RequireFeatureEnabled(check.FeatureL7Proxy)).
 		WithPolicy(clientEgressOnlyDNSPolicyYAML). // DNS resolution only
 		WithPolicy(clientEgressL7HTTPPolicyYAML).  // L7 allow policy with HTTP introspection
+		WithScenarios(
+			tests.PodToPod(),
+			tests.PodToWorld(),
+		).
+		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			if a.Source().HasLabel("other", "client") && // Only client2 is allowed to make HTTP calls.
+				// Outbound HTTP to one.one.one.one is L7-introspected and allowed.
+				(a.Destination().Port() == 80 && a.Destination().Address() == "one.one.one.one" ||
+					a.Destination().Port() == 8080) { // 8080 is traffic to echo Pod.
+				if a.Destination().Path() == "/" || a.Destination().Path() == "" {
+					egress = check.ResultOK
+					// Expect all curls from client2 to be proxied and to be GET calls.
+					egress.HTTP = check.HTTP{
+						Method: "GET",
+					}
+					return egress, check.ResultNone
+				}
+				// Else expect HTTP drop by proxy
+				return check.ResultDNSOKDropCurlHTTPError, check.ResultNone
+			}
+			return check.ResultDrop, check.ResultNone
+		})
+
+	// Test L7 HTTP named port introspection using an egress policy on the clients.
+	ct.NewTest("client-egress-l7-named-port").
+		WithFeatureRequirements(check.RequireFeatureEnabled(check.FeatureL7Proxy)).
+		WithPolicy(clientEgressOnlyDNSPolicyYAML).         // DNS resolution only
+		WithPolicy(clientEgressL7HTTPNamedPortPolicyYAML). // L7 allow policy with HTTP introspection (named port)
 		WithScenarios(
 			tests.PodToPod(),
 			tests.PodToWorld(),
