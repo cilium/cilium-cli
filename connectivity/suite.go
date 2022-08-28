@@ -32,6 +32,12 @@ var (
 	//go:embed manifests/deny-all-entities.yaml
 	denyAllEntitiesPolicyYAML string
 
+	//go:embed manifests/allow-cluster-entity.yaml
+	allowClusterEntityPolicyYAML string
+
+	//go:embed manifests/allow-host-entity.yaml
+	allowHostEntityPolicyYAML string
+
 	//go:embed manifests/allow-all-except-world.yaml
 	allowAllExceptWorldPolicyYAML string
 	//go:embed manifests/allow-all-except-world-pre-v1.11.yaml
@@ -236,6 +242,26 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 		).
 		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
 			return check.ResultDrop, check.ResultNone
+		})
+
+	// This policy allows cluster entity
+	ct.NewTest("cluster-entity").
+		WithPolicy(allowClusterEntityPolicyYAML).
+		WithScenarios(
+			tests.PodToPod(),
+		).
+		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			return check.ResultOK, check.ResultOK
+		})
+
+	// This policy allows host entity
+	ct.NewTest("host-entity").
+		WithPolicy(allowHostEntityPolicyYAML).
+		WithScenarios(
+			tests.PodToHostPort(),
+		).
+		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			return check.ResultOK, check.ResultOK
 		})
 
 	// This policy allows ingress to echo only from client with a label 'other:client'.
