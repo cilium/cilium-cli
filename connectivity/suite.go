@@ -29,6 +29,9 @@ var (
 	//go:embed manifests/deny-all-ingress.yaml
 	denyAllIngressPolicyYAML string
 
+	//go:embed manifests/deny-all-entities.yaml
+	denyAllEntitiesPolicyYAML string
+
 	//go:embed manifests/allow-all-except-world.yaml
 	allowAllExceptWorldPolicyYAML string
 	//go:embed manifests/allow-all-except-world-pre-v1.11.yaml
@@ -219,6 +222,17 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 		WithScenarios(
 			tests.PodToPod(),
 			tests.PodToPodWithEndpoints(),
+		).
+		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			return check.ResultDrop, check.ResultNone
+		})
+
+	// This policy denies all entities by default
+	ct.NewTest("all-entities-deny").
+		WithPolicy(denyAllEntitiesPolicyYAML).
+		WithScenarios(
+			tests.PodToPod(),
+			tests.PodToCIDR(),
 		).
 		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
 			return check.ResultDrop, check.ResultNone
