@@ -181,6 +181,47 @@ func TestKVStoreTask(t *testing.T) {
 	assert.Equal([]byte("{}"), data)
 }
 
+func TestFeatureIsEnabled(t *testing.T) {
+	data := map[string]string{
+		"enable-ipv4-egress-gateway":   "true",
+		"enable-local-redirect-policy": "false",
+	}
+
+	testCases := []struct {
+		desc  string
+		key   string
+		value string
+		want  bool
+	}{
+		{
+			desc:  "Check for non-existing key",
+			key:   "enable-some-non-existing-feature",
+			value: "true",
+			want:  false,
+		},
+		{
+			desc:  "Check for existing key and feature enabled",
+			key:   "enable-ipv4-egress-gateway",
+			value: "true",
+			want:  true,
+		},
+		{
+			desc:  "Check for existing key and feature disabled",
+			key:   "enable-local-redirect-policy",
+			value: "true",
+			want:  false,
+		},
+	}
+	for _, tC := range testCases {
+		t.Run(tC.desc, func(t *testing.T) {
+			got := featureIsEnabled(data, tC.key, tC.value)
+			if got != tC.want {
+				t.Errorf("got %v want %v", got, tC.want)
+			}
+		})
+	}
+}
+
 type execRequest struct {
 	namespace string
 	pod       string
