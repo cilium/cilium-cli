@@ -310,19 +310,19 @@ func (ct *ConnectivityTest) detectFeatures(ctx context.Context) error {
 
 		err := ct.extractFeaturesFromConfigMap(ctx, ciliumPod.K8sClient, features)
 		if err != nil {
-			return err
+			ct.Warnf("Unable to read features from configmap: %v", err)
 		}
 		err = ct.extractFeaturesFromRuntimeConfig(ctx, ciliumPod, features)
 		if err != nil {
-			return err
+			ct.Warnf("Unable to read features from runtime config: %v", err)
 		}
 		err = ct.extractFeaturesFromNodes(ctx, ciliumPod.K8sClient, features)
 		if err != nil {
-			return err
+			ct.Warnf("Unable to read features from nodes: %v", err)
 		}
 		err = ct.extractFeaturesFromCiliumStatus(ctx, ciliumPod, features)
 		if err != nil {
-			return err
+			ct.Warnf("Unable to readh features from cilium status: %v", err)
 		}
 		err = features.deriveFeatures()
 		if err != nil {
