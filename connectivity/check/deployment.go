@@ -983,7 +983,7 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 		}
 	}
 
-	if ct.params.MultiCluster == "" {
+	if ct.params.MultiCluster == "" && ct.features[FeatureKPRNodePort].Enabled {
 		for _, ciliumPod := range ct.ciliumPods {
 			hostIP := ciliumPod.Pod.Status.HostIP
 			for _, s := range ct.echoServices {
