@@ -6,6 +6,9 @@ metadata:
 spec:
   backoffLimit: 0
   template:
+    metadata:
+      labels:
+        k8s-app: cilium
     spec:
       containers:
       - args:
