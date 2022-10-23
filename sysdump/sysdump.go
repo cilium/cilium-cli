@@ -246,15 +246,33 @@ func (c *Collector) WriteTable(filename string, value *metav1.Table) error {
 
 // Run performs the actual sysdump collection.
 func (c *Collector) Run() error {
+	cm, err := c.Client.GetConfigMap(context.Background(), c.Options.CiliumNamespace, ciliumConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get Cilium configuration: %w", err)
+	}
+
 	taskDescription := func(desc string) string {
 		return fmt.Sprintf("%s %s", "Collecting", desc)
 	}
 	taskFailure := func(fail string) string {
 		return fmt.Sprintf("%s %s", "failed to collect", fail)
 	}
+	featureDisabled := func(feature string) string {
+		return fmt.Sprintf("%q %s", feature, "not enabled in Cilium configmap, skipping")
+	}
 
 	// tasks is the list of base tasks to be run.
 	tasks := []Task{
+		{
+			Description: taskDescription("Cilium configuration"),
+			Quick:       true,
+			Task: func(ctx context.Context) error {
+				if err := c.WriteYAML(ciliumConfigMapFileName, cm); err != nil {
+					return fmt.Errorf("%s: %w", taskFailure("Cilium configuration"), err)
+				}
+				return nil
+			},
+		},
 		{
 			Description: taskDescription("Kubernetes nodes"),
 			Quick:       true,
@@ -424,6 +442,11 @@ func (c *Collector) Run() error {
 			Description: taskDescription("Cilium egress NAT policies"),
 			Quick:       true,
 			Task: func(ctx context.Context) error {
+				if !featureIsEnabled(cm.Data, "enable-ipv4-egress-gateway", "true") {
+					c.logDebug(featureDisabled("enable-ipv4-egress-gateway"))
+					return nil
+				}
+
 				v, err := c.Client.ListCiliumEgressNATPolicies(ctx, metav1.ListOptions{})
 				if err != nil {
 					return fmt.Errorf("%s: %w", taskFailure("Cilium egress NAT policies"), err)
@@ -438,6 +461,11 @@ func (c *Collector) Run() error {
 			Description: taskDescription("Cilium local redirect policies"),
 			Quick:       true,
 			Task: func(ctx context.Context) error {
+				if !featureIsEnabled(cm.Data, "enable-local-redirect-policy", "true") {
+					c.logDebug(featureDisabled("enable-local-redirect-policy"))
+					return nil
+				}
+
 				v, err := c.Client.ListCiliumLocalRedirectPolicies(ctx, corev1.NamespaceAll, metav1.ListOptions{})
 				if err != nil {
 					return fmt.Errorf("%s: %w", taskFailure("Cilium local redirect policies"), err)
@@ -508,6 +536,10 @@ func (c *Collector) Run() error {
 			Description: taskDescription("CiliumClusterwideEnvoyConfigs"),
 			Quick:       true,
 			Task: func(ctx context.Context) error {
+				if !featureIsEnabled(cm.Data, "enable-envoy-config", "true") {
+					c.logDebug(featureDisabled("enable-envoy-config"))
+					return nil
+				}
 				v, err := c.Client.ListCiliumClusterwideEnvoyConfigs(ctx, metav1.ListOptions{})
 				if err != nil {
 					return fmt.Errorf("%s: %w", taskFailure("CiliumClusterwideEnvoyConfigs"), err)
@@ -522,6 +554,10 @@ func (c *Collector) Run() error {
 			Description: taskDescription("CiliumEnvoyConfigs"),
 			Quick:       true,
 			Task: func(ctx context.Context) error {
+				if !featureIsEnabled(cm.Data, "enable-envoy-config", "true") {
+					c.logDebug(featureDisabled("CiliumEnvoyConfigs"))
+					return nil
+				}
 				v, err := c.Client.ListCiliumEnvoyConfigs(ctx, corev1.NamespaceAll, metav1.ListOptions{})
 				if err != nil {
 					return fmt.Errorf("%s: %w", taskFailure("CiliumEnvoyConfigs"), err)
@@ -536,6 +572,10 @@ func (c *Collector) Run() error {
 			Description: taskDescription("Cilium etcd secret"),
 			Quick:       true,
 			Task: func(ctx context.Context) error {
+				if !featureIsEnabled(cm.Data, "kvstore", "etcd") {
+					c.logDebug(featureDisabled("kvstore"))
+					return nil
+				}
 				v, err := c.Client.GetSecret(ctx, c.Options.CiliumNamespace, ciliumEtcdSecretsSecretName, metav1.GetOptions{})
 				if err != nil {
 					if errors.IsNotFound(err) {
@@ -550,20 +590,6 @@ func (c *Collector) Run() error {
 				}
 				if err := c.WriteYAML(ciliumEtcdSecretFileName, v); err != nil {
 					return fmt.Errorf("failed to collect Cilium etcd secret: %w", err)
-				}
-				return nil
-			},
-		},
-		{
-			Description: taskDescription("Cilium configuration"),
-			Quick:       true,
-			Task: func(ctx context.Context) error {
-				v, err := c.Client.GetConfigMap(ctx, c.Options.CiliumNamespace, ciliumConfigMapName, metav1.GetOptions{})
-				if err != nil {
-					return fmt.Errorf("%s: %w", taskFailure("Cilium configuration"), err)
-				}
-				if err := c.WriteYAML(ciliumConfigMapFileName, v); err != nil {
-					return fmt.Errorf("%s: %w", taskFailure("Cilium configuration"), err)
 				}
 				return nil
 			},
@@ -591,6 +617,10 @@ func (c *Collector) Run() error {
 			Description: taskDescription("Hubble daemonset"),
 			Quick:       true,
 			Task: func(ctx context.Context) error {
+				if !featureIsEnabled(cm.Data, "enable-hubble", "true") {
+					c.logDebug(featureDisabled("enable-hubble"))
+					return nil
+				}
 				v, err := c.Client.GetDaemonSet(ctx, c.Options.CiliumNamespace, hubbleDaemonSetName, metav1.GetOptions{})
 				if err != nil {
 					if errors.IsNotFound(err) {
@@ -609,6 +639,10 @@ func (c *Collector) Run() error {
 			Description: taskDescription("Hubble Relay configuration"),
 			Quick:       true,
 			Task: func(ctx context.Context) error {
+				if !featureIsEnabled(cm.Data, "enable-hubble", "true") {
+					c.logDebug(featureDisabled("enable-hubble"))
+					return nil
+				}
 				v, err := c.Client.GetConfigMap(ctx, c.Options.CiliumNamespace, hubbleRelayConfigMapName, metav1.GetOptions{})
 				if err != nil {
 					return fmt.Errorf("%s: %w", taskFailure("Hubble Relay configuration"), err)
@@ -623,6 +657,10 @@ func (c *Collector) Run() error {
 			Description: taskDescription("Hubble Relay deployment"),
 			Quick:       true,
 			Task: func(ctx context.Context) error {
+				if !featureIsEnabled(cm.Data, "enable-hubble", "true") {
+					c.logDebug(featureDisabled("enable-hubble"))
+					return nil
+				}
 				v, err := c.Client.GetDeployment(ctx, c.Options.CiliumNamespace, hubbleRelayDeploymentName, metav1.GetOptions{})
 				if err != nil {
 					if errors.IsNotFound(err) {
@@ -744,6 +782,10 @@ func (c *Collector) Run() error {
 			Description:     taskDescription("gops stats from Hubble pods"),
 			Quick:           true,
 			Task: func(ctx context.Context) error {
+				if !featureIsEnabled(cm.Data, "enable-hubble", "true") {
+					c.logDebug(featureDisabled("enable-hubble"))
+					return nil
+				}
 				p, err := c.Client.ListPods(ctx, c.Options.CiliumNamespace, metav1.ListOptions{
 					LabelSelector: c.Options.HubbleLabelSelector,
 				})
@@ -761,6 +803,10 @@ func (c *Collector) Run() error {
 			Description:     taskDescription("gops stats from Hubble Relay pods"),
 			Quick:           true,
 			Task: func(ctx context.Context) error {
+				if !featureIsEnabled(cm.Data, "enable-hubble", "true") {
+					c.logDebug(featureDisabled("enable-hubble"))
+					return nil
+				}
 				p, err := c.Client.ListPods(ctx, c.Options.CiliumNamespace, metav1.ListOptions{
 					LabelSelector: c.Options.HubbleRelayLabelSelector,
 				})
@@ -927,13 +973,8 @@ func (c *Collector) Run() error {
 			Description:     taskDescription("kvstore data"),
 			Quick:           true,
 			Task: func(ctx context.Context) error {
-				cm, err := c.Client.GetConfigMap(ctx, c.Options.CiliumNamespace, ciliumConfigMapName, metav1.GetOptions{})
-				if err != nil {
-					return fmt.Errorf("failed to get cilium-config ConfigMap: %w", err)
-				}
-				// Check if kvstore is enabled, if not skip this dump.
-				if v, ok := cm.Data["kvstore"]; !ok || v != "etcd" {
-					c.logDebug("KVStore not enabled, skipping kvstore dump")
+				if !featureIsEnabled(cm.Data, "kvstore", "etcd") {
+					c.logDebug("KVStore not enabled, skipping")
 					return nil
 				}
 				ps, err := c.Client.ListPods(ctx, c.Options.CiliumNamespace, metav1.ListOptions{
@@ -1554,4 +1595,11 @@ func detectCiliumNamespace(k KubernetesClient) (string, error) {
 		return ns.Name, nil
 	}
 	return "", fmt.Errorf("failed to detect Cilium namespace, could not find Cilium installation in namespaces: %v", DefaultCiliumNamespaces)
+}
+
+func featureIsEnabled(data map[string]string, key, enabledValue string) bool {
+	if v, ok := data[key]; !ok || v != enabledValue {
+		return false
+	}
+	return true
 }
