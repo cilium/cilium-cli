@@ -53,14 +53,15 @@ jobs:
 
       - name: Set up gcloud credentials
         id: 'auth'
-        uses: 'google-github-actions/auth@dac4e13deb3640f22e3ffe758fd3f95e6e89f712'
+        uses: 'google-github-actions/auth@ef5d53e30bbcd8d0836f4288f5e50ff3e086997d'
         with:
           credentials_json: '${{ secrets.GCP_PR_SA_KEY }}'
 
       - name: Set up gcloud CLI
-        uses: google-github-actions/setup-gcloud@877d4953d2c70a0ba7ef3290ae968eb24af233bb
+        uses: google-github-actions/setup-gcloud@75fd574e9690e7c4a4681d1255d1c341cf0d9a8c
         with:
           project_id: ${{ secrets.GCP_PR_PROJECT_ID }}
+          version: "405.0.0"
 
       - name: Install gke-gcloud-auth-plugin
         run: |
@@ -89,7 +90,7 @@ jobs:
           echo ::set-output name=owner::${OWNER}
 
       - name: Create GCP VM
-        uses: nick-invision/retry@b4fa57557dda8c2f30bcb2d19372cc3237190f7f
+        uses: nick-invision/retry@3e91a01664abd3c5cd539100d10d33b9c5b68482
         with:
           retry_on: error
           timeout_minutes: 1
@@ -259,7 +260,7 @@ jobs:
 
       - name: Upload artifacts
         if: ${{ !success() }}
-        uses: actions/upload-artifact@3cea5372237819ed00197afe530f5a7ea3e805c8
+        uses: actions/upload-artifact@83fd05a356d7e2593de66fc9913b3002723633cb
         with:
           name: cilium-sysdump-out.zip
           path: cilium-sysdump-out.zip

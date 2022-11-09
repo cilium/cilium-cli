@@ -171,6 +171,7 @@ type k8sInstallerImplementation interface {
 	DeleteDaemonSet(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error
 	PatchDaemonSet(ctx context.Context, namespace, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions) (*appsv1.DaemonSet, error)
 	GetService(ctx context.Context, namespace, name string, opts metav1.GetOptions) (*corev1.Service, error)
+	GetEndpoints(ctx context.Context, namespace, name string, opts metav1.GetOptions) (*corev1.Endpoints, error)
 	CreateService(ctx context.Context, namespace string, service *corev1.Service, opts metav1.CreateOptions) (*corev1.Service, error)
 	DeleteService(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error
 	DeleteDeployment(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error
@@ -201,6 +202,7 @@ type k8sInstallerImplementation interface {
 	CreateIngressClass(ctx context.Context, r *networkingv1.IngressClass, opts metav1.CreateOptions) (*networkingv1.IngressClass, error)
 	DeleteIngressClass(ctx context.Context, name string, opts metav1.DeleteOptions) error
 	CiliumLogs(ctx context.Context, namespace, pod string, since time.Time, filter *regexp.Regexp) (string, error)
+	ListAPIResources(ctx context.Context) ([]string, error)
 }
 
 type K8sInstaller struct {
@@ -311,6 +313,10 @@ type Parameters struct {
 
 	// NodesWithoutCilium lists all nodes on which Cilium is not installed.
 	NodesWithoutCilium []string
+
+	// APIVersions defines extra kubernetes api resources that can be passed to helm for capabilities validation,
+	// specifically for CRDs.
+	APIVersions []string
 }
 
 type rollbackStep func(context.Context)

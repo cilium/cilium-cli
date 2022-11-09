@@ -107,6 +107,7 @@ cilium install --context kind-cluster1 --cluster-id 1 --cluster-name cluster1
 	cmd.Flags().StringArrayVar(&params.HelmOpts.FileValues, "helm-set-file", []string{}, "Set helm values from respective files specified via the command line (can specify multiple or separate values with commas: key1=path1,key2=path2)")
 	cmd.Flags().StringVar(&params.HelmGenValuesFile, "helm-auto-gen-values", "", "Write an auto-generated helm values into this file")
 	cmd.Flags().StringVar(&params.HelmValuesSecretName, "helm-values-secret-name", defaults.HelmValuesSecretName, "Secret name to store the auto-generated helm values file. The namespace is the same as where Cilium will be installed")
+	cmd.Flags().StringSliceVar(&params.APIVersions, "api-versions", []string{}, "Kubernetes API versions to use for helm's Capabilities.APIVersions in case discovery fails")
 	cmd.Flags().StringVar(&params.ImageSuffix, "image-suffix", "", "Set all generated images with this suffix")
 	cmd.Flags().StringVar(&params.ImageTag, "image-tag", "", "Set all images with this tag")
 	cmd.Flags().BoolVar(&params.ListVersions, "list-versions", false, "List all the available versions without actually installing")
@@ -147,7 +148,7 @@ func newCmdUninstall() *cobra.Command {
 				})
 			if err != nil {
 				fmt.Printf("⚠ ️ Failed to initialize Hubble uninstaller: %s", err)
-			} else if h.Disable(ctx) != nil {
+			} else if h.Disable(ctx, true) != nil {
 				fmt.Printf("ℹ️  Failed to disable Hubble. This is expected if Hubble is not enabled: %s", err)
 			}
 			uninstaller := install.NewK8sUninstaller(k8sClient, params)

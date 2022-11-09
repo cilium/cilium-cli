@@ -176,15 +176,19 @@ func sliceValuesToString(prevKey string, b []interface{}) string {
 	return strings.Join(out, ",")
 }
 
-func newClient(namespace, k8sVersion string) (*action.Install, error) {
+func newClient(namespace string, k8sVersion string, apiVersions []string) (*action.Install, error) {
 	actionConfig := new(action.Configuration)
 	helmClient := action.NewInstall(actionConfig)
 	helmClient.DryRun = true
 	helmClient.ReleaseName = "release-name"
 	helmClient.Replace = true // Skip the name check
 	helmClient.ClientOnly = true
-	helmClient.APIVersions = []string{k8sVersion}
 	helmClient.Namespace = namespace
+	if len(apiVersions) == 0 {
+		helmClient.APIVersions = []string{k8sVersion}
+	} else {
+		helmClient.APIVersions = apiVersions
+	}
 
 	return helmClient, nil
 }
@@ -260,6 +264,7 @@ func GenManifests(
 	ciliumVer semver2.Version,
 	namespace string,
 	helmValues map[string]interface{},
+	apiVersions []string,
 ) (map[string]string, error) {
 	var (
 		helmChart *chart.Chart
@@ -283,7 +288,7 @@ func GenManifests(
 		}
 	}
 
-	helmClient, err := newClient(namespace, k8sVersion)
+	helmClient, err := newClient(namespace, k8sVersion, apiVersions)
 	if err != nil {
 		return nil, err
 	}
@@ -301,20 +306,12 @@ func GenManifests(
 // helm values from a previous installation ('helmValues'),
 // extra options that are not defined as helm flags ('extraConfigMapOpts')
 // and returns a single map with all of these options merged.
-// It will log a message so that users can replicate the same behavior as the
-// CLI. The log message will be slightly different depending on if
-// 'helmChartDirectory' is set or not.
-// Both 'helmMapOpts', 'helmValues', 'extraConfigMapOpts' can be nil.
+// Both 'helmMapOpts', 'helmValues', 'extraConfigMapOpts', can be nil.
 func MergeVals(
-	logger utils.Logger,
-	printHelmTemplate bool,
 	helmFlagOpts values.Options,
 	helmMapOpts map[string]string,
 	helmValues,
 	extraConfigMapOpts chartutil.Values,
-	helmChartDirectory string,
-	ciliumVer semver2.Version,
-	namespace string,
 ) (map[string]interface{}, error) {
 
 	// Create helm values from helmMapOpts
@@ -353,17 +350,33 @@ func MergeVals(
 
 	vals := mergeMaps(extraConfig, userVals)
 
-	valsStr := valuesToString("", vals)
+	return vals, nil
+}
 
-	if printHelmTemplate {
-		if helmChartDirectory != "" {
-			logger.Log("ℹ️  helm template --namespace %s cilium %q --version %s --set %s", namespace, helmChartDirectory, ciliumVer, valsStr)
-		} else {
-			logger.Log("ℹ️  helm template --namespace %s cilium cilium/cilium --version %s --set %s", namespace, ciliumVer, valsStr)
+// PrintHelmTemplateCommand will log a message so that users can replicate
+// the same behavior as the CLI. The log message will be slightly different
+// depending on if 'helmChartDirectory' is set or not.
+// If 'apiVersions' is given, said values will be added to the log message.
+func PrintHelmTemplateCommand(
+	logger utils.Logger,
+	helmValues map[string]any,
+	helmChartDirectory string,
+	namespace string,
+	ciliumVer semver2.Version,
+	apiVersions []string,
+) {
+	valsStr := valuesToString("", helmValues)
+	apiVersionsStr := ""
+	if len(apiVersions) > 0 {
+		for _, av := range apiVersions {
+			apiVersionsStr = fmt.Sprintf("%s --api-versions %s", apiVersionsStr, av)
 		}
 	}
-
-	return vals, nil
+	if helmChartDirectory != "" {
+		logger.Log("ℹ️  helm template --namespace %s cilium %q --version %s --set %s%s", namespace, helmChartDirectory, ciliumVer, valsStr, apiVersionsStr)
+	} else {
+		logger.Log("ℹ️  helm template --namespace %s cilium cilium/cilium --version %s --set %s%s", namespace, ciliumVer, valsStr, apiVersionsStr)
+	}
 }
 
 // ListVersions returns a list of available Helm chart versions (with "v" prefix) sorted by semver in ascending order.
