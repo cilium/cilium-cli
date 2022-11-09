@@ -305,7 +305,7 @@ func (k *K8sHubble) disableHubble(ctx context.Context) error {
 	return k.updateConfigMap(ctx)
 }
 
-func (k *K8sHubble) Disable(ctx context.Context) error {
+func (k *K8sHubble) Disable(ctx context.Context, uninstall bool) error {
 	// Generate the manifests has if hubble was being enabled so that we can
 	// retrieve all UI and Relay's resource names.
 	k.params.UI = true
@@ -331,6 +331,12 @@ func (k *K8sHubble) Disable(ctx context.Context) error {
 	if metricsSvc := k.generateMetricsService(); metricsSvc != nil {
 		k.Log("🔥 Deleting Metrics Service...")
 		k.client.DeleteService(ctx, metricsSvc.GetNamespace(), metricsSvc.GetName(), metav1.DeleteOptions{})
+	}
+
+	// If Disable() was called as a part of "cilium uninstall" command, we don't need to
+	// update configmap and restart Cilium.
+	if uninstall {
+		return nil
 	}
 
 	// Now that we have delete all UI and Relay's resource names then we can
@@ -553,10 +559,17 @@ func (k *K8sHubble) generateManifestsDisable(ctx context.Context, helmValues cha
 }
 
 func (k *K8sHubble) genManifests(ctx context.Context, printHelmTemplate bool, prevHelmValues chartutil.Values, helmMapOpts map[string]string, ciliumVer semver.Version) error {
+	// Specifying extra apiVersions (ie CRDs) for hubble is not needed right now.
+	// This can be filled in the future if needed.
+	apiVersions := []string{}
+
 	// Store all the options passed by --config into helm extraConfig
-	vals, err := helm.MergeVals(k, printHelmTemplate, k.params.HelmOpts, helmMapOpts, prevHelmValues, nil, k.params.HelmChartDirectory, ciliumVer, k.params.Namespace)
+	vals, err := helm.MergeVals(k.params.HelmOpts, helmMapOpts, prevHelmValues, nil)
 	if err != nil {
 		return err
+	}
+	if printHelmTemplate {
+		helm.PrintHelmTemplateCommand(k, vals, k.params.HelmChartDirectory, k.params.Namespace, ciliumVer, apiVersions)
 	}
 
 	yamlValue, err := chartutil.Values(vals).YAML()
@@ -577,7 +590,7 @@ func (k *K8sHubble) genManifests(ctx context.Context, printHelmTemplate bool, pr
 		k8sVersionStr = k8sVersion.String()
 	}
 
-	manifests, err := helm.GenManifests(ctx, k.params.HelmChartDirectory, k8sVersionStr, ciliumVer, k.params.Namespace, vals)
+	manifests, err := helm.GenManifests(ctx, k.params.HelmChartDirectory, k8sVersionStr, ciliumVer, k.params.Namespace, vals, apiVersions)
 	if err != nil {
 		return err
 	}

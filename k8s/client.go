@@ -221,6 +221,10 @@ func (c *Client) GetService(ctx context.Context, namespace, name string, opts me
 	return c.Clientset.CoreV1().Services(namespace).Get(ctx, name, opts)
 }
 
+func (c *Client) GetEndpoints(ctx context.Context, namespace, name string, opts metav1.GetOptions) (*corev1.Endpoints, error) {
+	return c.Clientset.CoreV1().Endpoints(namespace).Get(ctx, name, opts)
+}
+
 func (c *Client) CreateDeployment(ctx context.Context, namespace string, deployment *appsv1.Deployment, opts metav1.CreateOptions) (*appsv1.Deployment, error) {
 	return c.Clientset.AppsV1().Deployments(namespace).Create(ctx, deployment, opts)
 }
@@ -899,6 +903,18 @@ func (c *Client) GetHelmState(ctx context.Context, namespace string, secretName 
 		Version: version,
 		Values:  values,
 	}, nil
+}
+
+func (c *Client) ListAPIResources(ctx context.Context) ([]string, error) {
+	lists, err := c.Clientset.Discovery().ServerPreferredResources()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list api resources: %w", err)
+	}
+	results := make([]string, len(lists))
+	for _, list := range lists {
+		results = append(results, list.GroupVersion)
+	}
+	return results, nil
 }
 
 // CreateEphemeralContainer will create a EphemeralContainer (debug container) in the specified pod.
