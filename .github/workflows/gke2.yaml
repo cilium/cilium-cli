@@ -1,4 +1,4 @@
-name: GKE
+name: GKE 2
 
 # Any change in triggers needs to be reflected in the concurrency group.
 on:

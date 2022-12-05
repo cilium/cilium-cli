@@ -1,4 +1,4 @@
-name: GKE
+name: External Workloads 3
 
 # Any change in triggers needs to be reflected in the concurrency group.
 on:
@@ -19,15 +19,17 @@ on:
   pull_request_target: {}
   # Run every 6 hours
   schedule:
-    - cron:  '0 2/6 * * *'
+    - cron:  '0 4/6 * * *'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || 'scheduled' }}
   cancel-in-progress: true
 
 env:
-  clusterName: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}
+  clusterName: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-vm
+  vmName: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-vm
   zone: us-west2-a
+  vmStartupScript: .github/gcp-vm-startup.sh
   cilium_version: v1.12.2
   kubectl_version: v1.23.6
   USE_GKE_GCLOUD_AUTH_PLUGIN: True
@@ -36,7 +38,7 @@ jobs:
   installation-and-connectivity:
     if: ${{ github.repository == 'cilium/cilium-cli' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8
@@ -87,14 +89,31 @@ jobs:
           echo ::set-output name=sha::${SHA}
           echo ::set-output name=owner::${OWNER}
 
+      - name: Create GCP VM
+        uses: nick-invision/retry@3e91a01664abd3c5cd539100d10d33b9c5b68482
+        with:
+          retry_on: error
+          timeout_minutes: 1
+          max_attempts: 10
+          command: |
+            gcloud compute instances create ${{ env.vmName }} \
+              --labels "usage=${{ github.repository_owner }}-${{ github.event.repository.name }},owner=${{ steps.vars.outputs.owner }}" \
+              --zone ${{ env.zone }} \
+              --machine-type e2-custom-2-4096 \
+              --boot-disk-type pd-standard \
+              --boot-disk-size 10GB \
+              --preemptible \
+              --image-project ubuntu-os-cloud \
+              --image-family ubuntu-2004-lts \
+              --metadata hostname=${{ env.vmName }} \
+              --metadata-from-file startup-script=${{ env.vmStartupScript}}
+
       - name: Create GKE cluster
         id: cluster
         run: |
           gcloud container clusters create ${{ env.clusterName }} \
             --labels "usage=${{ github.repository_owner }}-${{ github.event.repository.name }},owner=${{ steps.vars.outputs.owner }}" \
             --zone ${{ env.zone }} \
-            --enable-ip-alias \
-            --create-subnetwork="" \
             --image-type COS_CONTAINERD \
             --num-nodes 2 \
             --machine-type e2-custom-2-4096 \
@@ -114,22 +133,82 @@ jobs:
           .github/get-kubeconfig.sh
           kubectl create configmap cilium-cli-kubeconfig -n kube-system --from-file kubeconfig
 
-      - name: Load test script in configmap
+      - name: Load cilium install script in configmap
         run: |
-          kubectl create configmap cilium-cli-test-script -n kube-system --from-file=in-cluster-test-script.sh=.github/in-cluster-test-scripts/gke.sh
+          kubectl create configmap cilium-cli-test-script-install -n kube-system --from-file=in-cluster-test-script.sh=.github/in-cluster-test-scripts/external-workloads-install.sh
 
-      - name: Create cilium-cli job
+      - name: Create cilium-cli install job
         run: |
           helm install .github/cilium-cli-test-job-chart \
             --generate-name \
             --set tag=${{ steps.vars.outputs.sha }} \
             --set cilium_version=${{ env.cilium_version }} \
             --set cluster_name=${{ env.clusterName }} \
+            --set job_name=cilium-cli-install \
+            --set test_script_cm=cilium-cli-test-script-install \
+            --set vm_name=${{ env.vmName }} \
             --set cluster_cidr=${{ steps.cluster.outputs.cluster_cidr }}
+
+      - name: Wait for install job
+        env:
+          timeout: 10m
+        run: |
+          # Background wait for job to complete or timeout
+          kubectl -n kube-system wait job/cilium-cli-install --for=condition=complete --timeout=${{ env.timeout }} &
+          complete_pid=$!
+
+          # Background wait for job to fail
+          (kubectl -n kube-system wait job/cilium-cli-install --for=condition=failed --timeout=${{ env.timeout }} && exit 1) &
+          failed_pid=$!
+
+          # Active wait for whichever background process ends first
+          wait -n $complete_pid $failed_pid
+          EXIT_CODE=$?
+
+          # Retrieve job logs
+          kubectl logs --timestamps -n kube-system job/cilium-cli-install
+          exit ${EXIT_CODE}
+        shell: bash {0} # Disable default fail-fast behaviour so that all commands run independently
+
+      - name: Copy VM install script from cilium-cli-install pod
+        run: |
+          kubectl -n kube-system get configmap install-external-workload-script -o go-template='{{ .data.script }}' > install-external-workload.sh
+          chmod +x install-external-workload.sh
+
+      - name: Finish installing Cilium on VM
+        run: |
+          gcloud compute scp install-external-workload.sh ${{ env.vmName }}:~/ --zone ${{ env.zone }}
+          gcloud compute ssh ${{ env.vmName }} --zone ${{ env.zone }} \
+            --command "~/install-external-workload.sh"
+          sleep 5s
+          gcloud compute ssh ${{ env.vmName }} --zone ${{ env.zone }} \
+            --command "sudo cilium status"
+
+      - name: Verify cluster DNS on VM
+        run: |
+          gcloud compute ssh ${{ env.vmName }} --zone ${{ env.zone }} \
+            --command "nslookup -d2 -retry=10 -timeout=5 -norecurse clustermesh-apiserver.kube-system.svc.cluster.local \$(systemd-resolve --status | grep -m 1 \"Current DNS Server:\" | cut -d':' -f2)"
+
+      - name: Ping clustermesh-apiserver from VM
+        run: |
+          gcloud compute ssh ${{ env.vmName }} --zone ${{ env.zone }} \
+            --command "ping -c 3 \$(sudo cilium service list get -o jsonpath='{[?(@.spec.flags.name==\"clustermesh-apiserver\")].spec.backend-addresses[0].ip}')"
+
+      - name: Load cilium test script in configmap
+        run: |
+          kubectl create configmap cilium-cli-test-script -n kube-system --from-file=in-cluster-test-script.sh=.github/in-cluster-test-scripts/external-workloads.sh
+
+      - name: Create cilium-cli test job
+        run: |
+          helm install .github/cilium-cli-test-job-chart \
+            --generate-name \
+            --set tag=${{ steps.vars.outputs.sha }} \
+            --set job_name=cilium-cli \
+            --set test_script_cm=cilium-cli-test-script
 
       - name: Wait for test job
         env:
-          timeout: 30m
+          timeout: 15m
         run: |
           # Background wait for job to complete or timeout
           kubectl -n kube-system wait job/cilium-cli --for=condition=complete --timeout=${{ env.timeout }} &
@@ -151,6 +230,10 @@ jobs:
       - name: Post-test information gathering
         if: ${{ !success() }}
         run: |
+          echo "=== Retrieve VM state ==="
+          gcloud compute ssh ${{ env.vmName }} --zone ${{ env.zone }} --command "sudo cilium status"
+          gcloud compute ssh ${{ env.vmName }} --zone ${{ env.zone }} --command "sudo docker logs cilium --timestamps"
+
           echo "=== Install latest stable CLI ==="
           curl -sSL --remote-name-all https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz{,.sha256sum}
           sha256sum --check cilium-linux-amd64.tar.gz.sha256sum
@@ -160,7 +243,11 @@ jobs:
 
           echo "=== Retrieve cluster state ==="
           kubectl get pods --all-namespaces -o wide
+          kubectl get cew --all-namespaces -o wide
+          kubectl get cep --all-namespaces -o wide
           cilium status
+          cilium clustermesh status
+          cilium clustermesh vm status
           cilium sysdump --output-filename cilium-sysdump-out
         shell: bash {0} # Disable default fail-fast behaviour so that all commands run independently
 
@@ -171,6 +258,7 @@ jobs:
             echo "cluster has an ongoing operation, waiting for all operations to finish"; sleep 15
           done
           gcloud container clusters delete ${{ env.clusterName }} --zone ${{ env.zone }} --quiet --async
+          gcloud compute instances delete ${{ env.vmName }} --zone ${{ env.zone }} --quiet
         shell: bash {0} # Disable default fail-fast behavior so that all commands run independently
 
       - name: Upload artifacts

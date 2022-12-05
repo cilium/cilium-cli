@@ -1,0 +1,117 @@
+name: Kind 2
+
+# Any change in triggers needs to be reflected in the concurrency group.
+on:
+  pull_request: {}
+  schedule:
+    - cron:  '30 */6 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || 'scheduled' }}
+  cancel-in-progress: true
+
+env:
+  KIND_VERSION: v0.14.0
+  KIND_CONFIG: .github/kind-config.yaml
+  TIMEOUT: 2m
+  LOG_TIME: 30m
+  cilium_version: v1.12.2
+  kubectl_version: v1.23.6
+
+jobs:
+  installation-and-connectivity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8
+
+      - name: Install kubectl
+        run: |
+          curl -sLO "https://dl.k8s.io/release/${{ env.kubectl_version }}/bin/linux/amd64/kubectl"
+          curl -sLO "https://dl.k8s.io/${{ env.kubectl_version }}/bin/linux/amd64/kubectl.sha256"
+          echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
+          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+          kubectl version --client
+
+      - name: Set up Go
+        uses: actions/setup-go@c4a742cab115ed795e34d4513e2cf7d472deb55f
+        with:
+          go-version: 1.19.3
+
+      - name: Set up Go for root
+        run: |
+          sudo ln -sf `which go` `sudo which go` || true
+          sudo go version
+
+      - name: Build and install cilium CLI binary
+        run: sudo make install
+
+      - name: Create kind cluster
+        uses: helm/kind-action@9e8295d178de23cbfbd8fa16cf844eec1d773a07
+        with:
+          version: ${{ env.KIND_VERSION }}
+          config: ${{ env.KIND_CONFIG }}
+
+      # Install Cilium with HostPort support for extended connectivity test.
+      - name: Install Cilium
+        run: |
+          cilium install \
+            --version=${{ env.cilium_version }} \
+            --wait=false \
+            --config monitor-aggregation=none \
+            --helm-set cni.chainingMode=portmap
+
+      - name: Enable Relay
+        run: |
+          cilium hubble enable --ui
+
+      - name: Relay Port Forward
+        run: |
+          cilium hubble port-forward&
+          sleep 10s
+          [[ $(pgrep -f "cilium.*hubble.*port-forward|kubectl.*port-forward.*hubble-relay" | wc -l) == 2 ]]
+
+      - name: Connectivity Test
+        run: |
+          # Run the connectivity test in non-default namespace (i.e. not cilium-test)
+          cilium connectivity test --debug --all-flows --test-namespace test-namespace
+
+      - name: Uninstall cilium
+        run: |
+          pkill -f "cilium.*hubble.*port-forward|kubectl.*port-forward.*hubble-relay"
+          cilium uninstall --wait
+
+      - name: Install Cilium with IPsec Encryption
+        run: |
+          cilium install --version=${{ env.cilium_version}} --encryption=ipsec --kube-proxy-replacement=disabled
+
+      - name: Enable Relay
+        run: |
+          cilium hubble enable
+
+      - name: Relay Port Forward
+        run: |
+          cilium hubble port-forward&
+          sleep 10s
+          [[ $(pgrep -f "cilium.*hubble.*port-forward|kubectl.*port-forward.*hubble-relay" | wc -l) == 2 ]]
+
+      - name: Connectivity test
+        run: |
+          cilium connectivity test --debug --force-deploy --all-flows --test-namespace another-test-namespace
+
+      - name: Cleanup
+        if: ${{ always() }}
+        run: |
+          cilium status
+          kubectl get pods --all-namespaces -o wide
+          cilium sysdump --output-filename cilium-sysdump-out --hubble-flows-count 10000
+        shell: bash {0} # Disable default fail-fast behaviour so that all commands run independently
+
+      - name: Upload Artifacts
+        if: ${{ !success() }}
+        uses: actions/upload-artifact@83fd05a356d7e2593de66fc9913b3002723633cb
+        with:
+          name: cilium-sysdump-out.zip
+          path: cilium-sysdump-out.zip
+          retention-days: 5

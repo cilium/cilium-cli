@@ -1,4 +1,4 @@
-name: GKE
+name: Multicluster 5
 
 # Any change in triggers needs to be reflected in the concurrency group.
 on:
@@ -19,15 +19,18 @@ on:
   pull_request_target: {}
   # Run every 6 hours
   schedule:
-    - cron:  '0 2/6 * * *'
+    - cron:  '0 3/6 * * *'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || 'scheduled' }}
   cancel-in-progress: true
 
 env:
-  clusterName: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}
+  clusterName1: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-mesh-1
+  clusterName2: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-mesh-2
+  clusterNameBase: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-mesh
   zone: us-west2-a
+  firewallRuleName: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-rule
   cilium_version: v1.12.2
   kubectl_version: v1.23.6
   USE_GKE_GCLOUD_AUTH_PLUGIN: True
@@ -69,6 +72,11 @@ jobs:
         run: |
           gcloud info
 
+      - name: Set up Go
+        uses: actions/setup-go@c4a742cab115ed795e34d4513e2cf7d472deb55f
+        with:
+          go-version: 1.19.3
+
       - name: Set up job variables
         id: vars
         run: |
@@ -87,10 +95,9 @@ jobs:
           echo ::set-output name=sha::${SHA}
           echo ::set-output name=owner::${OWNER}
 
-      - name: Create GKE cluster
-        id: cluster
+      - name: Create GKE cluster 2
         run: |
-          gcloud container clusters create ${{ env.clusterName }} \
+          gcloud container clusters create ${{ env.clusterName2 }} \
             --labels "usage=${{ github.repository_owner }}-${{ github.event.repository.name }},owner=${{ steps.vars.outputs.owner }}" \
             --zone ${{ env.zone }} \
             --enable-ip-alias \
@@ -102,30 +109,65 @@ jobs:
             --disk-size 10GB \
             --node-taints node.cilium.io/agent-not-ready=true:NoExecute \
             --preemptible
-          CLUSTER_CIDR=$(gcloud container clusters describe ${{ env.clusterName }} --zone ${{ env.zone }} --format="value(clusterIpv4Cidr)")
-          echo ::set-output name=cluster_cidr::${CLUSTER_CIDR}
 
-      - name: Get cluster credentials
+      - name: Get cluster 2 credentials
         run: |
-          gcloud container clusters get-credentials ${{ env.clusterName }} --zone ${{ env.zone }}
+          gcloud container clusters get-credentials ${{ env.clusterName2 }} --zone ${{ env.zone }}
 
-      - name: Create gcloud-free kubeconfig and load it in configmap
+      - name: Create gcloud-free kubeconfig for cluster 2
         run: |
           .github/get-kubeconfig.sh
+          mv kubeconfig kubeconfig-cluster2
+
+      - name: Create GKE cluster 1
+        run: |
+          gcloud container clusters create ${{ env.clusterName1 }} \
+            --labels "usage=${{ github.repository_owner }}-${{ github.event.repository.name }},owner=${{ steps.vars.outputs.owner }}" \
+            --zone ${{ env.zone }} \
+            --enable-ip-alias \
+            --create-subnetwork="" \
+            --image-type COS_CONTAINERD \
+            --num-nodes 2 \
+            --machine-type e2-custom-2-4096 \
+            --disk-type pd-standard \
+            --disk-size 10GB \
+            --node-taints node.cilium.io/agent-not-ready=true:NoExecute \
+            --preemptible
+
+      - name: Get cluster 1 credentials
+        run: |
+          gcloud container clusters get-credentials ${{ env.clusterName1 }} --zone ${{ env.zone }}
+
+      - name: Allow cross-cluster traffic
+        run: |
+          TAG1=$(gcloud compute firewall-rules list --filter="name~^gke-${{ env.clusterName1 }}-[0-9a-z]*-all$" --format="value(name)")
+          TAG2=$(gcloud compute firewall-rules list --filter="name~^gke-${{ env.clusterName2 }}-[0-9a-z]*-all$" --format="value(name)")
+          gcloud compute firewall-rules describe $TAG1
+          gcloud compute firewall-rules describe $TAG2
+          gcloud compute firewall-rules create ${{ env.firewallRuleName }} --allow tcp,udp,icmp,sctp,esp,ah --priority=999 --source-ranges=10.0.0.0/9 --target-tags=${TAG1/-all/-node},${TAG2/-all/-node}
+          gcloud compute firewall-rules describe ${{ env.firewallRuleName }}
+
+      - name: Create gcloud-free kubeconfig for cluster 1, merge kubeconfigs and put them in configmap
+        run: |
+          .github/get-kubeconfig.sh
+          mv kubeconfig kubeconfig-cluster1
+          go run .github/tools/kubeconfig-merger/main.go kubeconfig-cluster1 kubeconfig-cluster2 kubeconfig
           kubectl create configmap cilium-cli-kubeconfig -n kube-system --from-file kubeconfig
 
-      - name: Load test script in configmap
+      - name: Load cilium test script in configmap
         run: |
-          kubectl create configmap cilium-cli-test-script -n kube-system --from-file=in-cluster-test-script.sh=.github/in-cluster-test-scripts/gke.sh
+          kubectl create configmap cilium-cli-test-script -n kube-system --from-file=in-cluster-test-script.sh=.github/in-cluster-test-scripts/multicluster.sh
 
-      - name: Create cilium-cli job
+      - name: Create cilium-cli test job
         run: |
           helm install .github/cilium-cli-test-job-chart \
             --generate-name \
             --set tag=${{ steps.vars.outputs.sha }} \
             --set cilium_version=${{ env.cilium_version }} \
-            --set cluster_name=${{ env.clusterName }} \
-            --set cluster_cidr=${{ steps.cluster.outputs.cluster_cidr }}
+            --set job_name=cilium-cli \
+            --set test_script_cm=cilium-cli-test-script \
+            --set cluster_name_1=${{ env.clusterName1 }} \
+            --set cluster_name_2=${{ env.clusterName2 }} \
 
       - name: Wait for test job
         env:
@@ -158,19 +200,30 @@ jobs:
           rm cilium-linux-amd64.tar.gz{,.sha256sum}
           cilium version
 
-          echo "=== Retrieve cluster state ==="
+          echo "=== Retrieve cluster1 state ==="
+          export KUBECONFIG=kubeconfig-cluster1
           kubectl get pods --all-namespaces -o wide
           cilium status
-          cilium sysdump --output-filename cilium-sysdump-out
+          cilium clustermesh status
+          cilium sysdump --output-filename cilium-sysdump-cluster1
+
+          echo "=== Retrieve cluster2 state ==="
+          export KUBECONFIG=kubeconfig-cluster2
+          kubectl get pods --all-namespaces -o wide
+          cilium status
+          cilium clustermesh status
+          cilium sysdump --output-filename cilium-sysdump-cluster2
         shell: bash {0} # Disable default fail-fast behaviour so that all commands run independently
 
       - name: Clean up GKE
         if: ${{ always() }}
         run: |
-          while [ "$(gcloud container operations list --filter="status=RUNNING AND targetLink~${{ env.clusterName }}" --format="value(name)")" ];do
+          while [ "$(gcloud container operations list --filter="status=RUNNING AND targetLink~${{ env.clusterNameBase }}" --format="value(name)")" ];do
             echo "cluster has an ongoing operation, waiting for all operations to finish"; sleep 15
           done
-          gcloud container clusters delete ${{ env.clusterName }} --zone ${{ env.zone }} --quiet --async
+          gcloud container clusters delete ${{ env.clusterName1 }} --zone ${{ env.zone }} --quiet --async
+          gcloud container clusters delete ${{ env.clusterName2 }} --zone ${{ env.zone }} --quiet --async
+          gcloud compute firewall-rules delete ${{ env.firewallRuleName }} --quiet
         shell: bash {0} # Disable default fail-fast behavior so that all commands run independently
 
       - name: Upload artifacts
@@ -178,5 +231,7 @@ jobs:
         uses: actions/upload-artifact@83fd05a356d7e2593de66fc9913b3002723633cb
         with:
           name: cilium-sysdump-out.zip
-          path: cilium-sysdump-out.zip
+          path: |
+            cilium-sysdump-cluster1.zip
+            cilium-sysdump-cluster2.zip
           retention-days: 5
