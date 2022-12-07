@@ -4,6 +4,7 @@
 package check
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -208,8 +209,11 @@ func (a *Action) ExecInPod(ctx context.Context, cmd []string) {
 
 	a.Debug("Executing command", cmd)
 
-	output, err := pod.K8sClient.ExecInPod(ctx,
+	stdout, stderr, err := pod.K8sClient.ExecInPodWithStderr(ctx,
 		pod.Pod.Namespace, pod.Pod.Name, pod.Pod.Labels["name"], cmd)
+
+	var output bytes.Buffer
+	fmt.Fprintf(&output, "stdout:\n%s\n===\nstderr:\n%s", stdout.String(), stderr.String())
 
 	cmdName := cmd[0]
 	cmdStr := strings.Join(cmd, " ")

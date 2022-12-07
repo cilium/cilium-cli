@@ -51,6 +51,7 @@ func hasAllLabels(labelsContainer labelsContainer, filters map[string]string) bo
 
 func curl(peer check.TestPeer, opts ...string) []string {
 	cmd := []string{"curl",
+		"-vvv",
 		"-w", "%{local_ip}:%{local_port} -> %{remote_ip}:%{remote_port} = %{response_code}",
 		"--silent", "--fail", "--show-error",
 		"--connect-timeout", "5",
