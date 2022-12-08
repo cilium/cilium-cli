@@ -84,5 +84,14 @@ cilium connectivity test`,
 	cmd.SetOut(os.Stdout)
 	cmd.SetErr(os.Stderr)
 
+	cmd.AddCommand(&cobra.Command{
+		Use:     "bpf",
+		Aliases: []string{"cleanup", "debuginfo", "endpoint", "fqdn", "identity", "ip", "kvstore", "lrp", "map", "metrics", "monitor", "node", "policy", "prefilter", "preflight", "recorder", "service"},
+		Hidden:  true,
+		Long: `This command is only available in cilium pods.
+Exec into a running cilium pod to use it. 
+kubectl -n kube-system exec -it ds/cilium -- bash`,
+	})
+
 	return cmd
 }
