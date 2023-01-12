@@ -34,7 +34,7 @@ func TestCheckVersion(t *testing.T) {
 		{"1...9", false},
 		{"ddd", false},
 		{"v.1.9", false},
-		{"v..1.9", true},
+		{"v..1.9", false},
 		{":latest", true},
 		{"92ff7ffa762f6f8bc397a28e6f3147906e20e8fa", true},
 		{":92ff7ffa762f6f8bc397a28e6f3147906e20e8fa", true},
