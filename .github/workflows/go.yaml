@@ -12,11 +12,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-
   build:
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c
+    - name: Checkout code
+      uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c
 
     - name: Set up Go
       uses: actions/setup-go@6edd4406fa81c3da01a34fa6f6343087c207a568
@@ -55,3 +55,31 @@ jobs:
 
     - name: Test
       run: make test
+
+  build_commits:
+    name: Build and test individual commits
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c
+
+      - name: Configure git
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "github-actions@users.noreply.github.com"
+
+      - name: Install Go
+        uses: actions/setup-go@6edd4406fa81c3da01a34fa6f6343087c207a568
+        with:
+          go-version: 1.19.5
+
+      - name: Check if build works and tests pass for every commit
+        run: |
+          PR_COMMITS_API_JSON=$(curl \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            ${{ github.event.pull_request.commits_url }})
+          PR_FIRST_SHA=$(echo "$PR_COMMITS_API_JSON" | jq -r ".[0].sha")
+          PR_PARENT_SHA=$(git rev-parse "${PR_FIRST_SHA}^")
+          git rebase --exec "make -j $(nproc) && make test" $PR_PARENT_SHA
