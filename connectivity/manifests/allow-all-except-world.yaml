@@ -14,16 +14,14 @@ spec:
     - kube-apiserver
   - toEndpoints:
       - {}
-  # When node-local-dns is deployed with local IP,
-  # Cilium labels its ip as world.
-  # This change prevents failing the connectivity
-  # test for such environments.
+  {{- if .DNSCIDR }}
   - toPorts:
       - ports:
           - port: "53"
-            protocol: UDP
-    toEntities:
-      - world
+            protocol: ANY
+    toCIDR:
+      - "{{.DNSCIDR}}"
+  {{- end }}
   ingress:
   - fromEntities:
     - host

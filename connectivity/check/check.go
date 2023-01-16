@@ -54,6 +54,7 @@ type Parameters struct {
 	ExternalCIDR          string
 	ExternalIP            string
 	ExternalOtherIP       string
+	DNSCIDR               string
 
 	K8sVersion           string
 	HelmChartDirectory   string

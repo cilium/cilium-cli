@@ -122,6 +122,11 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 
 	// render templates, if any problems fail early
 	for key, temp := range map[string]string{
+		"allowAllExceptWorldPolicyYAML":         allowAllExceptWorldPolicyYAML,
+		"allowAllExceptWorldPolicyPre1_11YAML":  allowAllExceptWorldPolicyPre1_11YAML,
+		"clientEgressOnlyDNSPolicyYAML":         clientEgressOnlyDNSPolicyYAML,
+		"clientEgressToEchoPolicyYAML":          clientEgressToEchoPolicyYAML,
+		"clientEgressToEntitiesWorldPolicyYAML": clientEgressToEntitiesWorldPolicyYAML,
 		"clientEgressToCIDR1111PolicyYAML":      clientEgressToCIDR1111PolicyYAML,
 		"clientEgressToCIDR1111DenyPolicyYAML":  clientEgressToCIDR1111DenyPolicyYAML,
 		"clientEgressL7HTTPPolicyYAML":          clientEgressL7HTTPPolicyYAML,
@@ -200,7 +205,7 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 	)
 
 	// Test with an allow-all-except-world (and unmanaged) policy.
-	ct.NewTest("allow-all-except-world").WithPolicy(allowAllExceptWorldPolicyYAML).
+	ct.NewTest("allow-all-except-world").WithPolicy(renderedTemplates["allowAllExceptWorldPolicyYAML"]).
 		WithScenarios(
 			tests.PodToPod(),
 			tests.ClientToClient(),
@@ -328,7 +333,7 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 		})
 
 	// This policy allows port 8080 from client to echo, so this should succeed
-	ct.NewTest("client-egress").WithPolicy(clientEgressToEchoPolicyYAML).
+	ct.NewTest("client-egress").WithPolicy(renderedTemplates["clientEgressToEchoPolicyYAML"]).
 		WithScenarios(
 			tests.PodToPod(),
 		)
@@ -348,7 +353,7 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 
 	// This policy allows UDP to kube-dns and port 80 TCP to all 'world' endpoints.
 	ct.NewTest("to-entities-world").
-		WithPolicy(clientEgressToEntitiesWorldPolicyYAML).
+		WithPolicy(renderedTemplates["clientEgressToEntitiesWorldPolicyYAML"]).
 		WithScenarios(
 			tests.PodToWorld(),
 		).
@@ -572,8 +577,8 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 	// Test L7 HTTP with different methods introspection using an egress policy on the clients.
 	ct.NewTest("client-egress-l7-method").
 		WithFeatureRequirements(check.RequireFeatureEnabled(check.FeatureL7Proxy)).
-		WithPolicy(clientEgressOnlyDNSPolicyYAML).      // DNS resolution only
-		WithPolicy(clientEgressL7HTTPMethodPolicyYAML). // L7 allow policy with HTTP introspection (POST only)
+		WithPolicy(renderedTemplates["clientEgressOnlyDNSPolicyYAML"]). // DNS resolution only
+		WithPolicy(clientEgressL7HTTPMethodPolicyYAML).                 // L7 allow policy with HTTP introspection (POST only)
 		WithScenarios(
 			tests.PodToPodWithEndpoints(tests.WithMethod("POST"), tests.WithDestinationLabelsOption(map[string]string{"other": "echo"})),
 			tests.PodToPodWithEndpoints(tests.WithDestinationLabelsOption(map[string]string{"first": "echo"})),
@@ -598,8 +603,8 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 	// Test L7 HTTP introspection using an egress policy on the clients.
 	ct.NewTest("client-egress-l7").
 		WithFeatureRequirements(check.RequireFeatureEnabled(check.FeatureL7Proxy)).
-		WithPolicy(clientEgressOnlyDNSPolicyYAML).                     // DNS resolution only
-		WithPolicy(renderedTemplates["clientEgressL7HTTPPolicyYAML"]). // L7 allow policy with HTTP introspection
+		WithPolicy(renderedTemplates["clientEgressOnlyDNSPolicyYAML"]). // DNS resolution only
+		WithPolicy(renderedTemplates["clientEgressL7HTTPPolicyYAML"]).  // L7 allow policy with HTTP introspection
 		WithScenarios(
 			tests.PodToPod(),
 			tests.PodToWorld(),
@@ -626,7 +631,7 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 	// Test L7 HTTP named port introspection using an egress policy on the clients.
 	ct.NewTest("client-egress-l7-named-port").
 		WithFeatureRequirements(check.RequireFeatureEnabled(check.FeatureL7Proxy)).
-		WithPolicy(clientEgressOnlyDNSPolicyYAML).                              // DNS resolution only
+		WithPolicy(renderedTemplates["clientEgressOnlyDNSPolicyYAML"]).         // DNS resolution only
 		WithPolicy(renderedTemplates["clientEgressL7HTTPNamedPortPolicyYAML"]). // L7 allow policy with HTTP introspection (named port)
 		WithScenarios(
 			tests.PodToPod(),
@@ -652,7 +657,7 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 		})
 
 	// Only allow UDP:53 to kube-dns, no DNS proxy enabled.
-	ct.NewTest("dns-only").WithPolicy(clientEgressOnlyDNSPolicyYAML).
+	ct.NewTest("dns-only").WithPolicy(renderedTemplates["clientEgressOnlyDNSPolicyYAML"]).
 		WithFeatureRequirements(check.RequireFeatureEnabled(check.FeatureL7Proxy)).
 		WithScenarios(
 			tests.PodToPod(),   // connects to other Pods directly, no DNS
