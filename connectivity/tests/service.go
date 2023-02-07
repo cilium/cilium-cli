@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/cilium/cilium-cli/connectivity/check"
 )
 
@@ -175,11 +177,32 @@ func (s *outsideToNodePort) Run(ctx context.Context, t *check.Test) {
 	i := 0
 
 	for _, svc := range t.Context().EchoServices() {
+		if svc.Service.Spec.ExternalTrafficPolicy == corev1.ServiceExternalTrafficPolicyTypeLocal {
+			continue
+		}
 		for _, node := range t.Context().CiliumPods() {
 			node := node // copy to avoid memory aliasing when using reference
 
 			curlNodePort(ctx, s, t, fmt.Sprintf("curl-%d", i), &clientPod, svc, &node)
 			i++
 		}
+	}
+
+	// TODO
+
+	for _, svc := range t.Context().EchoServices() {
+		if svc.Service.Spec.ExternalTrafficPolicy != corev1.ServiceExternalTrafficPolicyTypeLocal {
+			continue
+		}
+
+		var node check.Pod
+		for _, pod := range t.Context().EchoPods() {
+			if pod.Pod.GetLabels()["name"] == "echo-same-node" {
+				node = pod
+				break
+			}
+		}
+
+		curlNodePort(ctx, s, t, fmt.Sprintf("curl-%d", i), &clientPod, svc, &node)
 	}
 }

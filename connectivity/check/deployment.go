@@ -760,6 +760,16 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 					return fmt.Errorf("unable to create daemonset %s: %w", hostNetNSDeploymentName, err)
 				}
 			}
+			_, err = ct.clients.src.GetService(ctx, ct.params.TestNamespace, "foobar", metav1.GetOptions{})
+			if err != nil {
+				ct.Logf("✨ [%s] Deploying %s service...", ct.clients.src.ClusterName(), "foobar")
+				svc := newService("foobar", map[string]string{"name": echoSameNodeDeploymentName}, serviceLabels, "http", 8080)
+				svc.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyTypeLocal
+				_, err = ct.clients.src.CreateService(ctx, ct.params.TestNamespace, svc, metav1.CreateOptions{})
+				if err != nil {
+					return err
+				}
+			}
 		}
 	}
 
