@@ -11,18 +11,62 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cilium/cilium-cli/defaults"
-	"github.com/cilium/cilium-cli/internal/helm"
-	"github.com/cilium/cilium-cli/k8s"
-
 	"github.com/cilium/cilium/pkg/versioncheck"
 	"github.com/spf13/pflag"
 	"helm.sh/helm/v3/pkg/chartutil"
+
+	"github.com/cilium/cilium-cli/defaults"
+	"github.com/cilium/cilium-cli/internal/helm"
+	"github.com/cilium/cilium-cli/k8s"
 )
 
 func (k *K8sInstaller) generateManifests(ctx context.Context) error {
+	cliDefaultHelmValues, err := k.defaultHelmChartValues()
+	if err != nil {
+		return err
+	}
+
+	// Store all the options passed by --config into helm extraConfig
+	extraConfigValues, err := k.extraConfigValues()
+	if err != nil {
+		return err
+	}
+
+	mergedHelmValues, err := helm.MergeVals(k.params.HelmOpts, cliDefaultHelmValues, nil, extraConfigValues)
+	if err != nil {
+		return err
+	}
+
+	apiVersions := k.dependentAPIVersions(ctx)
+
+	helm.PrintHelmTemplateCommand(k, mergedHelmValues, k.params.HelmChartDirectory, k.params.Namespace, k.chartVersion, apiVersions)
+
+	yamlValue, err := chartutil.Values(mergedHelmValues).YAML()
+	if err != nil {
+		return err
+	}
+
+	if k.params.HelmGenValuesFile != "" {
+		return os.WriteFile(k.params.HelmGenValuesFile, []byte(yamlValue), 0o600)
+	}
+
+	k8sVersion, err := k.k8sVersion()
+	if err != nil {
+		return err
+	}
+
+	manifests, err := helm.GenManifests(ctx, k.params.HelmChartDirectory, k8sVersion, k.chartVersion, k.params.Namespace, mergedHelmValues, apiVersions)
+	if err != nil {
+		return err
+	}
+
+	k.manifests = manifests
+	k.helmYAMLValues = yamlValue
+	return nil
+}
+
+func (k *K8sInstaller) defaultHelmChartValues() (map[string]string, error) {
 	helmMapOpts := map[string]string{}
-	deprecatedCfgOpts := map[string]string{}
 
 	switch {
 	// It's likely that certain helm options have changed since 1.9.0
@@ -85,23 +129,6 @@ func (k *K8sInstaller) generateManifests(ctx context.Context) error {
 				if val := v.String(); val != "" {
 					helmMapOpts[helmOpt] = val
 				}
-			}
-		}
-		// Handle the "config" values in a special way since they are a
-		// stringSlice
-		if v, ok := FlagValues["config"]; ok {
-			switch sv := v.(type) {
-			case pflag.SliceValue:
-				for _, cfgOpt := range sv.GetSlice() {
-					cfgOptSplit := strings.Split(cfgOpt, "=")
-					if len(cfgOptSplit) != 2 {
-						return fmt.Errorf("--config should be in the format of <key=value>, got %s", cfgOpt)
-					}
-					deprecatedCfgOpts[cfgOptSplit[0]] = cfgOptSplit[1]
-				}
-
-			default:
-				panic("Config should be type pflag.SliceValue")
 			}
 		}
 
@@ -250,7 +277,7 @@ func (k *K8sInstaller) generateManifests(ctx context.Context) error {
 		}
 
 	default:
-		return fmt.Errorf("cilium version unsupported %s", k.chartVersion)
+		return nil, fmt.Errorf("cilium version unsupported %s", k.chartVersion)
 	}
 
 	// Set affinity to prevent Cilium from being scheduled on nodes labeled with
@@ -260,24 +287,39 @@ func (k *K8sInstaller) generateManifests(ctx context.Context) error {
 			helmMapOpts[k] = v
 		}
 	}
+	return helmMapOpts, nil
+}
 
-	// Store all the options passed by --config into helm extraConfig
+func (k *K8sInstaller) extraConfigValues() (map[string]interface{}, error) {
 	extraConfigMap := map[string]interface{}{}
-	for k, v := range deprecatedCfgOpts {
-		extraConfigMap[k] = v
+
+	// Handle the "config" values in a special way since they are a stringSlice
+	if v, ok := FlagValues["config"]; ok {
+		switch sv := v.(type) {
+		case pflag.SliceValue:
+			for _, cfgOpt := range sv.GetSlice() {
+				cfgOptSplit := strings.Split(cfgOpt, "=")
+				if len(cfgOptSplit) != 2 {
+					return nil, fmt.Errorf("--config should be in the format of <key=value>, got %s", cfgOpt)
+				}
+				extraConfigMap[cfgOptSplit[0]] = cfgOptSplit[1]
+			}
+
+		default:
+			panic("Config should be type pflag.SliceValue")
+		}
 	}
 
-	vals, err := helm.MergeVals(k.params.HelmOpts, helmMapOpts, nil, extraConfigMap)
-	if err != nil {
-		return err
-	}
+	return extraConfigMap, nil
+}
 
-	// Pull APIVersions and filter for known needed CRDs, if not provided by the user.
-	// _Each value_ in apiVersions passed to helm.MergeVals will be logged in the `helm template` command, so
-	// pulling all values from the API server will add a ton of '--api-versions <group/version>' arguments to
-	// the printed command if filtering is not performed.
-	// Filtering reduces this output to a reasonable size for users, and works for now since there is a limited
-	// set of CRDs needed for helm template verification.
+// dependentAPIVersions is pulling APIVersions and filter for known needed CRDs, if not provided by the user.
+// _Each value_ in apiVersions passed to helm.MergeVals will be logged in the `helm template` command, so
+// pulling all values from the API server will add a ton of '--api-versions <group/version>' arguments to
+// the printed command if filtering is not performed.
+// Filtering reduces this output to a reasonable size for users, and works for now since there is a limited
+// set of CRDs needed for helm template verification.
+func (k *K8sInstaller) dependentAPIVersions(ctx context.Context) []string {
 	apiVersions := k.params.APIVersions
 	if len(apiVersions) == 0 {
 		gvs, err := k.client.ListAPIResources(ctx)
@@ -291,33 +333,17 @@ func (k *K8sInstaller) generateManifests(ctx context.Context) error {
 			}
 		}
 	}
+	return apiVersions
+}
 
-	helm.PrintHelmTemplateCommand(k, vals, k.params.HelmChartDirectory, k.params.Namespace, k.chartVersion, apiVersions)
-
-	yamlValue, err := chartutil.Values(vals).YAML()
-	if err != nil {
-		return err
-	}
-
-	if k.params.HelmGenValuesFile != "" {
-		return os.WriteFile(k.params.HelmGenValuesFile, []byte(yamlValue), 0o600)
-	}
-
+func (k *K8sInstaller) k8sVersion() (string, error) {
 	k8sVersionStr := k.params.K8sVersion
 	if k8sVersionStr == "" {
 		k8sVersion, err := k.client.GetServerVersion()
 		if err != nil {
-			return fmt.Errorf("error getting Kubernetes version, try --k8s-version: %s", err)
+			return "", fmt.Errorf("error getting Kubernetes version, try --k8s-version: %s", err)
 		}
 		k8sVersionStr = k8sVersion.String()
 	}
-
-	manifests, err := helm.GenManifests(ctx, k.params.HelmChartDirectory, k8sVersionStr, k.chartVersion, k.params.Namespace, vals, apiVersions)
-	if err != nil {
-		return err
-	}
-
-	k.manifests = manifests
-	k.helmYAMLValues = yamlValue
-	return nil
+	return k8sVersionStr, nil
 }
