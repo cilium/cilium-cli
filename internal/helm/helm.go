@@ -301,6 +301,16 @@ func GenManifests(
 	return filterManifests(rel.Manifest), nil
 }
 
+func MergedValues(helmOptions values.Options) (chartutil.Values, error) {
+	p := getter.All(settings)
+	userVals, err := helmOptions.MergeValues(p)
+	if err != nil {
+		return nil, err
+	}
+
+	return userVals, nil
+}
+
 // MergeVals merges all values from flag options ('helmFlagOpts'),
 // auto-generated helm options based on environment ('helmMapOpts'),
 // helm values from a previous installation ('helmValues'),
@@ -312,7 +322,7 @@ func MergeVals(
 	helmMapOpts map[string]string,
 	helmValues,
 	extraConfigMapOpts chartutil.Values,
-) (map[string]interface{}, error) {
+) (chartutil.Values, error) {
 
 	// Create helm values from helmMapOpts
 	var helmOpts []string
