@@ -60,7 +60,8 @@ jobs:
             --version=${{ env.cilium_version }} \
             --wait=false \
             --config monitor-aggregation=none \
-            --helm-set cni.chainingMode=portmap
+            --helm-set cni.chainingMode=portmap \
+            --helm-set ipv6.enabled=true
 
       - name: Enable Relay
         run: |
