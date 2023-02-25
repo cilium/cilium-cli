@@ -38,6 +38,8 @@ type Parameters struct {
 	Timestamp             bool
 	PauseOnFail           bool
 	SkipIPCacheCheck      bool
+	SkipIPv4              bool
+	SkipIPv6              bool
 	Perf                  bool
 	PerfDuration          time.Duration
 	PerfCRR               bool

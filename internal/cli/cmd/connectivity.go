@@ -136,6 +136,8 @@ func newCmdConnectivityTest() *cobra.Command {
 	cmd.Flags().MarkHidden("skip-ip-cache-check")
 	cmd.Flags().BoolVar(&params.Datapath, "datapath", false, "Run datapath conformance tests")
 	cmd.Flags().MarkHidden("datapath")
+	cmd.Flags().BoolVar(&params.SkipIPv4, "skip-ipv4", false, "Skip IPv4 checks")
+	cmd.Flags().BoolVar(&params.SkipIPv6, "skip-ipv6", false, "Skip IPv6 checks")
 
 	cmd.Flags().StringVar(&params.K8sVersion, "k8s-version", "", "Kubernetes server version in case auto-detection fails")
 	cmd.Flags().StringVar(&params.HelmChartDirectory, "chart-directory", "", "Helm chart directory")
