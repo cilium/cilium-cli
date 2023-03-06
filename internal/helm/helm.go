@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -32,6 +33,12 @@ import (
 	"helm.sh/helm/v3/pkg/releaseutil"
 	"helm.sh/helm/v3/pkg/strvals"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/sets"
+	apiyaml "k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/kubectl/pkg/scheme"
 )
 
 const ciliumChart = "https://helm.cilium.io"
@@ -260,6 +267,70 @@ func ciliumCacheDir() (string, error) {
 	return res, nil
 }
 
+// Manifests is all manifests produced by a single rendering
+type Manifests struct {
+	AllManifests map[ObjectKey]*unstructured.Unstructured
+}
+
+func (m *Manifests) GetInto(namespace, name string, into runtime.Object) bool {
+	gvks, _, err := scheme.Scheme.ObjectKinds(into)
+	if err != nil {
+		panic(err) // unreachable
+	}
+	if len(gvks) > 1 {
+		panic("multi-kinded type")
+	}
+
+	gk := gvks[0].GroupKind()
+	obj, ok := m.AllManifests[ObjectKey{
+		GroupKind: gk,
+		Namespace: namespace,
+		Name:      name,
+	}]
+	if !ok {
+		return false
+	}
+
+	err = scheme.Scheme.Convert(obj, into, nil)
+	if err != nil {
+		panic(err)
+	}
+	return true
+}
+
+// AllForKind returns all objects in the manifests object
+// for a specific Group + Kind, or all for a given Group if kind is empty string
+func (m *Manifests) AllForKind(group, kind string) []*unstructured.Unstructured {
+	out := []*unstructured.Unstructured{}
+
+	for k, o := range m.AllManifests {
+		if k.Group != group {
+			continue
+		}
+		if kind != "" && k.Kind != kind {
+			continue
+		}
+
+		out = append(out, o)
+	}
+
+	return out
+}
+
+func (m *Manifests) Kinds() sets.Set[schema.GroupKind] {
+	out := sets.New[schema.GroupKind]()
+	for k := range m.AllManifests {
+		out.Insert(schema.GroupKind{Group: k.Group, Kind: k.Kind})
+	}
+	return out
+}
+
+type ObjectKey struct {
+	schema.GroupKind
+	Namespace string
+	Name      string
+}
+
 // GenManifests returns the generated manifests in a map that maps the manifest
 // name to its contents.
 func GenManifests(
@@ -269,7 +340,7 @@ func GenManifests(
 	namespace string,
 	helmValues map[string]interface{},
 	apiVersions []string,
-) (map[string]string, error) {
+) (*Manifests, error) {
 	var (
 		helmChart *chart.Chart
 		err       error
@@ -302,7 +373,34 @@ func GenManifests(
 		return nil, err
 	}
 
-	return filterManifests(rel.Manifest), nil
+	out := &Manifests{
+		AllManifests: map[ObjectKey]*unstructured.Unstructured{},
+	}
+
+	reader := strings.NewReader(rel.Manifest)
+	decoder := apiyaml.NewYAMLOrJSONDecoder(reader, 4096)
+	for {
+		v := unstructured.Unstructured{}
+		if err := decoder.Decode(&v); err != nil {
+			if err == io.EOF {
+				break
+			}
+			panic(err)
+		}
+
+		// sometimes we parse empty strings
+		if v.GetName() == "" {
+			continue
+		}
+		k := ObjectKey{
+			GroupKind: v.GroupVersionKind().GroupKind(),
+			Namespace: v.GetNamespace(),
+			Name:      v.GetName(),
+		}
+		out.AllManifests[k] = &v
+	}
+
+	return out, nil
 }
 
 // MergeVals merges all values from flag options ('helmFlagOpts'),

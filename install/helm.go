@@ -318,6 +318,7 @@ func (k *K8sInstaller) generateManifests(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	k.Log("%+v", manifests)
 
 	k.manifests = manifests
 	k.helmYAMLValues = yamlValue

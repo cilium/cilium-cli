@@ -594,12 +594,12 @@ func (k *K8sHubble) genManifests(ctx context.Context, printHelmTemplate bool, pr
 		k8sVersionStr = k8sVersion.String()
 	}
 
-	manifests, err := helm.GenManifests(ctx, k.params.HelmChartDirectory, k8sVersionStr, ciliumVer, k.params.Namespace, vals, apiVersions)
+	//	manifests, err := helm.GenManifests(ctx, k.params.HelmChartDirectory, k8sVersionStr, ciliumVer, k.params.Namespace, vals, apiVersions)
 	if err != nil {
 		return err
 	}
 
-	k.manifests = manifests
+	//k.manifests = manifests
 	k.helmYAMLValues = yamlValue
 	return nil
 }

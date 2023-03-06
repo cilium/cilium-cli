@@ -3,16 +3,7 @@
 
 package install
 
-import (
-	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
-
-	"github.com/cilium/cilium/pkg/versioncheck"
-
-	"github.com/cilium/cilium-cli/defaults"
-	"github.com/cilium/cilium-cli/internal/utils"
-)
-
+/*
 func (k *K8sInstaller) NewServiceAccount(name string) *corev1.ServiceAccount {
 	var (
 		saFileName string
@@ -159,3 +150,4 @@ func (k *K8sInstaller) NewRoleBinding(crbName string) []*rbacv1.RoleBinding {
 	}
 	return out
 }
+*/

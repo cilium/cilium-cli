@@ -4,10 +4,6 @@
 package install
 
 import (
-	"github.com/cilium/cilium/pkg/versioncheck"
-	appsv1 "k8s.io/api/apps/v1"
-
-	"github.com/cilium/cilium-cli/internal/utils"
 	"github.com/cilium/cilium-cli/k8s"
 )
 
@@ -19,6 +15,7 @@ func needsNodeInit(k k8s.Kind) bool {
 	return false
 }
 
+/*
 func (k *K8sInstaller) generateNodeInitDaemonSet(_ k8s.Kind) *appsv1.DaemonSet {
 	var (
 		dsFileName string
@@ -37,3 +34,5 @@ func (k *K8sInstaller) generateNodeInitDaemonSet(_ k8s.Kind) *appsv1.DaemonSet {
 	utils.MustUnmarshalYAML([]byte(dsFile), &ds)
 	return &ds
 }
+
+*/

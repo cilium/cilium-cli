@@ -161,21 +161,21 @@ func (ct *ConnectivityTest) generateManifestsNodeAffinity(ctx context.Context, h
 		}
 		k8sVersionStr = k8sVersion.String()
 	}
+	/*
+		manifests, err := helm.GenManifests(
+			ctx,
+			ct.params.HelmChartDirectory,
+			k8sVersionStr,
+			helmState.Version,
+			ct.params.CiliumNamespace,
+			vals,
+			[]string{},
+		)
+		if err != nil {
+			return err
+		}*/
 
-	manifests, err := helm.GenManifests(
-		ctx,
-		ct.params.HelmChartDirectory,
-		k8sVersionStr,
-		helmState.Version,
-		ct.params.CiliumNamespace,
-		vals,
-		[]string{},
-	)
-	if err != nil {
-		return err
-	}
-
-	ct.manifests = manifests
+	//ct.manifests = manifests //XXX
 	ct.helmYAMLValues = yamlValues
 	return nil
 }

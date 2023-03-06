@@ -24,6 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -31,11 +32,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/resource"
+	cacheddiscovery "k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth" // Register all auth providers (azure, gcp, oidc, openstack, ..).
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	"github.com/cilium/cilium/api/v1/models"
@@ -55,6 +58,7 @@ type Client struct {
 	CiliumClientset  ciliumClientset.Interface
 	Config           *rest.Config
 	RawConfig        clientcmdapi.Config
+	RESTMapper       meta.RESTMapper
 	restClientGetter genericclioptions.RESTClientGetter
 	contextName      string
 }
@@ -95,6 +99,9 @@ func NewClient(contextName, kubeconfig string) (*Client, error) {
 		return nil, err
 	}
 
+	discoveryClient := cacheddiscovery.NewMemCacheClient(clientset.Discovery())
+	mapper := restmapper.NewDeferredDiscoveryRESTMapper(discoveryClient)
+
 	if contextName == "" {
 		contextName = rawConfig.CurrentContext
 	}
@@ -105,6 +112,7 @@ func NewClient(contextName, kubeconfig string) (*Client, error) {
 		Config:           config,
 		DynamicClientset: dynamicClientset,
 		RawConfig:        rawConfig,
+		RESTMapper:       mapper,
 		restClientGetter: &restClientGetter,
 		contextName:      contextName,
 	}, nil
@@ -730,6 +738,27 @@ func (c *Client) ListUnstructured(ctx context.Context, gvr schema.GroupVersionRe
 		return c.DynamicClientset.Resource(gvr).List(ctx, o)
 	}
 	return c.DynamicClientset.Resource(gvr).Namespace(*namespace).List(ctx, o)
+}
+
+func (c *Client) ApplyUnstructured(ctx context.Context, namespace string, obj *unstructured.Unstructured, options metav1.ApplyOptions) error {
+	gvk := obj.GroupVersionKind()
+
+	rm, err := c.RESTMapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+	if err != nil {
+		return fmt.Errorf("server doesn't have a resource for %s: %v", gvk.String(), err)
+	}
+
+	_, err = c.DynamicClientset.Resource(rm.Resource).Namespace(namespace).Apply(ctx, obj.GetName(), obj, options)
+	return err
+}
+
+func (c *Client) DeleteUnstructured(ctx context.Context, namespace, name string, gvk schema.GroupVersionKind, options metav1.DeleteOptions) error {
+	rm, err := c.RESTMapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+	if err != nil {
+		return fmt.Errorf("server doesn't have a resource for %s: %v", gvk.String(), err)
+	}
+
+	return c.DynamicClientset.Resource(rm.Resource).Namespace(namespace).Delete(ctx, name, options)
 }
 
 func (c *Client) ListEndpoints(ctx context.Context, o metav1.ListOptions) (*corev1.EndpointsList, error) {

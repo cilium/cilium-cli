@@ -19,9 +19,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/cilium/cilium/api/v1/models"
@@ -67,101 +68,31 @@ const (
 )
 
 func (k *K8sInstaller) generateAgentDaemonSet() *appsv1.DaemonSet {
-	var (
-		dsFilename string
-	)
-
-	switch {
-	case versioncheck.MustCompile(">1.10.99")(k.chartVersion):
-		dsFilename = "templates/cilium-agent/daemonset.yaml"
-	case versioncheck.MustCompile(">=1.9.0")(k.chartVersion):
-		dsFilename = "templates/cilium-agent-daemonset.yaml"
-	}
-
-	dsFile := k.manifests[dsFilename]
-
 	var ds appsv1.DaemonSet
-	utils.MustUnmarshalYAML([]byte(dsFile), &ds)
+	found := k.manifests.GetInto(k.params.Namespace, "cilium", &ds)
+	if !found {
+		return nil
+	}
 	return &ds
 }
 
 func (k *K8sInstaller) generateOperatorDeployment() *appsv1.Deployment {
-	var (
-		deployFilename string
-	)
-
-	switch {
-	case versioncheck.MustCompile(">1.10.99")(k.chartVersion):
-		deployFilename = "templates/cilium-operator/deployment.yaml"
-	case versioncheck.MustCompile(">=1.9.0")(k.chartVersion):
-		deployFilename = "templates/cilium-operator-deployment.yaml"
-	}
-
-	deployFile := k.manifests[deployFilename]
 
 	var deploy appsv1.Deployment
-	utils.MustUnmarshalYAML([]byte(deployFile), &deploy)
+	found := k.manifests.GetInto(k.params.Namespace, "cilium-operator", &deploy)
+	if !found {
+		return nil
+	}
 	return &deploy
 }
 
 func (k *K8sInstaller) generateIngressClass() *networkingv1.IngressClass {
-	var (
-		ingressFileName string
-	)
-
-	switch {
-	case versioncheck.MustCompile(">=1.12.0")(k.chartVersion):
-		ingressFileName = "templates/cilium-ingress-class.yaml"
-	}
-
-	ingressClassFile, exists := k.manifests[ingressFileName]
-	if !exists {
-		return nil
-	}
-
 	var ingressClass networkingv1.IngressClass
-	utils.MustUnmarshalYAML([]byte(ingressClassFile), &ingressClass)
-	return &ingressClass
-}
-
-func (k *K8sInstaller) generateIngressService() *corev1.Service {
-	var (
-		ingressServiceFilename string
-	)
-
-	switch {
-	case versioncheck.MustCompile(">=1.13.0")(k.chartVersion):
-		ingressServiceFilename = "templates/cilium-ingress-service.yaml"
-	}
-
-	ingressServiceFile, exists := k.manifests[ingressServiceFilename]
-	if !exists {
+	found := k.manifests.GetInto("", "cilium", &ingressClass)
+	if !found {
 		return nil
 	}
-
-	var ingressService corev1.Service
-	utils.MustUnmarshalYAML([]byte(ingressServiceFile), &ingressService)
-	return &ingressService
-}
-
-func (k *K8sInstaller) getSecretNamespace() string {
-	var (
-		nsFilename string
-	)
-
-	switch {
-	case versioncheck.MustCompile(">1.11.99")(k.chartVersion):
-		nsFilename = "templates/cilium-secrets-namespace.yaml"
-	}
-
-	nsFile, ok := k.manifests[nsFilename]
-	if !ok {
-		return ""
-	}
-
-	var ns corev1.Namespace
-	utils.MustUnmarshalYAML([]byte(nsFile), &ns)
-	return ns.GetName()
+	return &ingressClass
 }
 
 type k8sInstallerImplementation interface {
@@ -227,6 +158,9 @@ type k8sInstallerImplementation interface {
 	CiliumLogs(ctx context.Context, namespace, pod string, since time.Time, filter *regexp.Regexp) (string, error)
 	ListAPIResources(ctx context.Context) ([]string, error)
 	GetHelmState(ctx context.Context, namespace string, secretName string) (*helm.State, error)
+
+	ApplyUnstructured(ctx context.Context, namespace string, obj *unstructured.Unstructured, options metav1.ApplyOptions) error
+	DeleteUnstructured(ctx context.Context, namespace, name string, gvk schema.GroupVersionKind, options metav1.DeleteOptions) error
 }
 
 type K8sInstaller struct {
@@ -235,7 +169,7 @@ type K8sInstaller struct {
 	flavor         k8s.Flavor
 	certManager    *certs.CertManager
 	rollbackSteps  []rollbackStep
-	manifests      map[string]string
+	manifests      *helm.Manifests
 	helmYAMLValues string
 	chartVersion   semver.Version
 }
@@ -429,21 +363,12 @@ func (k *K8sInstaller) getImagesSHA() string {
 }
 
 func (k *K8sInstaller) generateConfigMap() (*corev1.ConfigMap, error) {
-	var (
-		cmFilename string
-	)
-
-	switch {
-	case versioncheck.MustCompile(">=1.9.0")(k.chartVersion):
-		cmFilename = "templates/cilium-configmap.yaml"
-	default:
+	if !versioncheck.MustCompile(">=1.9.0")(k.chartVersion) {
 		return nil, fmt.Errorf("cilium version unsupported %s", k.chartVersion.String())
 	}
 
-	cmFile := k.manifests[cmFilename]
-
 	var cm corev1.ConfigMap
-	utils.MustUnmarshalYAML([]byte(cmFile), &cm)
+	k.manifests.GetInto(k.params.Namespace, "cilium-config", &cm)
 	k.Log("🚀 Creating ConfigMap for Cilium version %s...", k.chartVersion)
 
 	for key, value := range k.params.configOverwrites {
@@ -701,16 +626,16 @@ func (k *K8sInstaller) Install(ctx context.Context) error {
 		if err := k.deployResourceQuotas(ctx); err != nil {
 			return err
 		}
-
-	case k8s.KindAKS:
-		// We only made the secret-based azure installation available in >= 1.12.0
-		// Introduced in https://github.com/cilium/cilium/pull/18010
-		// Additionally, secrets are only needed when using Azure IPAM
-		if k.params.DatapathMode == DatapathAzure && versioncheck.MustCompile(">=1.12.0")(k.chartVersion) {
-			if err := k.createAKSSecrets(ctx); err != nil {
-				return err
-			}
-		}
+		/*
+			case k8s.KindAKS:
+				// We only made the secret-based azure installation available in >= 1.12.0
+				// Introduced in https://github.com/cilium/cilium/pull/18010
+				// Additionally, secrets are only needed when using Azure IPAM
+				if k.params.DatapathMode == DatapathAzure && versioncheck.MustCompile(">=1.12.0")(k.chartVersion) {
+					if err := k.createAKSSecrets(ctx); err != nil {
+						return err
+					}
+				}*/
 	}
 
 	if err := k.installCerts(ctx); err != nil {
@@ -727,189 +652,246 @@ func (k *K8sInstaller) Install(ctx context.Context) error {
 		}
 	}
 
-	k.Log("🚀 Creating Service accounts...")
-	if _, err := k.client.CreateServiceAccount(ctx, k.params.Namespace, k.NewServiceAccount(defaults.AgentServiceAccountName), metav1.CreateOptions{}); err != nil {
-		return err
-	}
-	k.pushRollbackStep(func(ctx context.Context) {
-		if err := k.client.DeleteServiceAccount(ctx, k.params.Namespace, defaults.AgentServiceAccountName, metav1.DeleteOptions{}); err != nil {
-			k.Log("Cannot delete %s ServiceAccount: %s", defaults.AgentServiceAccountName, err)
-		}
-	})
+	kindsToInstall := k.manifests.Kinds()
 
-	if _, err := k.client.CreateServiceAccount(ctx, k.params.Namespace, k.NewServiceAccount(defaults.OperatorServiceAccountName), metav1.CreateOptions{}); err != nil {
-		return err
-	}
-	k.pushRollbackStep(func(ctx context.Context) {
-		if err := k.client.DeleteServiceAccount(ctx, k.params.Namespace, defaults.OperatorServiceAccountName, metav1.DeleteOptions{}); err != nil {
-			k.Log("Cannot delete %s ServiceAccount: %s", defaults.OperatorServiceAccountName, err)
-		}
-	})
+	createAll := func(group, kind string, rollback bool) error {
+		k.Log("Creating all %s.%s", kind, group)
+		objs := k.manifests.AllForKind(group, kind)
+		for _, obj := range objs {
+			err := k.client.ApplyUnstructured(ctx, obj.GetNamespace(), obj, metav1.ApplyOptions{FieldManager: "cilium-cli", Force: true})
+			if err != nil {
+				k.Log("apply of %s %s %s failed %v", obj.GroupVersionKind().String(), obj.GetNamespace(), obj.GetName(), err)
+				return err
+			}
 
-	k.Log("🚀 Creating Cluster roles...")
-	if _, err := k.client.CreateClusterRole(ctx, k.NewClusterRole(defaults.AgentClusterRoleName), metav1.CreateOptions{}); err != nil {
-		return err
-	}
-	k.pushRollbackStep(func(ctx context.Context) {
-		if err := k.client.DeleteClusterRole(ctx, defaults.AgentClusterRoleName, metav1.DeleteOptions{}); err != nil {
-			k.Log("Cannot delete %s ClusterRole: %s", defaults.AgentClusterRoleName, err)
+			if rollback {
+				name := obj.GetName()
+				namespace := obj.GetNamespace()
+				gvk := obj.GroupVersionKind()
+				k.pushRollbackStep(func(ctx context.Context) {
+					if err := k.client.DeleteUnstructured(ctx, namespace, name, gvk, metav1.DeleteOptions{}); err != nil {
+						k.Log("delete failed: %v", err) // XXX
+					}
+				})
+			}
 		}
-	})
 
-	if _, err := k.client.CreateClusterRoleBinding(ctx, k.NewClusterRoleBinding(defaults.AgentClusterRoleName), metav1.CreateOptions{}); err != nil {
-		return err
+		kindsToInstall.Delete(schema.GroupKind{Group: group, Kind: kind})
+
+		return nil
 	}
-	k.pushRollbackStep(func(ctx context.Context) {
-		if err := k.client.DeleteClusterRoleBinding(ctx, defaults.AgentClusterRoleName, metav1.DeleteOptions{}); err != nil {
-			k.Log("Cannot delete %s ClusterRoleBinding: %s", defaults.AgentClusterRoleName, err)
-		}
-	})
 
-	if _, err := k.client.CreateClusterRole(ctx, k.NewClusterRole(defaults.OperatorClusterRoleName), metav1.CreateOptions{}); err != nil {
-		return err
+	// first, create preferred kinds
+	for _, kind := range []schema.GroupKind{
+		{"", "Namespace"},
+		{"", "ServiceAccount"},
+		{"rbac.authorization.k8s.io", "ClusterRole"},
+		{"rbac.authorization.k8s.io", "Role"},
+		{"rbac.authorization.k8s.io", "ClusterRoleBinding"},
+		{"rbac.authorization.k8s.io", "RoleBinding"},
+		{"", "ConfigMap"},
+	} {
+		err := createAll(kind.Group, kind.Kind, true)
+		if err != nil {
+			return err
+		}
 	}
-	k.pushRollbackStep(func(ctx context.Context) {
-		if err := k.client.DeleteClusterRole(ctx, defaults.OperatorClusterRoleName, metav1.DeleteOptions{}); err != nil {
-			k.Log("Cannot delete %s ClusterRole: %s", defaults.OperatorClusterRoleName, err)
-		}
-	})
 
-	if _, err := k.client.CreateClusterRoleBinding(ctx, k.NewClusterRoleBinding(defaults.OperatorClusterRoleName), metav1.CreateOptions{}); err != nil {
-		return err
+	for _, kind := range kindsToInstall.UnsortedList() {
+		if err := createAll(kind.Group, kind.Kind, true); err != nil {
+			return err
+		}
 	}
-	k.pushRollbackStep(func(ctx context.Context) {
-		if err := k.client.DeleteClusterRoleBinding(ctx, defaults.OperatorClusterRoleName, metav1.DeleteOptions{}); err != nil {
-			k.Log("Cannot delete %s ClusterRoleBinding: %s", defaults.OperatorClusterRoleName, err)
-		}
-	})
 
+	/*
+
+		k.Log("🚀 Creating Service accounts...")
+		if _, err := k.client.CreateServiceAccount(ctx, k.params.Namespace, k.NewServiceAccount(defaults.AgentServiceAccountName), metav1.CreateOptions{}); err != nil {
+			return err
+		}
+		k.pushRollbackStep(func(ctx context.Context) {
+			if err := k.client.DeleteServiceAccount(ctx, k.params.Namespace, defaults.AgentServiceAccountName, metav1.DeleteOptions{}); err != nil {
+				k.Log("Cannot delete %s ServiceAccount: %s", defaults.AgentServiceAccountName, err)
+			}
+		})
+
+		if _, err := k.client.CreateServiceAccount(ctx, k.params.Namespace, k.NewServiceAccount(defaults.OperatorServiceAccountName), metav1.CreateOptions{}); err != nil {
+			return err
+		}
+		k.pushRollbackStep(func(ctx context.Context) {
+			if err := k.client.DeleteServiceAccount(ctx, k.params.Namespace, defaults.OperatorServiceAccountName, metav1.DeleteOptions{}); err != nil {
+				k.Log("Cannot delete %s ServiceAccount: %s", defaults.OperatorServiceAccountName, err)
+			}
+		})
+
+		k.Log("🚀 Creating Cluster roles...")
+		if _, err := k.client.CreateClusterRole(ctx, k.NewClusterRole(defaults.AgentClusterRoleName), metav1.CreateOptions{}); err != nil {
+			return err
+		}
+		k.pushRollbackStep(func(ctx context.Context) {
+			if err := k.client.DeleteClusterRole(ctx, defaults.AgentClusterRoleName, metav1.DeleteOptions{}); err != nil {
+				k.Log("Cannot delete %s ClusterRole: %s", defaults.AgentClusterRoleName, err)
+			}
+		})
+
+		if _, err := k.client.CreateClusterRoleBinding(ctx, k.NewClusterRoleBinding(defaults.AgentClusterRoleName), metav1.CreateOptions{}); err != nil {
+			return err
+		}
+		k.pushRollbackStep(func(ctx context.Context) {
+			if err := k.client.DeleteClusterRoleBinding(ctx, defaults.AgentClusterRoleName, metav1.DeleteOptions{}); err != nil {
+				k.Log("Cannot delete %s ClusterRoleBinding: %s", defaults.AgentClusterRoleName, err)
+			}
+		})
+
+		if _, err := k.client.CreateClusterRole(ctx, k.NewClusterRole(defaults.OperatorClusterRoleName), metav1.CreateOptions{}); err != nil {
+			return err
+		}
+		k.pushRollbackStep(func(ctx context.Context) {
+			if err := k.client.DeleteClusterRole(ctx, defaults.OperatorClusterRoleName, metav1.DeleteOptions{}); err != nil {
+				k.Log("Cannot delete %s ClusterRole: %s", defaults.OperatorClusterRoleName, err)
+			}
+		})
+
+		if _, err := k.client.CreateClusterRoleBinding(ctx, k.NewClusterRoleBinding(defaults.OperatorClusterRoleName), metav1.CreateOptions{}); err != nil {
+			return err
+		}
+		k.pushRollbackStep(func(ctx context.Context) {
+			if err := k.client.DeleteClusterRoleBinding(ctx, defaults.OperatorClusterRoleName, metav1.DeleteOptions{}); err != nil {
+				k.Log("Cannot delete %s ClusterRoleBinding: %s", defaults.OperatorClusterRoleName, err)
+			}
+		})
+
+	*/
 	if k.params.Encryption == encryptionIPsec {
 		// TODO(aanm) automate this as well in form of helm chart
 		if err := k.createEncryptionSecret(ctx); err != nil {
 			return err
 		}
 	}
+	/*
 
-	ingressClass := k.generateIngressClass()
-	if ingressClass != nil {
-		if _, err := k.client.CreateIngressClass(ctx, ingressClass, metav1.CreateOptions{}); err != nil {
-			return err
-		}
-		k.pushRollbackStep(func(ctx context.Context) {
-			if err := k.client.DeleteIngressClass(ctx, defaults.IngressClassName, metav1.DeleteOptions{}); err != nil {
-				k.Log("Cannot delete %s IngressClass: %s", defaults.IngressClassName, err)
-			}
-		})
-	}
-
-	ingressService := k.generateIngressService()
-	if ingressService != nil {
-		if _, err := k.client.CreateService(ctx, ingressService.GetNamespace(), ingressService, metav1.CreateOptions{}); err != nil {
-			return err
-		}
-		k.pushRollbackStep(func(ctx context.Context) {
-			if err := k.client.DeleteService(ctx, ingressService.GetNamespace(), ingressService.GetName(), metav1.DeleteOptions{}); err != nil {
-				k.Log("Cannot delete %s Ingress Service: %s.%s", ingressService.GetNamespace(), ingressService.GetName(), err)
-			}
-		})
-	}
-
-	secretsNamespace := k.getSecretNamespace()
-	if len(secretsNamespace) != 0 {
-		if _, err := k.client.CreateNamespace(ctx, secretsNamespace, metav1.CreateOptions{}); err != nil {
-			return err
-		}
-		k.pushRollbackStep(func(ctx context.Context) {
-			if err := k.client.DeleteNamespace(ctx, secretsNamespace, metav1.DeleteOptions{}); err != nil {
-				k.Log("Cannot delete %s Namespace: %s", secretsNamespace, err)
-			}
-		})
-	}
-
-	for _, roleName := range []string{defaults.AgentSecretsRoleName, defaults.OperatorSecretsRoleName} {
-		rs := k.NewRole(roleName)
-
-		for _, r := range rs {
-			_, err = k.client.CreateRole(ctx, r.GetNamespace(), r, metav1.CreateOptions{})
-			if apierrors.IsAlreadyExists(err) {
-				_, err = k.client.UpdateRole(ctx, r.GetNamespace(), r, metav1.UpdateOptions{})
-			}
-
-			if err != nil {
+		ingressClass := k.generateIngressClass()
+		if ingressClass != nil {
+			if _, err := k.client.CreateIngressClass(ctx, ingressClass, metav1.CreateOptions{}); err != nil {
 				return err
 			}
-
 			k.pushRollbackStep(func(ctx context.Context) {
-				if err := k.client.DeleteRole(ctx, r.GetNamespace(), r.GetName(), metav1.DeleteOptions{}); err != nil {
-					k.Log("Cannot delete %s Role: %s", r.GetName(), err)
+				if err := k.client.DeleteIngressClass(ctx, defaults.IngressClassName, metav1.DeleteOptions{}); err != nil {
+					k.Log("Cannot delete %s IngressClass: %s", defaults.IngressClassName, err)
 				}
 			})
 		}
 
-		rbs := k.NewRoleBinding(roleName)
-		for _, rb := range rbs {
-			_, err := k.client.CreateRoleBinding(ctx, rb.GetNamespace(), rb, metav1.CreateOptions{})
-			if apierrors.IsAlreadyExists(err) {
-				_, err = k.client.UpdateRoleBinding(ctx, rb.GetNamespace(), rb, metav1.UpdateOptions{})
-			}
-			if err != nil {
+		ingressService := k.generateIngressService()
+		if ingressService != nil {
+			if _, err := k.client.CreateService(ctx, ingressService.GetNamespace(), ingressService, metav1.CreateOptions{}); err != nil {
 				return err
 			}
 			k.pushRollbackStep(func(ctx context.Context) {
-				if err := k.client.DeleteRoleBinding(ctx, rb.GetNamespace(), rb.GetName(), metav1.DeleteOptions{}); err != nil {
-					k.Log("Cannot delete %s RoleBinding: %s/%s", rb.GetNamespace(), rb.GetName(), err)
+				if err := k.client.DeleteService(ctx, ingressService.GetNamespace(), ingressService.GetName(), metav1.DeleteOptions{}); err != nil {
+					k.Log("Cannot delete %s Ingress Service: %s.%s", ingressService.GetNamespace(), ingressService.GetName(), err)
 				}
 			})
 		}
-	}
 
-	configMap, err := k.generateConfigMap()
-	if err != nil {
-		return fmt.Errorf("cannot generate ConfigMap: %w", err)
-	}
-
-	if _, err := k.client.CreateConfigMap(ctx, k.params.Namespace, configMap, metav1.CreateOptions{}); err != nil {
-		return err
-	}
-	k.pushRollbackStep(func(ctx context.Context) {
-		if err := k.client.DeleteConfigMap(ctx, k.params.Namespace, defaults.ConfigMapName, metav1.DeleteOptions{}); err != nil {
-			k.Log("Cannot delete %s ConfigMap: %s", defaults.ConfigMapName, err)
+		secretsNamespace := k.getSecretNamespace()
+		if len(secretsNamespace) != 0 {
+			if _, err := k.client.CreateNamespace(ctx, secretsNamespace, metav1.CreateOptions{}); err != nil {
+				return err
+			}
+			k.pushRollbackStep(func(ctx context.Context) {
+				if err := k.client.DeleteNamespace(ctx, secretsNamespace, metav1.DeleteOptions{}); err != nil {
+					k.Log("Cannot delete %s Namespace: %s", secretsNamespace, err)
+				}
+			})
 		}
-	})
 
-	// Create the node-init daemonset if one is required for the current kind.
-	if needsNodeInit(k.flavor.Kind) {
-		k.Log("🚀 Creating %s Node Init DaemonSet...", k.flavor.Kind.String())
-		ds := k.generateNodeInitDaemonSet(k.flavor.Kind)
-		if _, err := k.client.CreateDaemonSet(ctx, k.params.Namespace, ds, metav1.CreateOptions{}); err != nil {
+		for _, roleName := range []string{defaults.AgentSecretsRoleName, defaults.OperatorSecretsRoleName} {
+			rs := k.NewRole(roleName)
+
+			for _, r := range rs {
+				_, err = k.client.CreateRole(ctx, r.GetNamespace(), r, metav1.CreateOptions{})
+				if apierrors.IsAlreadyExists(err) {
+					_, err = k.client.UpdateRole(ctx, r.GetNamespace(), r, metav1.UpdateOptions{})
+				}
+
+				if err != nil {
+					return err
+				}
+
+				k.pushRollbackStep(func(ctx context.Context) {
+					if err := k.client.DeleteRole(ctx, r.GetNamespace(), r.GetName(), metav1.DeleteOptions{}); err != nil {
+						k.Log("Cannot delete %s Role: %s", r.GetName(), err)
+					}
+				})
+			}
+
+			rbs := k.NewRoleBinding(roleName)
+			for _, rb := range rbs {
+				_, err := k.client.CreateRoleBinding(ctx, rb.GetNamespace(), rb, metav1.CreateOptions{})
+				if apierrors.IsAlreadyExists(err) {
+					_, err = k.client.UpdateRoleBinding(ctx, rb.GetNamespace(), rb, metav1.UpdateOptions{})
+				}
+				if err != nil {
+					return err
+				}
+				k.pushRollbackStep(func(ctx context.Context) {
+					if err := k.client.DeleteRoleBinding(ctx, rb.GetNamespace(), rb.GetName(), metav1.DeleteOptions{}); err != nil {
+						k.Log("Cannot delete %s RoleBinding: %s/%s", rb.GetNamespace(), rb.GetName(), err)
+					}
+				})
+			}
+		}
+
+		configMap, err := k.generateConfigMap()
+		if err != nil {
+			return fmt.Errorf("cannot generate ConfigMap: %w", err)
+		}
+
+		if _, err := k.client.CreateConfigMap(ctx, k.params.Namespace, configMap, metav1.CreateOptions{}); err != nil {
 			return err
 		}
 		k.pushRollbackStep(func(ctx context.Context) {
-			if err := k.client.DeleteDaemonSet(ctx, k.params.Namespace, ds.Name, metav1.DeleteOptions{}); err != nil {
-				k.Log("Cannot delete %s DaemonSet: %s", ds.Name, err)
+			if err := k.client.DeleteConfigMap(ctx, k.params.Namespace, defaults.ConfigMapName, metav1.DeleteOptions{}); err != nil {
+				k.Log("Cannot delete %s ConfigMap: %s", defaults.ConfigMapName, err)
 			}
 		})
-	}
 
-	k.Log("🚀 Creating Agent DaemonSet...")
-	if _, err := k.client.CreateDaemonSet(ctx, k.params.Namespace, k.generateAgentDaemonSet(), metav1.CreateOptions{}); err != nil {
-		return err
-	}
-	k.pushRollbackStep(func(ctx context.Context) {
-		if err := k.client.DeleteDaemonSet(ctx, k.params.Namespace, defaults.AgentDaemonSetName, metav1.DeleteOptions{}); err != nil {
-			k.Log("Cannot delete %s DaemonSet: %s", defaults.AgentDaemonSetName, err)
+		// Create the node-init daemonset if one is required for the current kind.
+		if needsNodeInit(k.flavor.Kind) {
+			k.Log("🚀 Creating %s Node Init DaemonSet...", k.flavor.Kind.String())
+			ds := k.generateNodeInitDaemonSet(k.flavor.Kind)
+			if _, err := k.client.CreateDaemonSet(ctx, k.params.Namespace, ds, metav1.CreateOptions{}); err != nil {
+				return err
+			}
+			k.pushRollbackStep(func(ctx context.Context) {
+				if err := k.client.DeleteDaemonSet(ctx, k.params.Namespace, ds.Name, metav1.DeleteOptions{}); err != nil {
+					k.Log("Cannot delete %s DaemonSet: %s", ds.Name, err)
+				}
+			})
 		}
-	})
 
-	k.Log("🚀 Creating Operator Deployment...")
-	if _, err := k.client.CreateDeployment(ctx, k.params.Namespace, k.generateOperatorDeployment(), metav1.CreateOptions{}); err != nil {
-		return err
-	}
-	k.pushRollbackStep(func(ctx context.Context) {
-		if err := k.client.DeleteDeployment(ctx, k.params.Namespace, defaults.OperatorDeploymentName, metav1.DeleteOptions{}); err != nil {
-			k.Log("Cannot delete %s Deployment: %s", defaults.OperatorDeploymentName, err)
+		k.Log("🚀 Creating Agent DaemonSet...")
+		if _, err := k.client.CreateDaemonSet(ctx, k.params.Namespace, k.generateAgentDaemonSet(), metav1.CreateOptions{}); err != nil {
+			return err
 		}
-	})
+		k.pushRollbackStep(func(ctx context.Context) {
+			if err := k.client.DeleteDaemonSet(ctx, k.params.Namespace, defaults.AgentDaemonSetName, metav1.DeleteOptions{}); err != nil {
+				k.Log("Cannot delete %s DaemonSet: %s", defaults.AgentDaemonSetName, err)
+			}
+		})
+
+		k.Log("🚀 Creating Operator Deployment...")
+		if _, err := k.client.CreateDeployment(ctx, k.params.Namespace, k.generateOperatorDeployment(), metav1.CreateOptions{}); err != nil {
+			return err
+		}
+		k.pushRollbackStep(func(ctx context.Context) {
+			if err := k.client.DeleteDeployment(ctx, k.params.Namespace, defaults.OperatorDeploymentName, metav1.DeleteOptions{}); err != nil {
+				k.Log("Cannot delete %s Deployment: %s", defaults.OperatorDeploymentName, err)
+			}
+		})
+
+	*/
 
 	if k.params.Wait || k.params.RestartUnmanagedPods {
 		// In case unmanaged pods should be restarted we need to make sure that Cilium
