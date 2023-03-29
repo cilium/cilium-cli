@@ -20,6 +20,19 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/cilium/cilium-cli/k8s"
+
+	apiserverv1 "github.com/openshift/api/apiserver/v1"
+	openshiftAppsv1 "github.com/openshift/api/apps/v1"
+	cloudnetworkv1 "github.com/openshift/api/cloudnetwork/v1"
+	configv1 "github.com/openshift/api/config/v1"
+	imagev1 "github.com/openshift/api/image/v1"
+	machinev1 "github.com/openshift/api/machine/v1"
+	networkv1 "github.com/openshift/api/network/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
+	projectv1 "github.com/openshift/api/project/v1"
+	quotav1 "github.com/openshift/api/quota/v1"
+	routev1 "github.com/openshift/api/route/v1"
+	samplesv1 "github.com/openshift/api/samples/v1"
 )
 
 type KubernetesClient interface {
@@ -65,4 +78,54 @@ type KubernetesClient interface {
 	ListPods(ctx context.Context, namespace string, options metav1.ListOptions) (*corev1.PodList, error)
 	ListServices(ctx context.Context, namespace string, options metav1.ListOptions) (*corev1.ServiceList, error)
 	ListUnstructured(ctx context.Context, gvr schema.GroupVersionResource, namespace *string, o metav1.ListOptions) (*unstructured.UnstructuredList, error)
+
+	//Openshift commands
+	ListOpenshiftAPIRequestCounts(ctx context.Context, opts metav1.ListOptions) (*apiserverv1.APIRequestCountList, error)
+	ListOpenshiftDeploymentConfigs(ctx context.Context, namespace string, opts metav1.ListOptions) (*openshiftAppsv1.DeploymentConfigList, error)
+	ListOpenshiftAPIServers(ctx context.Context, opts metav1.ListOptions) (*configv1.APIServerList, error)
+	ListOpenshiftBuilds(ctx context.Context, opts metav1.ListOptions) (*configv1.BuildList, error)
+	ListOpenshiftClusterOperators(ctx context.Context, opts metav1.ListOptions) (*configv1.ClusterOperatorList, error)
+	ListOpenshiftClusterVersions(ctx context.Context, opts metav1.ListOptions) (*configv1.ClusterVersionList, error)
+	ListOpenshiftConfigConsoles(ctx context.Context, opts metav1.ListOptions) (*configv1.ConsoleList, error)
+	ListOpenshiftConfigDNSes(ctx context.Context, opts metav1.ListOptions) (*configv1.DNSList, error)
+	ListOpenshiftFeatureGates(ctx context.Context, opts metav1.ListOptions) (*configv1.FeatureGateList, error)
+	ListOpenshiftConfigImages(ctx context.Context, opts metav1.ListOptions) (*configv1.ImageList, error)
+	ListOpenshiftInfrastructures(ctx context.Context, opts metav1.ListOptions) (*configv1.InfrastructureList, error)
+	ListOpenshiftIngresses(ctx context.Context, opts metav1.ListOptions) (*configv1.IngressList, error)
+	ListOpenshiftConfigNetworks(ctx context.Context, opts metav1.ListOptions) (*configv1.NetworkList, error)
+	ListOpenshiftNodes(ctx context.Context, opts metav1.ListOptions) (*configv1.NodeList, error)
+	ListOpenshiftOperatorHubs(ctx context.Context, opts metav1.ListOptions) (*configv1.OperatorHubList, error)
+	ListOpenshiftConfigProjects(ctx context.Context, opts metav1.ListOptions) (*configv1.ProjectList, error)
+	ListOpenshiftProxies(ctx context.Context, opts metav1.ListOptions) (*configv1.ProxyList, error)
+	ListOpenshiftSchedulers(ctx context.Context, opts metav1.ListOptions) (*configv1.SchedulerList, error)
+	ListOpenshiftCloudPrivateIPConfigs(ctx context.Context, opts metav1.ListOptions) (*cloudnetworkv1.CloudPrivateIPConfigList, error)
+	ListOpenshiftImages(ctx context.Context, opts metav1.ListOptions) (*imagev1.ImageList, error)
+	ListOpenshiftControlPlaneMachineSets(ctx context.Context, namespace string, opts metav1.ListOptions) (*machinev1.ControlPlaneMachineSetList, error)
+	ListOpenshiftClusterNetworks(ctx context.Context, opts metav1.ListOptions) (*networkv1.ClusterNetworkList, error)
+	ListOpenshiftEgressNetworkPolicies(ctx context.Context, namespace string, opts metav1.ListOptions) (*networkv1.EgressNetworkPolicyList, error)
+	ListOpenshiftHostSubnets(ctx context.Context, opts metav1.ListOptions) (*networkv1.HostSubnetList, error)
+	ListOpenshiftNetNamespaces(ctx context.Context, opts metav1.ListOptions) (*networkv1.NetNamespaceList, error)
+	ListOpenshiftCSISnapshotControllers(ctx context.Context, opts metav1.ListOptions) (*operatorv1.CSISnapshotControllerList, error)
+	ListOpenshiftClusterCSIDrivers(ctx context.Context, opts metav1.ListOptions) (*operatorv1.ClusterCSIDriverList, error)
+	ListOpenshiftConfigs(ctx context.Context, opts metav1.ListOptions) (*operatorv1.ConfigList, error)
+	ListOpenshiftDNSes(ctx context.Context, opts metav1.ListOptions) (*operatorv1.DNSList, error)
+	ListOpenshiftEtcds(ctx context.Context, opts metav1.ListOptions) (*operatorv1.EtcdList, error)
+	ListOpenshiftIngressControllers(ctx context.Context, namespace string, opts metav1.ListOptions) (*operatorv1.IngressControllerList, error)
+	ListOpenshiftInsightsOperators(ctx context.Context, opts metav1.ListOptions) (*operatorv1.InsightsOperatorList, error)
+	ListOpenshiftKubeAPIServers(ctx context.Context, opts metav1.ListOptions) (*operatorv1.KubeAPIServerList, error)
+	ListOpenshiftKubeControllerManagers(ctx context.Context, opts metav1.ListOptions) (*operatorv1.KubeControllerManagerList, error)
+	ListOpenshiftKubeSchedulers(ctx context.Context, opts metav1.ListOptions) (*operatorv1.KubeSchedulerList, error)
+	ListOpenshiftKubeStorageVersionMigrators(ctx context.Context, opts metav1.ListOptions) (*operatorv1.KubeStorageVersionMigratorList, error)
+	ListOpenshiftNetworks(ctx context.Context, opts metav1.ListOptions) (*operatorv1.NetworkList, error)
+	ListOpenshiftOperatorAPIServers(ctx context.Context, opts metav1.ListOptions) (*operatorv1.OpenShiftAPIServerList, error)
+	ListOpenshiftOperatorControllerManagers(ctx context.Context, opts metav1.ListOptions) (*operatorv1.OpenShiftControllerManagerList, error)
+	ListOpenshiftServiceCAs(ctx context.Context, opts metav1.ListOptions) (*operatorv1.ServiceCAList, error)
+	ListOpenshiftServiceCatalogAPIServers(ctx context.Context, opts metav1.ListOptions) (*operatorv1.ServiceCatalogAPIServerList, error)
+	ListOpenshiftServiceCatalogControllerManagers(ctx context.Context, opts metav1.ListOptions) (*operatorv1.ServiceCatalogControllerManagerList, error)
+	ListOpenshiftStorages(ctx context.Context, opts metav1.ListOptions) (*operatorv1.StorageList, error)
+	ListOpenshiftProjects(ctx context.Context, opts metav1.ListOptions) (*projectv1.ProjectList, error)
+	ListOpenshiftAppliedClusterResourceQuotas(ctx context.Context, namespace string, opts metav1.ListOptions) (*quotav1.AppliedClusterResourceQuotaList, error)
+	ListOpenshiftClusterResourceQuotas(ctx context.Context, opts metav1.ListOptions) (*quotav1.ClusterResourceQuotaList, error)
+	ListOpenshiftRoutes(ctx context.Context, namespace string, opts metav1.ListOptions) (*routev1.RouteList, error)
+	ListOpenshiftSampleConfigs(ctx context.Context, opts metav1.ListOptions) (*samplesv1.ConfigList, error)
 }

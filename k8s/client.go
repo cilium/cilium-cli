@@ -50,6 +50,19 @@ import (
 	"github.com/cilium/cilium-cli/defaults"
 	"github.com/cilium/cilium-cli/internal/helm"
 	"github.com/cilium/cilium-cli/internal/utils"
+
+	apiserverv1 "github.com/openshift/api/apiserver/v1"
+	openshiftAppsv1 "github.com/openshift/api/apps/v1"
+	cloudnetworkv1 "github.com/openshift/api/cloudnetwork/v1"
+	configv1 "github.com/openshift/api/config/v1"
+	imagev1 "github.com/openshift/api/image/v1"
+	machinev1 "github.com/openshift/api/machine/v1"
+	networkv1 "github.com/openshift/api/network/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
+	projectv1 "github.com/openshift/api/project/v1"
+	quotav1 "github.com/openshift/api/quota/v1"
+	routev1 "github.com/openshift/api/route/v1"
+	samplesv1 "github.com/openshift/api/samples/v1"
 )
 
 type Client struct {
@@ -57,6 +70,7 @@ type Client struct {
 	DynamicClientset  dynamic.Interface
 	CiliumClientset   ciliumClientset.Interface
 	TetragonClientset tetragonClientset.Interface
+	OpenshiftClient   *OpenshiftClient
 	Config            *rest.Config
 	RawConfig         clientcmdapi.Config
 	RESTClientGetter  genericclioptions.RESTClientGetter
@@ -68,6 +82,7 @@ func NewClient(contextName, kubeconfig string) (*Client, error) {
 	_ = ciliumv2.AddToScheme(scheme.Scheme)
 	_ = ciliumv2alpha1.AddToScheme(scheme.Scheme)
 	_ = tetragonv1alpha1.AddToScheme(scheme.Scheme)
+	//_ = openshiftAPI.Install
 
 	restClientGetter := genericclioptions.ConfigFlags{
 		Context:    &contextName,
@@ -105,6 +120,11 @@ func NewClient(contextName, kubeconfig string) (*Client, error) {
 		return nil, err
 	}
 
+	openshiftClient, err := NewOpenshiftClient(scheme.Scheme, config)
+	if err != nil {
+		return nil, err
+	}
+
 	if contextName == "" {
 		contextName = rawConfig.CurrentContext
 	}
@@ -113,6 +133,7 @@ func NewClient(contextName, kubeconfig string) (*Client, error) {
 		CiliumClientset:   ciliumClientset,
 		TetragonClientset: tetragonClientset,
 		Clientset:         clientset,
+		OpenshiftClient:   openshiftClient,
 		Config:            config,
 		DynamicClientset:  dynamicClientset,
 		RawConfig:         rawConfig,
@@ -516,6 +537,7 @@ const (
 	KindMicrok8s
 	KindRancherDesktop
 	KindK3s
+	KindOpenshift
 )
 
 func (k Kind) String() string {
@@ -538,6 +560,8 @@ func (k Kind) String() string {
 		return "rancher-desktop"
 	case KindK3s:
 		return "K3s"
+	case KindOpenshift:
+		return "openshift"
 	default:
 		return "invalid"
 	}
@@ -610,6 +634,11 @@ func (c *Client) AutodetectFlavor(ctx context.Context) Flavor {
 	}
 	// Assume k3s if the k8s master node runs k3s
 	for _, node := range nodeList.Items {
+		isOpenshift := node.Labels["node.openshift.io/os_id"]
+		if isOpenshift == "rhcos" {
+			f.Kind = KindOpenshift
+			return f
+		}
 		isMaster := node.Labels["node-role.kubernetes.io/master"]
 		if isMaster != "true" {
 			continue
@@ -1046,4 +1075,198 @@ func (c *Client) CreateEphemeralContainer(ctx context.Context, pod *corev1.Pod, 
 
 func (c *Client) ListTetragonTracingPolicies(ctx context.Context, opts metav1.ListOptions) (*tetragonv1alpha1.TracingPolicyList, error) {
 	return c.TetragonClientset.CiliumV1alpha1().TracingPolicies().List(ctx, opts)
+}
+
+// Openshift Specific commands
+
+func (c *Client) ListOpenshiftAPIRequestCounts(ctx context.Context, opts metav1.ListOptions) (*apiserverv1.APIRequestCountList, error) {
+	return c.OpenshiftClient.ApiserverClient.APIRequestCounts().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftDeploymentConfigs(ctx context.Context, namespace string, opts metav1.ListOptions) (*openshiftAppsv1.DeploymentConfigList, error) {
+	return c.OpenshiftClient.AppsClient.DeploymentConfigs(namespace).List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftAPIServers(ctx context.Context, opts metav1.ListOptions) (*configv1.APIServerList, error) {
+	return c.OpenshiftClient.ConfigClient.APIServers().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftBuilds(ctx context.Context, opts metav1.ListOptions) (*configv1.BuildList, error) {
+	return c.OpenshiftClient.ConfigClient.Builds().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftClusterOperators(ctx context.Context, opts metav1.ListOptions) (*configv1.ClusterOperatorList, error) {
+	return c.OpenshiftClient.ConfigClient.ClusterOperators().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftClusterVersions(ctx context.Context, opts metav1.ListOptions) (*configv1.ClusterVersionList, error) {
+	return c.OpenshiftClient.ConfigClient.ClusterVersions().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftConfigConsoles(ctx context.Context, opts metav1.ListOptions) (*configv1.ConsoleList, error) {
+	return c.OpenshiftClient.ConfigClient.Consoles().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftConfigDNSes(ctx context.Context, opts metav1.ListOptions) (*configv1.DNSList, error) {
+	return c.OpenshiftClient.ConfigClient.DNSes().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftFeatureGates(ctx context.Context, opts metav1.ListOptions) (*configv1.FeatureGateList, error) {
+	return c.OpenshiftClient.ConfigClient.FeatureGates().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftConfigImages(ctx context.Context, opts metav1.ListOptions) (*configv1.ImageList, error) {
+	return c.OpenshiftClient.ConfigClient.Images().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftInfrastructures(ctx context.Context, opts metav1.ListOptions) (*configv1.InfrastructureList, error) {
+	return c.OpenshiftClient.ConfigClient.Infrastructures().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftIngresses(ctx context.Context, opts metav1.ListOptions) (*configv1.IngressList, error) {
+	return c.OpenshiftClient.ConfigClient.Ingresses().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftConfigNetworks(ctx context.Context, opts metav1.ListOptions) (*configv1.NetworkList, error) {
+	return c.OpenshiftClient.ConfigClient.Networks().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftNodes(ctx context.Context, opts metav1.ListOptions) (*configv1.NodeList, error) {
+	return c.OpenshiftClient.ConfigClient.Nodes().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftOperatorHubs(ctx context.Context, opts metav1.ListOptions) (*configv1.OperatorHubList, error) {
+	return c.OpenshiftClient.ConfigClient.OperatorHubs().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftConfigProjects(ctx context.Context, opts metav1.ListOptions) (*configv1.ProjectList, error) {
+	return c.OpenshiftClient.ConfigClient.Projects().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftProxies(ctx context.Context, opts metav1.ListOptions) (*configv1.ProxyList, error) {
+	return c.OpenshiftClient.ConfigClient.Proxies().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftSchedulers(ctx context.Context, opts metav1.ListOptions) (*configv1.SchedulerList, error) {
+	return c.OpenshiftClient.ConfigClient.Schedulers().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftCloudPrivateIPConfigs(ctx context.Context, opts metav1.ListOptions) (*cloudnetworkv1.CloudPrivateIPConfigList, error) {
+	return c.OpenshiftClient.CloudnetworkClient.CloudPrivateIPConfigs().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftImages(ctx context.Context, opts metav1.ListOptions) (*imagev1.ImageList, error) {
+	return c.OpenshiftClient.ImageClient.Images().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftControlPlaneMachineSets(ctx context.Context, namespace string, opts metav1.ListOptions) (*machinev1.ControlPlaneMachineSetList, error) {
+	return c.OpenshiftClient.MachineClient.ControlPlaneMachineSets(namespace).List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftClusterNetworks(ctx context.Context, opts metav1.ListOptions) (*networkv1.ClusterNetworkList, error) {
+	return c.OpenshiftClient.NetworkClient.ClusterNetworks().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftEgressNetworkPolicies(ctx context.Context, namespace string, opts metav1.ListOptions) (*networkv1.EgressNetworkPolicyList, error) {
+	return c.OpenshiftClient.NetworkClient.EgressNetworkPolicies(namespace).List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftHostSubnets(ctx context.Context, opts metav1.ListOptions) (*networkv1.HostSubnetList, error) {
+	return c.OpenshiftClient.NetworkClient.HostSubnets().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftNetNamespaces(ctx context.Context, opts metav1.ListOptions) (*networkv1.NetNamespaceList, error) {
+	return c.OpenshiftClient.NetworkClient.NetNamespaces().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftCSISnapshotControllers(ctx context.Context, opts metav1.ListOptions) (*operatorv1.CSISnapshotControllerList, error) {
+	return c.OpenshiftClient.OperatorClient.CSISnapshotControllers().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftClusterCSIDrivers(ctx context.Context, opts metav1.ListOptions) (*operatorv1.ClusterCSIDriverList, error) {
+	return c.OpenshiftClient.OperatorClient.ClusterCSIDrivers().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftConfigs(ctx context.Context, opts metav1.ListOptions) (*operatorv1.ConfigList, error) {
+	return c.OpenshiftClient.OperatorClient.Configs().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftDNSes(ctx context.Context, opts metav1.ListOptions) (*operatorv1.DNSList, error) {
+	return c.OpenshiftClient.OperatorClient.DNSes().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftEtcds(ctx context.Context, opts metav1.ListOptions) (*operatorv1.EtcdList, error) {
+	return c.OpenshiftClient.OperatorClient.Etcds().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftIngressControllers(ctx context.Context, namespace string, opts metav1.ListOptions) (*operatorv1.IngressControllerList, error) {
+	return c.OpenshiftClient.OperatorClient.IngressControllers(namespace).List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftInsightsOperators(ctx context.Context, opts metav1.ListOptions) (*operatorv1.InsightsOperatorList, error) {
+	return c.OpenshiftClient.OperatorClient.InsightsOperators().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftKubeAPIServers(ctx context.Context, opts metav1.ListOptions) (*operatorv1.KubeAPIServerList, error) {
+	return c.OpenshiftClient.OperatorClient.KubeAPIServers().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftKubeControllerManagers(ctx context.Context, opts metav1.ListOptions) (*operatorv1.KubeControllerManagerList, error) {
+	return c.OpenshiftClient.OperatorClient.KubeControllerManagers().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftKubeSchedulers(ctx context.Context, opts metav1.ListOptions) (*operatorv1.KubeSchedulerList, error) {
+	return c.OpenshiftClient.OperatorClient.KubeSchedulers().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftKubeStorageVersionMigrators(ctx context.Context, opts metav1.ListOptions) (*operatorv1.KubeStorageVersionMigratorList, error) {
+	return c.OpenshiftClient.OperatorClient.KubeStorageVersionMigrators().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftNetworks(ctx context.Context, opts metav1.ListOptions) (*operatorv1.NetworkList, error) {
+	return c.OpenshiftClient.OperatorClient.Networks().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftOperatorAPIServers(ctx context.Context, opts metav1.ListOptions) (*operatorv1.OpenShiftAPIServerList, error) {
+	return c.OpenshiftClient.OperatorClient.OpenShiftAPIServers().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftOperatorControllerManagers(ctx context.Context, opts metav1.ListOptions) (*operatorv1.OpenShiftControllerManagerList, error) {
+	return c.OpenshiftClient.OperatorClient.OpenShiftControllerManagers().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftServiceCAs(ctx context.Context, opts metav1.ListOptions) (*operatorv1.ServiceCAList, error) {
+	return c.OpenshiftClient.OperatorClient.ServiceCAs().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftServiceCatalogAPIServers(ctx context.Context, opts metav1.ListOptions) (*operatorv1.ServiceCatalogAPIServerList, error) {
+	return c.OpenshiftClient.OperatorClient.ServiceCatalogAPIServers().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftServiceCatalogControllerManagers(ctx context.Context, opts metav1.ListOptions) (*operatorv1.ServiceCatalogControllerManagerList, error) {
+	return c.OpenshiftClient.OperatorClient.ServiceCatalogControllerManagers().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftStorages(ctx context.Context, opts metav1.ListOptions) (*operatorv1.StorageList, error) {
+	return c.OpenshiftClient.OperatorClient.Storages().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftProjects(ctx context.Context, opts metav1.ListOptions) (*projectv1.ProjectList, error) {
+	return c.OpenshiftClient.ProjectClient.Projects().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftAppliedClusterResourceQuotas(ctx context.Context, namespace string, opts metav1.ListOptions) (*quotav1.AppliedClusterResourceQuotaList, error) {
+	return c.OpenshiftClient.QuotaClient.AppliedClusterResourceQuotas(namespace).List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftClusterResourceQuotas(ctx context.Context, opts metav1.ListOptions) (*quotav1.ClusterResourceQuotaList, error) {
+	return c.OpenshiftClient.QuotaClient.ClusterResourceQuotas().List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftRoutes(ctx context.Context, namespace string, opts metav1.ListOptions) (*routev1.RouteList, error) {
+	return c.OpenshiftClient.RouteClient.Routes(namespace).List(ctx, opts)
+}
+
+func (c *Client) ListOpenshiftSampleConfigs(ctx context.Context, opts metav1.ListOptions) (*samplesv1.ConfigList, error) {
+	return c.OpenshiftClient.SamplesClient.Configs().List(ctx, opts)
 }

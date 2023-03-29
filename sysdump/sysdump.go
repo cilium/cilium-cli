@@ -1651,6 +1651,767 @@ func (c *Collector) submitFlavorSpecificTasks(ctx context.Context, f k8s.Flavor)
 			return fmt.Errorf("failed to submit %q task: %w", awsNodeDaemonSetName, err)
 		}
 		return nil
+	case k8s.KindOpenshift:
+		openshiftTasks := []Task{
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift APIRequestCounts",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftAPIRequestCounts(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift APIRequestCounts: %w", err)
+					}
+					if err := c.WriteYAML("openshift-apirequestcountslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift APIRequestCounts: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift DeploymentConfigs",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftDeploymentConfigs(ctx, corev1.NamespaceAll, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift DeploymentConfigs: %w", err)
+					}
+					if err := c.WriteYAML("openshift-deploymentconfigslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift DeploymentConfigs: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift APIServers",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftAPIServers(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift APIServers: %w", err)
+					}
+					if err := c.WriteYAML("openshift-apiserverslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift APIServers: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift Builds",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftBuilds(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift Builds: %w", err)
+					}
+					if err := c.WriteYAML("openshift-buildslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift Builds: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift ClusterOperators",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftClusterOperators(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift ClusterOperators: %w", err)
+					}
+					if err := c.WriteYAML("openshift-clusteroperatorslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift ClusterOperators: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift ClusterVersions",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftClusterVersions(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift ClusterVersions: %w", err)
+					}
+					if err := c.WriteYAML("openshift-clusterversionslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift ClusterVersions: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift Config Consoles",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftConfigConsoles(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift Config Consoles: %w", err)
+					}
+					if err := c.WriteYAML("openshift-configconsoleslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift Config Consoles: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift Config DNSes",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftConfigDNSes(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift Config DNSes: %w", err)
+					}
+					if err := c.WriteYAML("openshift-configdnseslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift Config DNSes: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift FeatureGates",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftFeatureGates(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift FeatureGates: %w", err)
+					}
+					if err := c.WriteYAML("openshift-featuregateslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift FeatureGates: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift Config Images",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftConfigImages(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift COnfig Images: %w", err)
+					}
+					if err := c.WriteYAML("openshift-configimageslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift Config Images: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift Infrastructures",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftInfrastructures(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift Infrastructures: %w", err)
+					}
+					if err := c.WriteYAML("openshift-infrastructureslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift Infrastructures: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift Ingresses",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftIngresses(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift Ingresses: %w", err)
+					}
+					if err := c.WriteYAML("openshift-ingresseslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift Ingresses: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift Networks",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftNetworks(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift Networks: %w", err)
+					}
+					if err := c.WriteYAML("openshift-networkslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift Networks: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift Nodes",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftNodes(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift Nodes: %w", err)
+					}
+					if err := c.WriteYAML("openshift-nodeslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift Nodes: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift OperatorHubs",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftOperatorHubs(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift OperatorHubs: %w", err)
+					}
+					if err := c.WriteYAML("openshift-operatorhubslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift OperatorHubs: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift Projects",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftProjects(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift Projects: %w", err)
+					}
+					if err := c.WriteYAML("openshift-projectslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift Projects: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift Proxies",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftProxies(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift Proxies: %w", err)
+					}
+					if err := c.WriteYAML("openshift-proxieslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift Proxies: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift Schedulers",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftSchedulers(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift Schedulers: %w", err)
+					}
+					if err := c.WriteYAML("openshift-schedulerslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift Schedulers: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift CloudPrivateIPConfigs",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftCloudPrivateIPConfigs(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift CloudPrivateIPConfigs: %w", err)
+					}
+					if err := c.WriteYAML("openshift-cloudprivateipconfigslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift CloudPrivateIPConfigs: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift Images",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftImages(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift Images: %w", err)
+					}
+					if err := c.WriteYAML("openshift-imageslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift Images: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift ControlPlaneMachineSets",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftControlPlaneMachineSets(ctx, corev1.NamespaceAll, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift ControlPlaneMachineSets: %w", err)
+					}
+					if err := c.WriteYAML("openshift-controlplanemachinesetslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift ControlPlaneMachineSets: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift ClusterNetworks",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftClusterNetworks(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift ClusterNetworks: %w", err)
+					}
+					if err := c.WriteYAML("openshift-clusternetworkslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift ClusterNetworks: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift EgressNetworkPolicies",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftEgressNetworkPolicies(ctx, corev1.NamespaceAll, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift EgressNetworkPolicies: %w", err)
+					}
+					if err := c.WriteYAML("openshift-egressnetworkpolicieslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift EgressNetworkPolicies: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift HostSubnets",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftHostSubnets(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift HostSubnets: %w", err)
+					}
+					if err := c.WriteYAML("openshift-hostsubnetslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift HostSubnets: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift NetNamespaces",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftNetNamespaces(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift NetNamespaces: %w", err)
+					}
+					if err := c.WriteYAML("openshift-netnamespaceslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift NetNamespaces: %w", err)
+					}
+					return nil
+				},
+			},
+
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift CSISnapshotControllers",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftCSISnapshotControllers(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift CSISnapshotControllers: %w", err)
+					}
+					if err := c.WriteYAML("openshift-csisnapshotcontrollerslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift CSISnapshotControllers: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift ClusterCSIDrivers",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftClusterCSIDrivers(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift ClusterCSIDrivers: %w", err)
+					}
+					if err := c.WriteYAML("openshift-clustercsidriverslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift ClusterCSIDrivers: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift Configs",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftConfigs(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift Configs: %w", err)
+					}
+					if err := c.WriteYAML("openshift-configslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift Configs: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift Consoles",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftConfigConsoles(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift Consoles: %w", err)
+					}
+					if err := c.WriteYAML("openshift-consoleslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift Consoles: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift DNSes",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftDNSes(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift DNSes: %w", err)
+					}
+					if err := c.WriteYAML("openshift-dnseslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift DNSes: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift Etcds",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftEtcds(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift Etcds: %w", err)
+					}
+					if err := c.WriteYAML("openshift-etcdslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift Etcds: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift IngressControllers",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftIngressControllers(ctx, corev1.NamespaceAll, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift IngressControllers: %w", err)
+					}
+					if err := c.WriteYAML("openshift-ingresscontrollerslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift IngressControllers: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift InsightsOperators",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftInsightsOperators(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift InsightsOperators: %w", err)
+					}
+					if err := c.WriteYAML("openshift-insightsoperatorslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift InsightsOperators: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift KubeAPIServers",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftKubeAPIServers(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift KubeAPIServers: %w", err)
+					}
+					if err := c.WriteYAML("openshift-kubeapiserverslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift KubeAPIServers: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift KubeControllerManagers",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftKubeControllerManagers(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift KubeControllerManagers: %w", err)
+					}
+					if err := c.WriteYAML("openshift-kubecontrollermanagerslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift KubeControllerManagers: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift KubeSchedulers",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftKubeSchedulers(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift KubeSchedulers: %w", err)
+					}
+					if err := c.WriteYAML("openshift-kubeschedulerslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift KubeSchedulers: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift KubeStorageVersionMigrators",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftKubeStorageVersionMigrators(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift KubeStorageVersionMigrators: %w", err)
+					}
+					if err := c.WriteYAML("openshift-kubestorageversionmigratorslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift KubeStorageVersionMigrators: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift Networks",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftNetworks(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift Networks: %w", err)
+					}
+					if err := c.WriteYAML("openshift-networkslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift Networks: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift OperatorAPIServers",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftOperatorAPIServers(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift OperatorAPIServers: %w", err)
+					}
+					if err := c.WriteYAML("openshift-operatorapiserverslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift OperatorAPIServers: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift OperatorControllerManagers",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftOperatorControllerManagers(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift OperatorControllerManagers: %w", err)
+					}
+					if err := c.WriteYAML("openshift-operatorcontrollermanagerslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift OperatorControllerManagers: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift ServiceCAs",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftServiceCAs(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift ServiceCAs: %w", err)
+					}
+					if err := c.WriteYAML("openshift-servicecaslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift ServiceCAs: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift ServiceCatalogAPIServers",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftServiceCatalogAPIServers(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift ServiceCatalogAPIServers: %w", err)
+					}
+					if err := c.WriteYAML("openshift-servicecatalogapiserverslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift ServiceCatalogAPIServers: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift ServiceCatalogControllerManagers",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftServiceCatalogControllerManagers(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift ServiceCatalogControllerManagers: %w", err)
+					}
+					if err := c.WriteYAML("openshift-servicecatalogcontrollermanagerslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift ServiceCatalogControllerManagers: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift Storages",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftStorages(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift Storages: %w", err)
+					}
+					if err := c.WriteYAML("openshift-storageslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift Storages: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift Projects",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftProjects(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift Projects: %w", err)
+					}
+					if err := c.WriteYAML("openshift-projectslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift Projects: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift AppliedClusterResourceQuotas",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftAppliedClusterResourceQuotas(ctx, corev1.NamespaceAll, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift AppliedClusterResourceQuotas: %w", err)
+					}
+					if err := c.WriteYAML("openshift-appliedclusterresourcequotaslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift AppliedClusterResourceQuotas: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift ClusterResourceQuotas",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftClusterResourceQuotas(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift ClusterResourceQuotas: %w", err)
+					}
+					if err := c.WriteYAML("openshift-clusterresourcequotaslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift ClusterResourceQuotas: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift Routes",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftRoutes(ctx, corev1.NamespaceAll, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift Routes: %w", err)
+					}
+					if err := c.WriteYAML("openshift-routeslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift Routes: %w", err)
+					}
+					return nil
+				},
+			},
+			{
+				CreatesSubtasks: true,
+				Description:     "Collecting Openshift Sample Configs",
+				Quick:           true,
+				Task: func(ctx context.Context) error {
+					v, err := c.Client.ListOpenshiftSampleConfigs(ctx, metav1.ListOptions{})
+					if err != nil {
+						return fmt.Errorf("failed to collect Openshift Sample Configs: %w", err)
+					}
+					if err := c.WriteYAML("openshift-sampleconfigslist.yaml", v); err != nil {
+						return fmt.Errorf("failed to collect Openshift Sample Configs: %w", err)
+					}
+					return nil
+				},
+			},
+		}
+		// Add the tasks to the worker pool.
+		for i, t := range openshiftTasks {
+			t := t
+			if c.shouldSkipTask(t) {
+				c.logDebug("Skipping %q", t.Description)
+				continue
+			}
+			if t.CreatesSubtasks {
+				c.subtasksWg.Add(1)
+			}
+			if err := c.Pool.Submit(fmt.Sprintf("[%d] %s", i, t.Description), func(ctx context.Context) error {
+				if t.CreatesSubtasks {
+					defer c.subtasksWg.Done()
+				}
+				c.logTask(t.Description)
+				defer c.logDebug("Finished %q", t.Description)
+				return t.Task(ctx)
+			}); err != nil {
+				return fmt.Errorf("failed to submit task to the worker pool: %w", err)
+			}
+		}
+		return nil
 	default:
 		c.logDebug("No flavor-specific data to collect for %q", f.Kind.String())
 		return nil

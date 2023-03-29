@@ -32,6 +32,19 @@ import (
 
 	"github.com/cilium/cilium-cli/defaults"
 	"github.com/cilium/cilium-cli/k8s"
+
+	apiserverv1 "github.com/openshift/api/apiserver/v1"
+	openshiftAppsv1 "github.com/openshift/api/apps/v1"
+	cloudnetworkv1 "github.com/openshift/api/cloudnetwork/v1"
+	configv1 "github.com/openshift/api/config/v1"
+	imagev1 "github.com/openshift/api/image/v1"
+	machinev1 "github.com/openshift/api/machine/v1"
+	networkv1 "github.com/openshift/api/network/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
+	projectv1 "github.com/openshift/api/project/v1"
+	quotav1 "github.com/openshift/api/quota/v1"
+	routev1 "github.com/openshift/api/route/v1"
+	samplesv1 "github.com/openshift/api/samples/v1"
 )
 
 func Test(t *testing.T) {
@@ -512,4 +525,204 @@ func (c *fakeClient) GetNamespace(_ context.Context, ns string, _ metav1.GetOpti
 			Code: http.StatusNotFound,
 		},
 	}
+}
+
+func (c *fakeClient) ListOpenshiftAPIRequestCounts(ctx context.Context, o metav1.ListOptions) (*apiserverv1.APIRequestCountList, error) {
+	return &apiserverv1.APIRequestCountList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftDeploymentConfigs(ctx context.Context, namespace string, o metav1.ListOptions) (*openshiftAppsv1.DeploymentConfigList, error) {
+	return &openshiftAppsv1.DeploymentConfigList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftAPIServers(ctx context.Context, o metav1.ListOptions) (*configv1.APIServerList, error) {
+	return &configv1.APIServerList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftBuilds(ctx context.Context, o metav1.ListOptions) (*configv1.BuildList, error) {
+	return &configv1.BuildList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftClusterOperators(ctx context.Context, o metav1.ListOptions) (*configv1.ClusterOperatorList, error) {
+	return &configv1.ClusterOperatorList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftClusterVersions(ctx context.Context, o metav1.ListOptions) (*configv1.ClusterVersionList, error) {
+	return &configv1.ClusterVersionList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftConfigConsoles(ctx context.Context, o metav1.ListOptions) (*configv1.ConsoleList, error) {
+	return &configv1.ConsoleList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftConfigDNSes(ctx context.Context, o metav1.ListOptions) (*configv1.DNSList, error) {
+	return &configv1.DNSList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftFeatureGates(ctx context.Context, o metav1.ListOptions) (*configv1.FeatureGateList, error) {
+	return &configv1.FeatureGateList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftConfigImages(ctx context.Context, o metav1.ListOptions) (*configv1.ImageList, error) {
+	return &configv1.ImageList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftInfrastructures(ctx context.Context, o metav1.ListOptions) (*configv1.InfrastructureList, error) {
+	return &configv1.InfrastructureList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftIngresses(ctx context.Context, o metav1.ListOptions) (*configv1.IngressList, error) {
+	return &configv1.IngressList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftConfigNetworks(ctx context.Context, o metav1.ListOptions) (*configv1.NetworkList, error) {
+	return &configv1.NetworkList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftNodes(ctx context.Context, o metav1.ListOptions) (*configv1.NodeList, error) {
+	return &configv1.NodeList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftOperatorHubs(ctx context.Context, o metav1.ListOptions) (*configv1.OperatorHubList, error) {
+	return &configv1.OperatorHubList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftConfigProjects(ctx context.Context, o metav1.ListOptions) (*configv1.ProjectList, error) {
+	return &configv1.ProjectList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftProxies(ctx context.Context, o metav1.ListOptions) (*configv1.ProxyList, error) {
+	return &configv1.ProxyList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftSchedulers(ctx context.Context, o metav1.ListOptions) (*configv1.SchedulerList, error) {
+	return &configv1.SchedulerList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftCloudPrivateIPConfigs(ctx context.Context, o metav1.ListOptions) (*cloudnetworkv1.CloudPrivateIPConfigList, error) {
+	return &cloudnetworkv1.CloudPrivateIPConfigList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftImages(ctx context.Context, o metav1.ListOptions) (*imagev1.ImageList, error) {
+	return &imagev1.ImageList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftControlPlaneMachineSets(ctx context.Context, namespace string, o metav1.ListOptions) (*machinev1.ControlPlaneMachineSetList, error) {
+	return &machinev1.ControlPlaneMachineSetList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftClusterNetworks(ctx context.Context, o metav1.ListOptions) (*networkv1.ClusterNetworkList, error) {
+	return &networkv1.ClusterNetworkList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftEgressNetworkPolicies(ctx context.Context, namespace string, o metav1.ListOptions) (*networkv1.EgressNetworkPolicyList, error) {
+	return &networkv1.EgressNetworkPolicyList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftHostSubnets(ctx context.Context, o metav1.ListOptions) (*networkv1.HostSubnetList, error) {
+	return &networkv1.HostSubnetList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftNetNamespaces(ctx context.Context, o metav1.ListOptions) (*networkv1.NetNamespaceList, error) {
+	return &networkv1.NetNamespaceList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftCSISnapshotControllers(ctx context.Context, o metav1.ListOptions) (*operatorv1.CSISnapshotControllerList, error) {
+	return &operatorv1.CSISnapshotControllerList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftCloudCredentials(ctx context.Context, o metav1.ListOptions) (*operatorv1.CloudCredentialList, error) {
+	return &operatorv1.CloudCredentialList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftClusterCSIDrivers(ctx context.Context, o metav1.ListOptions) (*operatorv1.ClusterCSIDriverList, error) {
+	return &operatorv1.ClusterCSIDriverList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftConfigs(ctx context.Context, o metav1.ListOptions) (*operatorv1.ConfigList, error) {
+	return &operatorv1.ConfigList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftConsoles(ctx context.Context, o metav1.ListOptions) (*operatorv1.ConsoleList, error) {
+	return &operatorv1.ConsoleList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftDNSes(ctx context.Context, o metav1.ListOptions) (*operatorv1.DNSList, error) {
+	return &operatorv1.DNSList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftEtcds(ctx context.Context, o metav1.ListOptions) (*operatorv1.EtcdList, error) {
+	return &operatorv1.EtcdList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftIngressControllers(ctx context.Context, namespace string, o metav1.ListOptions) (*operatorv1.IngressControllerList, error) {
+	return &operatorv1.IngressControllerList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftInsightsOperators(ctx context.Context, o metav1.ListOptions) (*operatorv1.InsightsOperatorList, error) {
+	return &operatorv1.InsightsOperatorList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftKubeAPIServers(ctx context.Context, o metav1.ListOptions) (*operatorv1.KubeAPIServerList, error) {
+	return &operatorv1.KubeAPIServerList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftKubeControllerManagers(ctx context.Context, o metav1.ListOptions) (*operatorv1.KubeControllerManagerList, error) {
+	return &operatorv1.KubeControllerManagerList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftKubeSchedulers(ctx context.Context, o metav1.ListOptions) (*operatorv1.KubeSchedulerList, error) {
+	return &operatorv1.KubeSchedulerList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftKubeStorageVersionMigrators(ctx context.Context, o metav1.ListOptions) (*operatorv1.KubeStorageVersionMigratorList, error) {
+	return &operatorv1.KubeStorageVersionMigratorList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftNetworks(ctx context.Context, o metav1.ListOptions) (*operatorv1.NetworkList, error) {
+	return &operatorv1.NetworkList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftOperatorAPIServers(ctx context.Context, o metav1.ListOptions) (*operatorv1.OpenShiftAPIServerList, error) {
+	return &operatorv1.OpenShiftAPIServerList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftOperatorControllerManagers(ctx context.Context, o metav1.ListOptions) (*operatorv1.OpenShiftControllerManagerList, error) {
+	return &operatorv1.OpenShiftControllerManagerList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftServiceCAs(ctx context.Context, o metav1.ListOptions) (*operatorv1.ServiceCAList, error) {
+	return &operatorv1.ServiceCAList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftServiceCatalogAPIServers(ctx context.Context, o metav1.ListOptions) (*operatorv1.ServiceCatalogAPIServerList, error) {
+	return &operatorv1.ServiceCatalogAPIServerList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftServiceCatalogControllerManagers(ctx context.Context, o metav1.ListOptions) (*operatorv1.ServiceCatalogControllerManagerList, error) {
+	return &operatorv1.ServiceCatalogControllerManagerList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftStorages(ctx context.Context, o metav1.ListOptions) (*operatorv1.StorageList, error) {
+	return &operatorv1.StorageList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftProjects(ctx context.Context, o metav1.ListOptions) (*projectv1.ProjectList, error) {
+	return &projectv1.ProjectList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftAppliedClusterResourceQuotas(ctx context.Context, namespace string, o metav1.ListOptions) (*quotav1.AppliedClusterResourceQuotaList, error) {
+	return &quotav1.AppliedClusterResourceQuotaList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftClusterResourceQuotas(ctx context.Context, o metav1.ListOptions) (*quotav1.ClusterResourceQuotaList, error) {
+	return &quotav1.ClusterResourceQuotaList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftRoutes(ctx context.Context, namespace string, o metav1.ListOptions) (*routev1.RouteList, error) {
+	return &routev1.RouteList{}, nil
+}
+
+func (c *fakeClient) ListOpenshiftSampleConfigs(ctx context.Context, o metav1.ListOptions) (*samplesv1.ConfigList, error) {
+	return &samplesv1.ConfigList{}, nil
 }
