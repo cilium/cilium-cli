@@ -15,14 +15,14 @@ require (
 	github.com/cilium/cilium v1.14.0-snapshot.0.0.20230320204036-914de5793c1b
 	github.com/cilium/hubble v0.11.1
 	github.com/cilium/proxy v0.0.0-20230224085913-505865fff55a
-	github.com/cilium/tetragon/pkg/k8s v0.0.0-20230328153651-1931d946da7c
+	github.com/cilium/tetragon/pkg/k8s v0.0.0-20230404142504-55664278b779
 	github.com/cilium/workerpool v1.2.0
 	github.com/cloudflare/cfssl v1.6.3
 	github.com/go-openapi/strfmt v0.21.7
 	github.com/google/gops v0.3.27
 	github.com/mholt/archiver/v3 v3.5.1
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
-	github.com/spf13/cobra v1.6.1
+	github.com/spf13/cobra v1.7.0
 	github.com/spf13/pflag v1.0.6-0.20200504143853-81378bbcd8a1
 	golang.org/x/exp v0.0.0-20230315142452-642cacee5cc0
 	golang.org/x/mod v0.9.0
@@ -123,7 +123,7 @@ require (
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/huandu/xstrings v1.4.0 // indirect
 	github.com/imdario/mergo v0.3.13 // indirect
-	github.com/inconshreveable/mousetrap v1.0.1 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jhump/protoreflect v1.8.2 // indirect
 	github.com/jmoiron/sqlx v1.3.5 // indirect
 	github.com/jonboulle/clockwork v0.2.2 // indirect
