@@ -213,10 +213,10 @@ cilium upgrade --version %s
 	cmd.Flags().StringVar(&params.Version, "version", defaults.Version, "Cilium version to install")
 	cmd.Flags().BoolVar(&params.Wait, "wait", true, "Wait for status to report success (no errors)")
 	cmd.Flags().DurationVar(&params.WaitDuration, "wait-duration", defaults.StatusWaitDuration, "Maximum time to wait for status")
-	cmd.Flags().StringVar(&params.HelmChartDirectory, "chart-directory", "", "Helm chart directory")
 	cmd.Flags().StringVar(&params.AgentImage, "agent-image", "", "Image path to use for Cilium agent")
 	cmd.Flags().StringVar(&params.OperatorImage, "operator-image", "", "Image path to use for Cilium operator")
 	cmd.Flags().StringVar(&params.RelayImage, "hubble-relay-image", "", "Image path to use for Hubble Relay")
+	cmd.Flags().StringVar(&params.HelmChartDirectory, "chart-directory", "", "Helm chart directory")
 	cmd.Flags().StringVar(&params.ClusterMeshAPIImage, "clustermesh-apiserver-image", "", "Image path to use for cluster mesh API server")
 
 	return cmd
