@@ -228,8 +228,8 @@ jobs:
 
     env:
       CILIUM_CLI_MODE: helm
-      KIND_CONFIG_1: .github/kind-config-h1.yaml
-      KIND_CONFIG_2: .github/kind-config-h2.yaml
+      KIND_CONFIG_1: .github/kind-config-1.yaml
+      KIND_CONFIG_2: .github/kind-config-2.yaml
       CLUSTER1: kind-c1
       CLUSTER2: kind-c2
 
