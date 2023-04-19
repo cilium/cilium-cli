@@ -264,7 +264,7 @@ jobs:
             sudo cat /root/.kube/config | wc -l
             sudo cat /root/.kube/config | grep name:
           fi
-          if [[ -f /root/.kube/config ]]; then
+          if [[ -f ~/.kube/config ]]; then
             cat ~/.kube/config | wc -l
             cat ~/.kube/config | grep name:
           fi
@@ -281,7 +281,7 @@ jobs:
             sudo cat /root/.kube/config | wc -l
             sudo cat /root/.kube/config | grep name:
           fi
-          if [[ -f /root/.kube/config ]]; then
+          if [[ -f ~/.kube/config ]]; then
             cat ~/.kube/config | wc -l
             cat ~/.kube/config | grep name:
           fi
