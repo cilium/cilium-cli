@@ -260,10 +260,14 @@ jobs:
 
       - name: Test kubeconfig before
         run: |
-          sudo cat /root/.kube/config | wc -l
-          sudo cat /root/.kube/config | grep name:
-          cat ~/.kube/config | wc -l
-          cat ~/.kube/config | grep name:
+          if [[ -f /root/.kube/config ]]; then
+            sudo cat /root/.kube/config | wc -l
+            sudo cat /root/.kube/config | grep name:
+          fi
+          if [[ -f /root/.kube/config ]]; then
+            cat ~/.kube/config | wc -l
+            cat ~/.kube/config | grep name:
+          fi
 
       - name: Create kind cluster 1
         uses: helm/kind-action@d8ccf8fb623ce1bb360ae2f45f323d9d5c5e9f00
@@ -273,10 +277,14 @@ jobs:
 
       - name: Test kubeconfig after
         run: |
-          sudo cat /root/.kube/config | wc -l
-          sudo cat /root/.kube/config | grep name:
-          cat ~/.kube/config | wc -l
-          cat ~/.kube/config | grep name:
+          if [[ -f /root/.kube/config ]]; then
+            sudo cat /root/.kube/config | wc -l
+            sudo cat /root/.kube/config | grep name:
+          fi
+          if [[ -f /root/.kube/config ]]; then
+            cat ~/.kube/config | wc -l
+            cat ~/.kube/config | grep name:
+          fi
 
       - name: Install Cilium on cluster 1
         run: |
