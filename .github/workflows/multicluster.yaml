@@ -45,10 +45,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
 
+      # Note: These names currently approach the GKE limit of 40 characters
       - name: Set cluster names
         run: |
-          echo "clusterName1=${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-${{ matrix.mode }}-mesh-1" >> $GITHUB_ENV
-          echo "clusterName2=${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-${{ matrix.mode }}-mesh-2" >> $GITHUB_ENV
+          echo "clusterName1=${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-${{ matrix.mode }}-1" >> $GITHUB_ENV
+          echo "clusterName2=${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-${{ matrix.mode }}-2" >> $GITHUB_ENV
 
       - name: Install kubectl
         run: |
