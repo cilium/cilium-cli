@@ -29,7 +29,14 @@ cilium install \
   --helm-set cluster.id=2 \
   --helm-set bpf.monitorAggregation=none \
   --helm-set ipv4NativeRoutingCIDR=10.0.0.0/9 \
-  --inherit-ca "${CONTEXT1}"
+
+# Copy the CA cert from cluster1 to cluster2
+kubectl --context ${CONTEXT2} delete secret -n kube-system cilium-ca
+kubectl --context ${CONTEXT1} get secrets -n kube-system cilium-ca -oyaml \
+  | kubectl --context ${CONTEXT2} apply -f -
+
+# Restart Cilium on cluster 2
+kubectl --context ${CONTEXT2} delete pod -l app.kubernetes.io/part-of=cilium -A
 
 # Enable Relay
 cilium --context "${CONTEXT1}" hubble enable
@@ -47,6 +54,17 @@ cilium --context "${CONTEXT2}" clustermesh enable
 # Wait for cluster mesh status to be ready
 cilium --context "${CONTEXT1}" clustermesh status --wait
 cilium --context "${CONTEXT2}" clustermesh status --wait
+
+# Copy the clustermesh secrets
+# TODO(ajs): Patch the connect command to expect the Helm secret name
+kubectl get secrets --context ${CONTEXT1} \
+  -n kube-system clustermesh-apiserver-remote-cert -oyaml \
+  | sed 's/name: .*/name: clustermesh-apiserver-client-cert/' \
+  | kubectl apply --context ${CONTEXT1} -f -
+kubectl get secrets --context ${CONTEXT2} \
+  -n kube-system clustermesh-apiserver-remote-cert -oyaml \
+  | sed 's/name: .*/name: clustermesh-apiserver-client-cert/' \
+  | kubectl apply --context ${CONTEXT2} -f -
 
 # Connect clusters
 cilium --context "${CONTEXT1}" clustermesh connect --destination-context "${CONTEXT2}"

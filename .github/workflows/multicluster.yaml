@@ -26,8 +26,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  clusterName1: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-mesh-1
-  clusterName2: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-mesh-2
   clusterNameBase: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-mesh
   zone: us-west2-a
   firewallRuleName: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-rule
@@ -40,9 +38,17 @@ jobs:
     if: ${{ github.repository == 'cilium/cilium-cli' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 45
+    strategy:
+      matrix:
+        mode: ["classic", "helm"]
     steps:
       - name: Checkout
         uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
+
+      - name: Set cluster names
+        run: |
+          echo "clusterName1=${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-${{ matrix.mode }}-mesh-1" >> $GITHUB_ENV
+          echo "clusterName2=${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-${{ matrix.mode }}-mesh-2" >> $GITHUB_ENV
 
       - name: Install kubectl
         run: |
@@ -168,6 +174,7 @@ jobs:
             --set test_script_cm=cilium-cli-test-script \
             --set cluster_name_1=${{ env.clusterName1 }} \
             --set cluster_name_2=${{ env.clusterName2 }} \
+            --set cilium_cli_mode=${{ matrix.mode }}
 
       - name: Wait for test job
         env:
