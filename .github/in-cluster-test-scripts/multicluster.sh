@@ -51,13 +51,9 @@ cilium --context "${CONTEXT2}" status --wait
 cilium --context "${CONTEXT1}" clustermesh enable
 cilium --context "${CONTEXT2}" clustermesh enable
 
-# Wait for cluster mesh status to be ready
-cilium --context "${CONTEXT1}" clustermesh status --wait
-cilium --context "${CONTEXT2}" clustermesh status --wait
-
 # Copy the clustermesh secrets
 # TODO(ajs): Patch the connect command to expect the Helm secret name
-echo "(asauber): CILIUM_CLI_MODE: $CILIUM_CLI_MODE"
+echo "CILIUM_CLI_MODE: $CILIUM_CLI_MODE"
 if [ "$CILIUM_CLI_MODE" == "helm" ]; then
   kubectl get secrets --context ${CONTEXT1} \
     -n kube-system clustermesh-apiserver-remote-cert -oyaml \
@@ -68,6 +64,10 @@ if [ "$CILIUM_CLI_MODE" == "helm" ]; then
     | sed 's/name: .*/name: clustermesh-apiserver-client-cert/' \
     | kubectl apply --context ${CONTEXT2} -f -
 fi
+
+# Wait for cluster mesh status to be ready
+cilium --context "${CONTEXT1}" clustermesh status --wait
+cilium --context "${CONTEXT2}" clustermesh status --wait
 
 # Connect clusters
 cilium --context "${CONTEXT1}" clustermesh connect --destination-context "${CONTEXT2}"
