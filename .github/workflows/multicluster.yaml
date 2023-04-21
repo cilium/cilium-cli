@@ -26,9 +26,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  clusterNameBase: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-mesh
   zone: us-west2-a
-  firewallRuleName: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-rule
   cilium_version: v1.13.2
   kubectl_version: v1.23.6
   USE_GKE_GCLOUD_AUTH_PLUGIN: True
@@ -45,11 +43,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
 
-      # Note: These names currently approach the GKE limit of 40 characters
-      - name: Set cluster names
+      # Note: These names currently approach the limit of 40 characters
+      - name: Set mode-specific names
         run: |
+          echo "clusterNameBase=${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-${{ matrix.mode }}" >> $GITHUB_ENV
           echo "clusterName1=${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-${{ matrix.mode }}-1" >> $GITHUB_ENV
           echo "clusterName2=${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-${{ matrix.mode }}-2" >> $GITHUB_ENV
+          echo "firewallRuleName=${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-${{ matrix.mode}}" >> $GITHUB_ENV
 
       - name: Install kubectl
         run: |
