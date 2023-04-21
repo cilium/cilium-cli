@@ -37,6 +37,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     strategy:
+      fail-fast: false
       matrix:
         mode: ["classic", "helm"]
     steps:
