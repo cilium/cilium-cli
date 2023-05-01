@@ -136,8 +136,6 @@ func newCmdConnectivityTest() *cobra.Command {
 	cmd.Flags().StringSliceVar(&params.ExternalFromCIDRs, "external-from-cidrs", []string{}, "CIDRs representing nodes without Cilium to be used in connectivity tests")
 	cmd.Flags().BoolVar(&params.SkipIPCacheCheck, "skip-ip-cache-check", true, "Skip IPCache check")
 	cmd.Flags().MarkHidden("skip-ip-cache-check")
-	cmd.Flags().BoolVar(&params.Datapath, "datapath", false, "Run datapath conformance tests")
-	cmd.Flags().MarkHidden("datapath")
 
 	cmd.Flags().StringVar(&params.K8sVersion, "k8s-version", "", "Kubernetes server version in case auto-detection fails")
 	cmd.Flags().StringVar(&params.HelmChartDirectory, "chart-directory", "", "Helm chart directory")

@@ -188,28 +188,6 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 		return ct.Run(ctx)
 	}
 
-	// Datapath Conformance Tests
-	if ct.Params().Datapath {
-		ct.NewTest("north-south-loadbalancing").
-			WithFeatureRequirements(check.RequireFeatureEnabled(check.FeatureNodeWithoutCilium)).
-			WithScenarios(
-				tests.OutsideToNodePort(),
-			)
-		ct.NewTest("pod-to-pod-encryption").
-			WithFeatureRequirements(check.RequireFeatureEnabled(check.FeatureEncryptionPod)).
-			WithScenarios(
-				tests.PodToPodEncryption(),
-			)
-		ct.NewTest("node-to-node-encryption").
-			WithFeatureRequirements(check.RequireFeatureEnabled(check.FeatureEncryptionPod),
-				check.RequireFeatureEnabled(check.FeatureEncryptionNode)).
-			WithScenarios(
-				tests.NodeToNodeEncryption(),
-			)
-
-		return ct.Run(ctx)
-	}
-
 	// Run all tests without any policies in place.
 	noPoliciesScenarios := []check.Scenario{
 		tests.PodToPod(),
@@ -650,6 +628,23 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 		WithFeatureRequirements(check.RequireFeatureEnabled(check.FeatureHealthChecking)).
 		WithScenarios(tests.CiliumHealth())
 
+	ct.NewTest("north-south-loadbalancing").
+		WithFeatureRequirements(check.RequireFeatureEnabled(check.FeatureNodeWithoutCilium)).
+		WithScenarios(
+			tests.OutsideToNodePort(),
+		)
+	ct.NewTest("pod-to-pod-encryption").
+		WithFeatureRequirements(check.RequireFeatureEnabled(check.FeatureEncryptionPod)).
+		WithScenarios(
+			tests.PodToPodEncryption(),
+		)
+	ct.NewTest("node-to-node-encryption").
+		WithFeatureRequirements(check.RequireFeatureEnabled(check.FeatureEncryptionPod),
+			check.RequireFeatureEnabled(check.FeatureEncryptionNode)).
+		WithScenarios(
+			tests.NodeToNodeEncryption(),
+		)
+
 	// The following tests have DNS redirect policies. They should be executed last.
 
 	// Test L7 HTTP introspection using an ingress policy on echo pods.
@@ -893,7 +888,7 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 			return check.ResultDropCurlTimeout, check.ResultNone
 		})
 
-	// This policy only allows port 80 to domain-name, default one.one.one.one,. DNS proxy enabled.
+		// This policy only allows port 80 to domain-name, default one.one.one.one,. DNS proxy enabled.
 	ct.NewTest("to-fqdns").WithCiliumPolicy(renderedTemplates["clientEgressToFQDNsCiliumIOPolicyYAML"]).
 		WithFeatureRequirements(check.RequireFeatureEnabled(check.FeatureL7Proxy)).
 		WithScenarios(
@@ -933,7 +928,8 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 		})
 
 	// Tests with DNS redirects to the proxy (e.g., client-egress-l7, dns-only,
-	// and to-fqdns) should always be executed last. See #367 for details.
+	// and to-fqdns) should always be executed last. See #367 and
+	// https://github.com/cilium/cilium/issues/17459 for details.
 
 	return ct.Run(ctx)
 }
