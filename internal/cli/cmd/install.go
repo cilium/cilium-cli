@@ -79,7 +79,6 @@ cilium install --context kind-cluster1 --cluster-id 1 --cluster-name cluster1
 	cmd.Flags().StringVar(&params.KubeProxyReplacement, "kube-proxy-replacement", "disabled", "Enable/disable kube-proxy replacement { disabled | partial | strict }")
 	cmd.Flags().MarkDeprecated("kube-proxy-replacement", "This can now be overridden via `helm-set` (Helm value: `kubeProxyReplacement`).")
 	cmd.Flags().BoolVar(&params.RestartUnmanagedPods, "restart-unmanaged-pods", true, "Restart pods which are not being managed by Cilium")
-	cmd.Flags().StringVar(&params.Encryption, "encryption", "disabled", "Enable encryption of all workloads traffic { disabled | ipsec | wireguard }")
 	// It can be deprecated since we have a helm option for it
 	cmd.Flags().BoolVar(&params.NodeEncryption, "node-encryption", false, "Enable encryption of all node to node traffic")
 	// It can be deprecated since we have a helm option for it
@@ -231,6 +230,7 @@ func addCommonInstallFlags(cmd *cobra.Command, params *install.Parameters) {
 	cmd.Flags().StringVar(&params.DatapathMode, "datapath-mode", "", "Datapath mode to use { tunnel | aws-eni | gke | azure | aks-byocni } (default: autodetected).")
 	cmd.Flags().BoolVar(&params.ListVersions, "list-versions", false, "List all the available versions without actually installing")
 	cmd.Flags().StringSliceVar(&params.NodesWithoutCilium, "nodes-without-cilium", []string{}, "List of node names on which Cilium will not be installed. In Helm installation mode, it's assumed that the no-schedule node labels are present and that the infastructure has set up routing on these nodes to provide connectivity within the Cilium cluster.")
+	cmd.Flags().StringVar(&params.Encryption, "encryption", "disabled", "Enable encryption of all workloads traffic { disabled | ipsec | wireguard }")
 }
 
 // addCommonUninstallFlags adds uninstall command flags that are shared between classic and helm mode.

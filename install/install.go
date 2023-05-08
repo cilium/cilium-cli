@@ -659,6 +659,14 @@ func (k *K8sInstaller) preinstall(ctx context.Context) error {
 			}
 		}
 	}
+
+	if k.params.Encryption == encryptionIPsec {
+		// TODO(aanm) automate this as well in form of helm chart
+		if err := k.createEncryptionSecret(ctx); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -809,13 +817,6 @@ func (k *K8sInstaller) Install(ctx context.Context) error {
 			k.Log("Cannot delete %s ClusterRoleBinding: %s", defaults.OperatorClusterRoleName, err)
 		}
 	})
-
-	if k.params.Encryption == encryptionIPsec {
-		// TODO(aanm) automate this as well in form of helm chart
-		if err := k.createEncryptionSecret(ctx); err != nil {
-			return err
-		}
-	}
 
 	ingressClass := k.generateIngressClass()
 	if ingressClass != nil {
