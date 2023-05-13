@@ -1871,7 +1871,7 @@ func DisableWithHelm(ctx context.Context, k8sClient *k8s.Client, params Paramete
 		"clustermesh.useAPIServer=false",
 		"externalWorkloads.enabled=false",
 	}
-	vals, err := helm.ParseVals(helmStrValues)
+	vals, err := helm.ParseStrVals(helmStrValues)
 	if err != nil {
 		return err
 	}
@@ -1884,4 +1884,95 @@ func DisableWithHelm(ctx context.Context, k8sClient *k8s.Client, params Paramete
 	}
 	_, err = helm.Upgrade(ctx, k8sClient.RESTClientGetter, upgradeParams)
 	return err
+}
+
+func (k *K8sClusterMesh) ConnectWithHelm(ctx context.Context) error {
+	remoteCluster, err := k8s.NewClient(k.params.DestinationContext, "")
+	if err != nil {
+		return fmt.Errorf("unable to create Kubernetes client to access remote cluster %q: %w", k.params.DestinationContext, err)
+	}
+
+	aiRemote, err := k.extractAccessInformation(ctx, remoteCluster, k.params.DestinationEndpoints, true, false)
+	if err != nil {
+		k.Log("❌ Unable to retrieve access information of remote cluster %q: %s", remoteCluster.ClusterName(), err)
+		return err
+	}
+
+	if !aiRemote.validate() {
+		return fmt.Errorf("remote cluster has non-unique name (%s) and/or ID (%s)", aiRemote.ClusterName, aiRemote.ClusterID)
+	}
+
+	aiLocal, err := k.extractAccessInformation(ctx, k.client, k.params.SourceEndpoints, true, false)
+	if err != nil {
+		k.Log("❌ Unable to retrieve access information of local cluster %q: %s", k.client.ClusterName(), err)
+		return err
+	}
+
+	if !aiLocal.validate() {
+		return fmt.Errorf("local cluster has the default name (cluster name: %s) and/or ID 0 (cluster ID: %s)",
+			aiLocal.ClusterName, aiLocal.ClusterID)
+	}
+
+	cid, err := strconv.Atoi(aiRemote.ClusterID)
+	if err != nil {
+		return fmt.Errorf("remote cluster has non-numeric cluster ID %s. Only numeric values 1-255 are allowed", aiRemote.ClusterID)
+	}
+	if cid < 1 || cid > 255 {
+		return fmt.Errorf("remote cluster has cluster ID %d out of acceptable range (1-255)", cid)
+	}
+
+	if aiRemote.ClusterName == aiLocal.ClusterName {
+		return fmt.Errorf("remote and local cluster have the same, non-unique name: %s", aiLocal.ClusterName)
+	}
+
+	if aiRemote.ClusterID == aiLocal.ClusterID {
+		return fmt.Errorf("remote and local cluster have the same, non-unique ID: %s", aiLocal.ClusterID)
+	}
+
+	// TODO (ajs): Support more than two clusters (dynamically append to config)
+	helmValues := map[string]interface{}{
+		"clustermesh": map[string]interface{}{
+			"config": map[string]interface{}{
+				"enabled": true,
+				"clusters": []map[string]interface{}{
+					map[string]interface{}{
+						"name": aiLocal.ClusterName,
+						// TODO (ajs): Support hostname-based endpoints
+						//   include logic from patchConfig
+						"ips":  []string{aiLocal.ServiceIPs[0]},
+						"port": aiLocal.ServicePort,
+					},
+					map[string]interface{}{
+						"name": aiRemote.ClusterName,
+						"ips":  []string{aiRemote.ServiceIPs[0]},
+						"port": aiRemote.ServicePort,
+					},
+				},
+			},
+		},
+	}
+
+	// Enable clustermesh using a Helm Upgrade command
+	upgradeParams := helm.UpgradeParameters{
+		Namespace:   k.params.Namespace,
+		Name:        defaults.HelmReleaseName,
+		Values:      helmValues,
+		ResetValues: false,
+		ReuseValues: true,
+	}
+
+	// TODO (ajs): After classic mode removal, use a k8s.Client for k.client
+	_, err = helm.Upgrade(ctx, k.client.(*k8s.Client).RESTClientGetter, upgradeParams)
+	if err != nil {
+		return err
+	}
+
+	// TODO (ajs): After classic mode removal, use a k8s.Client for k.client
+	_, err = helm.Upgrade(ctx, remoteCluster.RESTClientGetter, upgradeParams)
+	if err != nil {
+		return err
+	}
+
+	k.Log("✅ Connected cluster %s and %s!", k.client.ClusterName(), remoteCluster.ClusterName())
+	return nil
 }

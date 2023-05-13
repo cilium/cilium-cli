@@ -27,7 +27,6 @@ func newCmdClusterMesh() *cobra.Command {
 	}
 
 	cmd.AddCommand(
-		newCmdClusterMeshConnect(),
 		newCmdClusterMeshDisconnect(),
 		newCmdClusterMeshStatus(),
 		newCmdClusterMeshExternalWorkload(),
@@ -35,11 +34,13 @@ func newCmdClusterMesh() *cobra.Command {
 
 	if utils.IsInHelmMode() {
 		cmd.AddCommand(
+			newCmdClusterMeshConnectWithHelm(),
 			newCmdClusterMeshEnableWithHelm(),
 			newCmdClusterMeshDisableWithHelm(),
 		)
 	} else {
 		cmd.AddCommand(
+			newCmdClusterMeshConnect(),
 			newCmdClusterMeshEnable(),
 			newCmdClusterMeshDisable(),
 		)
@@ -391,6 +392,32 @@ func newCmdClusterMeshDisableWithHelm() *cobra.Command {
 			return nil
 		},
 	}
+
+	return cmd
+}
+
+func newCmdClusterMeshConnectWithHelm() *cobra.Command {
+	var params = clustermesh.Parameters{
+		Writer: os.Stdout,
+	}
+
+	cmd := &cobra.Command{
+		Use:   "connect",
+		Short: "Connect to a remote cluster using Helm",
+		Long:  ``,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			params.Namespace = namespace
+			cm := clustermesh.NewK8sClusterMesh(k8sClient, params)
+			if err := cm.ConnectWithHelm(context.Background()); err != nil {
+				fatalf("Unable to connect cluster: %s", err)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&params.DestinationContext, "destination-context", "", "Kubernetes configuration context of destination cluster")
+	cmd.Flags().StringSliceVar(&params.DestinationEndpoints, "destination-endpoint", []string{}, "IP of ClusterMesh service of destination cluster")
+	cmd.Flags().StringSliceVar(&params.SourceEndpoints, "source-endpoint", []string{}, "IP of ClusterMesh service of source cluster")
 
 	return cmd
 }

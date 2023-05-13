@@ -374,11 +374,11 @@ func MergeVals(
 	return vals, nil
 }
 
-// ParseVals takes a slice of Helm values of the form
+// ParseStrVals takes a slice of Helm values of the form
 // ["some.chart.value=val1", "some.other.value=val2"]
 // and returns a deeply nested map of Values of the form
 // expected by Helm actions.
-func ParseVals(helmStrValues []string) (map[string]interface{}, error) {
+func ParseStrVals(helmStrValues []string) (map[string]interface{}, error) {
 	helmValStr := strings.Join(helmStrValues, ",")
 	helmValues := map[string]interface{}{}
 	err := strvals.ParseInto(helmValStr, helmValues)
