@@ -1929,20 +1929,61 @@ func (k *K8sClusterMesh) ConnectWithHelm(ctx context.Context) error {
 		return fmt.Errorf("remote and local cluster have the same, non-unique ID: %s", aiLocal.ClusterID)
 	}
 
-	// TODO (ajs): Support more than two clusters (dynamically append to config)
-	helmValues := map[string]interface{}{
+	helmValuesLocal := genClusterMeshConfig(aiLocal, aiRemote)
+	// We need a deep copy of these Helm values because `helm.Upgrade` mutates them!
+	helmValuesRemote := genClusterMeshConfig(aiRemote, aiLocal)
+
+	// TODO (ajs): Support hostname-based endpoints via --helm-values override
+	//   Using the Helm value `extraDnsNames` should work as-is.
+	//   This can be useful for LoadBalancer reachability.
+
+	// Enable clustermesh using a Helm Upgrade command
+	upgradeParams := helm.UpgradeParameters{
+		Namespace:   k.params.Namespace,
+		Name:        defaults.HelmReleaseName,
+		Values:      helmValuesLocal,
+		ResetValues: false,
+		ReuseValues: true,
+	}
+
+	// TODO (ajs): After classic mode removal, use a k8s.Client for this k.client
+	_, err = helm.Upgrade(ctx, k.client.(*k8s.Client).RESTClientGetter, upgradeParams)
+	if err != nil {
+		return err
+	}
+
+	upgradeParams.Values = helmValuesRemote
+	_, err = helm.Upgrade(ctx, remoteCluster.RESTClientGetter, upgradeParams)
+	if err != nil {
+		return err
+	}
+
+	k.Log("✅ Connected cluster %s and %s!", k.client.ClusterName(), remoteCluster.ClusterName())
+	return nil
+}
+
+func genClusterMeshConfig(aiLocal, aiRemote *accessInformation) map[string]interface{} {
+	// TODO (ajs): Support more than two clusters
+	return map[string]interface{}{
 		"clustermesh": map[string]interface{}{
+			"apiserver": map[string]interface{}{
+				"tls": map[string]interface{}{
+					"auto": map[string]interface{}{
+						"enabled":  true,
+						"method":   "cronJob",
+						"schedule": "0 0 1 */4 *",
+					},
+				},
+			},
 			"config": map[string]interface{}{
 				"enabled": true,
 				"clusters": []map[string]interface{}{
-					map[string]interface{}{
+					{
 						"name": aiLocal.ClusterName,
-						// TODO (ajs): Support hostname-based endpoints
-						//   include logic from patchConfig
 						"ips":  []string{aiLocal.ServiceIPs[0]},
 						"port": aiLocal.ServicePort,
 					},
-					map[string]interface{}{
+					{
 						"name": aiRemote.ClusterName,
 						"ips":  []string{aiRemote.ServiceIPs[0]},
 						"port": aiRemote.ServicePort,
@@ -1951,28 +1992,4 @@ func (k *K8sClusterMesh) ConnectWithHelm(ctx context.Context) error {
 			},
 		},
 	}
-
-	// Enable clustermesh using a Helm Upgrade command
-	upgradeParams := helm.UpgradeParameters{
-		Namespace:   k.params.Namespace,
-		Name:        defaults.HelmReleaseName,
-		Values:      helmValues,
-		ResetValues: false,
-		ReuseValues: true,
-	}
-
-	// TODO (ajs): After classic mode removal, use a k8s.Client for k.client
-	_, err = helm.Upgrade(ctx, k.client.(*k8s.Client).RESTClientGetter, upgradeParams)
-	if err != nil {
-		return err
-	}
-
-	// TODO (ajs): After classic mode removal, use a k8s.Client for k.client
-	_, err = helm.Upgrade(ctx, remoteCluster.RESTClientGetter, upgradeParams)
-	if err != nil {
-		return err
-	}
-
-	k.Log("✅ Connected cluster %s and %s!", k.client.ClusterName(), remoteCluster.ClusterName())
-	return nil
 }
