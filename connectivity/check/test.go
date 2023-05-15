@@ -655,3 +655,11 @@ func (t *Test) ForEachIPFamily(do func(IPFamily)) {
 func (t *Test) CertificateCAs() map[string][]byte {
 	return t.certificateCAs
 }
+
+func (t *Test) CiliumNetworkPolicies() map[string]*ciliumv2.CiliumNetworkPolicy {
+	return t.cnps
+}
+
+func (t *Test) KubernetesNetworkPolicies() map[string]*networkingv1.NetworkPolicy {
+	return t.knps
+}
