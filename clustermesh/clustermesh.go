@@ -1886,7 +1886,27 @@ func DisableWithHelm(ctx context.Context, k8sClient *k8s.Client, params Paramete
 	return err
 }
 
+// ConnectWithHelm enables clustermesh using a Helm Upgrade action Certificates are generated via
+// the Helm chart's cronJob (certgen) mode As with classic mode, only autodetected IP-based
+// clustermesh-apiserver Service endpoints are currently supported.
 func (k *K8sClusterMesh) ConnectWithHelm(ctx context.Context) error {
+	v, err := k.client.GetRunningCiliumVersion(ctx, k.params.Namespace)
+	if err != nil {
+		return err
+	}
+	ciliumVer, err := utils.ParseCiliumVersion(v)
+	if err != nil {
+		k.Log("⚠️ Failed to parse Cilium version %s: %w. "+
+			"1.14+ is assumed. Continuing with Helm-mode", v, err)
+	} else {
+		if ciliumVer.LT(versioncheck.MustVersion("1.14.0")) {
+			// Helm-based clustermesh enable is only supported on Cilium v1.14+ due to
+			// a lack of support for autoconfigured certificates (tls.{crt,key}) for cluster
+			// members when running in certgen-based PKI mode
+			return k.Connect(ctx)
+		}
+	}
+
 	remoteCluster, err := k8s.NewClient(k.params.DestinationContext, "")
 	if err != nil {
 		return fmt.Errorf("unable to create Kubernetes client to access remote cluster %q: %w", k.params.DestinationContext, err)
