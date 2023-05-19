@@ -121,9 +121,7 @@ func newCmdClusterMeshConnect() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&params.DestinationContext, "destination-context", "", "Kubernetes configuration context of destination cluster")
-	cmd.Flags().StringSliceVar(&params.DestinationEndpoints, "destination-endpoint", []string{}, "IP of ClusterMesh service of destination cluster")
-	cmd.Flags().StringSliceVar(&params.SourceEndpoints, "source-endpoint", []string{}, "IP of ClusterMesh service of source cluster")
+	addCommonConnectFlags(cmd, &params)
 
 	return cmd
 }
@@ -415,9 +413,13 @@ func newCmdClusterMeshConnectWithHelm() *cobra.Command {
 		},
 	}
 
+	addCommonConnectFlags(cmd, &params)
+
+	return cmd
+}
+
+func addCommonConnectFlags(cmd *cobra.Command, params *clustermesh.Parameters) {
 	cmd.Flags().StringVar(&params.DestinationContext, "destination-context", "", "Kubernetes configuration context of destination cluster")
 	cmd.Flags().StringSliceVar(&params.DestinationEndpoints, "destination-endpoint", []string{}, "IP of ClusterMesh service of destination cluster")
 	cmd.Flags().StringSliceVar(&params.SourceEndpoints, "source-endpoint", []string{}, "IP of ClusterMesh service of source cluster")
-
-	return cmd
 }
