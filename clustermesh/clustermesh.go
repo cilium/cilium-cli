@@ -1757,7 +1757,7 @@ func (k *K8sClusterMesh) ExternalWorkloadStatus(ctx context.Context, names []str
 		}
 		cews = cewList.Items
 		if len(cews) == 0 {
-			k.Log("⚠️  No external workloads found.")
+			k.Log("⚠️ No external workloads found.")
 			return nil
 		}
 	} else {
@@ -1886,25 +1886,39 @@ func DisableWithHelm(ctx context.Context, k8sClient *k8s.Client, params Paramete
 	return err
 }
 
+func (k *K8sClusterMesh) GetReleaseVersion() (string, error) {
+	client := k.client.(*k8s.Client).RESTClientGetter
+	release, err := helm.GetCurrentRelease(client, k.params.Namespace, defaults.HelmReleaseName)
+	if err != nil {
+		return "", err
+	}
+	return release.Chart.AppVersion(), nil
+}
+
 // ConnectWithHelm enables clustermesh using a Helm Upgrade action Certificates are generated via
 // the Helm chart's cronJob (certgen) mode As with classic mode, only autodetected IP-based
 // clustermesh-apiserver Service endpoints are currently supported.
 func (k *K8sClusterMesh) ConnectWithHelm(ctx context.Context) error {
-	v, err := k.client.GetRunningCiliumVersion(ctx, k.params.Namespace)
+	version, err := k.GetReleaseVersion()
 	if err != nil {
+		k.Log("❌ Unable to find Helm release for the target cluster")
 		return err
 	}
-	ciliumVer, err := utils.ParseCiliumVersion(v)
+
+	semv, err := utils.ParseCiliumVersion(version)
 	if err != nil {
-		k.Log("⚠️ Failed to parse Cilium version %s: %w. "+
-			"1.14+ is assumed. Continuing with Helm-mode", v, err)
-	} else {
-		if ciliumVer.LT(versioncheck.MustVersion("1.14.0")) {
-			// Helm-based clustermesh enable is only supported on Cilium v1.14+ due to
-			// a lack of support for autoconfigured certificates (tls.{crt,key}) for cluster
-			// members when running in certgen-based PKI mode
-			return k.Connect(ctx)
-		}
+		return fmt.Errorf("failed to parse Cilium version: %w", err)
+	}
+
+	v := fmt.Sprintf("%d.%d.%d", semv.Major, semv.Minor, semv.Patch)
+	k.Log("✅ Detected Helm release with Cilium version %s", v)
+
+	if v < "1.14.0" {
+		// Helm-based clustermesh enable is only supported on Cilium v1.14+ due to
+		// a lack of support for autoconfigured certificates (tls.{crt,key}) for cluster
+		// members when running in certgen (cronJob) PKI mode
+		k.Log("⚠️ Cilium Version is less than 1.14.0. Continuing in classic mode.")
+		return k.Connect(ctx)
 	}
 
 	remoteCluster, err := k8s.NewClient(k.params.DestinationContext, "")
