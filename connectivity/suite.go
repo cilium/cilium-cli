@@ -246,6 +246,7 @@ func Run(ctx context.Context, ct *check.ConnectivityTest, addExtraTests func(*ch
 		tests.PodToHost(),
 		tests.PodToExternalWorkload(),
 		tests.PodToCIDR(tests.WithRetryAll()),
+		// dummy change
 	}
 	if s, ok := ct.Feature(check.FeatureNodeWithoutCilium); ok && s.Enabled {
 		noPoliciesScenarios = append(noPoliciesScenarios, tests.FromCIDRToPod())
