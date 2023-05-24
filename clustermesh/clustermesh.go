@@ -1847,18 +1847,29 @@ func generateEnableHelmValues(params Parameters, flavor k8s.Flavor) (map[string]
 		}
 	}
 
+	helmVals["clustermesh"].(map[string]interface{})["apiserver"].(map[string]interface{})["tls"] =
+		// default to using certgen, so that certificates are renewed automatically
+		map[string]interface{}{
+			"auto": map[string]interface{}{
+				"enabled": true,
+				"method":  "cronJob",
+				// run the renewal every 4 months on the 1st of the month
+				"schedule": "0 0 1 */4 *",
+			},
+		}
+
 	return helmVals, nil
 }
 
 func EnableWithHelm(ctx context.Context, k8sClient *k8s.Client, params Parameters) error {
-	vals, err := generateEnableHelmValues(params, k8sClient.AutodetectFlavor(ctx))
+	helmVals, err := generateEnableHelmValues(params, k8sClient.AutodetectFlavor(ctx))
 	if err != nil {
 		return err
 	}
 	upgradeParams := helm.UpgradeParameters{
 		Namespace:   params.Namespace,
 		Name:        defaults.HelmReleaseName,
-		Values:      vals,
+		Values:      helmVals,
 		ResetValues: false,
 		ReuseValues: true,
 	}
@@ -2000,15 +2011,6 @@ func genClusterMeshConfig(aiLocal, aiRemote *accessInformation) map[string]inter
 	// TODO (ajs): Support more than two clusters
 	return map[string]interface{}{
 		"clustermesh": map[string]interface{}{
-			"apiserver": map[string]interface{}{
-				"tls": map[string]interface{}{
-					"auto": map[string]interface{}{
-						"enabled":  true,
-						"method":   "cronJob",
-						"schedule": "0 0 1 */4 *",
-					},
-				},
-			},
 			"config": map[string]interface{}{
 				"enabled": true,
 				"clusters": []map[string]interface{}{
