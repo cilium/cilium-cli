@@ -96,25 +96,6 @@ func filterManifests(manifest string) map[string]string {
 	return manifestsToRender
 }
 
-func mergeMaps(a, b map[string]interface{}) map[string]interface{} {
-	out := make(map[string]interface{}, len(a))
-	for k, v := range a {
-		out[k] = v
-	}
-	for k, v := range b {
-		if v, ok := v.(map[string]interface{}); ok {
-			if bv, ok := out[k]; ok {
-				if bv, ok := bv.(map[string]interface{}); ok {
-					out[k] = mergeMaps(bv, v)
-					continue
-				}
-			}
-		}
-		out[k] = v
-	}
-	return out
-}
-
 func valuesToString(prevKey string, b map[string]interface{}) string {
 	var out []string
 	for k, v := range b {
@@ -359,7 +340,7 @@ func MergeVals(
 	}
 
 	// User-defined helm options will overwrite the default cilium-cli helm options
-	userVals = mergeMaps(helmValues, userVals)
+	userVals = utils.MergeMaps(helmValues, userVals)
 
 	// Merge the user-defined helm options into the `--config` map. This
 	// effectively means that any --helm-set=extraConfig.<key> will overwrite
@@ -369,7 +350,7 @@ func MergeVals(
 		extraConfig["extraConfig"] = extraConfigMapOpts
 	}
 
-	vals := mergeMaps(extraConfig, userVals)
+	vals := utils.MergeMaps(extraConfig, userVals)
 
 	return vals, nil
 }

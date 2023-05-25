@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"helm.sh/helm/v3/pkg/release"
 	"io"
 	"net"
 	"os"
@@ -1897,25 +1898,25 @@ func DisableWithHelm(ctx context.Context, k8sClient *k8s.Client, params Paramete
 	return err
 }
 
-func (k *K8sClusterMesh) GetReleaseVersion() (string, error) {
-	client := k.client.(*k8s.Client).RESTClientGetter
-	release, err := helm.GetCurrentRelease(client, k.params.Namespace, defaults.HelmReleaseName)
+func getRelease(kc *k8s.Client, namespace string) (*release.Release, error) {
+	client := kc.RESTClientGetter
+	release, err := helm.GetCurrentRelease(client, namespace, defaults.HelmReleaseName)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return release.Chart.AppVersion(), nil
+	return release, nil
 }
 
 // ConnectWithHelm enables clustermesh using a Helm Upgrade action Certificates are generated via
 // the Helm chart's cronJob (certgen) mode As with classic mode, only autodetected IP-based
 // clustermesh-apiserver Service endpoints are currently supported.
 func (k *K8sClusterMesh) ConnectWithHelm(ctx context.Context) error {
-	version, err := k.GetReleaseVersion()
+	localRelease, err := getRelease(k.client.(*k8s.Client), k.params.Namespace)
 	if err != nil {
 		k.Log("❌ Unable to find Helm release for the target cluster")
 		return err
 	}
-
+	version := localRelease.Chart.AppVersion()
 	semv, err := utils.ParseCiliumVersion(version)
 	if err != nil {
 		return fmt.Errorf("failed to parse Cilium version: %w", err)
@@ -1974,6 +1975,25 @@ func (k *K8sClusterMesh) ConnectWithHelm(ctx context.Context) error {
 		return fmt.Errorf("remote and local cluster have the same, non-unique ID: %s", aiLocal.ClusterID)
 	}
 
+	// Attempt to read existing helm values for the local cluster
+	localHelmValues := localRelease.Config
+	k.Log("Our local helm values before: %+v", localHelmValues)
+	localHelmValues, err = updateClustermeshConfig(localHelmValues, aiLocal, aiRemote)
+	if err != nil {
+		return err
+	}
+	k.Log("Our local helm values after: %+v", localHelmValues)
+
+	// Validate them
+
+	// If they don't exist, generate them
+
+	// Attempt to read existing helm values for the remote cluster
+
+	// Validate them
+
+	// If they don't exist, generate them
+
 	helmValuesLocal := genClusterMeshConfig(aiLocal, aiRemote)
 	// We need a deep copy of these Helm values because `helm.Upgrade` mutates them!
 	helmValuesRemote := genClusterMeshConfig(aiRemote, aiLocal)
@@ -2028,4 +2048,65 @@ func genClusterMeshConfig(aiLocal, aiRemote *accessInformation) map[string]inter
 			},
 		},
 	}
+}
+
+func updateClustermeshConfig(
+	values map[string]interface{},
+	aiLocal, aiRemote *accessInformation,
+) (map[string]interface{}, error) {
+	// get current clusters config slice, if it exists
+	c, err := utils.GetPath(values, []string{"clustermesh", "config", "clusters"})
+	if err != nil {
+		// allocate an empty slice, since there isn't one
+		c = []map[string]interface{}{}
+	}
+	oldClusters, ok := c.([]map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("existing clustermesh.config.cluters array is invalid")
+	}
+
+	// allocate new cluster entries
+	newClusters := []map[string]interface{}{
+		{
+			"name": aiLocal.ClusterName,
+			"ips":  []string{aiLocal.ServiceIPs[0]},
+			"port": aiLocal.ServicePort,
+		},
+		{
+			"name": aiRemote.ClusterName,
+			"ips":  []string{aiRemote.ServiceIPs[0]},
+			"port": aiRemote.ServicePort,
+		},
+	}
+
+	// merge new clusters on top of old clusters
+	clusters := map[string]map[string]interface{}{}
+	for _, c := range oldClusters {
+		name, ok := c["name"].(string)
+		if !ok {
+			return nil, fmt.Errorf("existing clustermesh.config.clusters array is invalid")
+		}
+		clusters[name] = c
+	}
+	for _, c := range newClusters {
+		clusters[c["name"].(string)] = c
+	}
+
+	outputClusters := make([]map[string]interface{}, 0)
+	for _, v := range clusters {
+		outputClusters = append(outputClusters, v)
+	}
+
+	// merge in other required values
+	baseValues := map[string]interface{}{
+		"clustermesh": map[string]interface{}{
+			"config": map[string]interface{}{
+				"enabled":  true,
+				"clusters": outputClusters,
+			},
+		},
+	}
+	newValues := utils.MergeMaps(values, baseValues)
+
+	return newValues, nil
 }
