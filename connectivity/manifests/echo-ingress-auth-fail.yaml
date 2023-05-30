@@ -17,5 +17,5 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
-      auth:
-        type: always-fail
+      authentication:
+        mode: test-always-fail

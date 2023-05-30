@@ -5,7 +5,7 @@ metadata:
   name: auth-ingress
   namespace: cilium-test
 spec:
-  description: "Allow other client to contact echo after mTLS"
+  description: "Allow other client to contact echo after mutual authentication"
   endpointSelector:
     matchLabels:
       kind: echo
@@ -17,5 +17,5 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
-      auth:
-        type: mtls-spiffe
+      authentication:
+        mode: required
