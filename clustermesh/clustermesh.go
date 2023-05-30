@@ -954,36 +954,58 @@ func (k *K8sClusterMesh) patchConfig(ctx context.Context, client k8sClusterMeshI
 	return nil
 }
 
-func (k *K8sClusterMesh) Connect(ctx context.Context) error {
-	remoteCluster, err := k8s.NewClient(k.params.DestinationContext, "")
+// getClientsForConnect returns a k8s.Client for the local and remote cluster, respectively
+func (k *K8sClusterMesh) getClientsForConnect(ctx context.Context) (*k8s.Client, *k8s.Client, error) {
+	remoteClient, err := k8s.NewClient(k.params.DestinationContext, "")
 	if err != nil {
-		return fmt.Errorf("unable to create Kubernetes client to access remote cluster %q: %w", k.params.DestinationContext, err)
+		return nil, nil, fmt.Errorf(
+			"unable to create Kubernetes client to access remote cluster %q: %w",
+			k.params.DestinationContext, err)
 	}
+	return k.client.(*k8s.Client), remoteClient, nil
+}
 
-	aiRemote, err := k.extractAccessInformation(ctx, remoteCluster, k.params.DestinationEndpoints, true, false)
+// connectAccessInit initializes a Kubernetes client for the local and remote cluster
+// and performs some validation that the two clusters can be connected via clustermesh
+func (k *K8sClusterMesh) getAccessInfoForConnect(
+	localClient, remoteClient *k8s.Client, ctx context.Context,
+) (
+	*accessInformation, *accessInformation, error,
+) {
+	aiRemote, err := k.extractAccessInformation(ctx, remoteClient, k.params.DestinationEndpoints, true, false)
 	if err != nil {
-		k.Log("❌ Unable to retrieve access information of remote cluster %q: %s", remoteCluster.ClusterName(), err)
-		return err
-	}
-
-	if !aiRemote.validate() {
-		return fmt.Errorf("remote cluster has non-unique name (%s) and/or ID (%s)", aiRemote.ClusterName, aiRemote.ClusterID)
+		k.Log("❌ Unable to retrieve access information of remote cluster %q: %s", remoteClient.ClusterName(), err)
+		return nil, nil, err
 	}
 
 	aiLocal, err := k.extractAccessInformation(ctx, k.client, k.params.SourceEndpoints, true, false)
 	if err != nil {
 		k.Log("❌ Unable to retrieve access information of local cluster %q: %s", k.client.ClusterName(), err)
-		return err
+		return nil, nil, err
+	}
+
+	return aiLocal, aiRemote, nil
+}
+
+// connectAccessInit initializes a Kubernetes client for the local and remote cluster
+// and performs some validation that the two clusters can be connected via clustermesh
+func (k *K8sClusterMesh) validateInfoForConnect(aiLocal, aiRemote *accessInformation, ctx context.Context) error {
+	if !aiRemote.validate() {
+		return fmt.Errorf("remote cluster has non-unique name (%s) and/or ID (%s)",
+			aiRemote.ClusterName, aiRemote.ClusterID)
 	}
 
 	if !aiLocal.validate() {
-		return fmt.Errorf("local cluster has the default name (cluster name: %s) and/or ID 0 (cluster ID: %s)",
+		return fmt.Errorf(
+			"local cluster has the default name (cluster name: %s) and/or ID 0 (cluster ID: %s)",
 			aiLocal.ClusterName, aiLocal.ClusterID)
 	}
 
 	cid, err := strconv.Atoi(aiRemote.ClusterID)
 	if err != nil {
-		return fmt.Errorf("remote cluster has non-numeric cluster ID %s. Only numeric values 1-255 are allowed", aiRemote.ClusterID)
+		return fmt.Errorf(
+			"remote cluster has non-numeric cluster ID %s. Only numeric values 1-255 are allowed",
+			aiRemote.ClusterID)
 	}
 	if cid < 1 || cid > 255 {
 		return fmt.Errorf("remote cluster has cluster ID %d out of acceptable range (1-255)", cid)
@@ -997,17 +1019,36 @@ func (k *K8sClusterMesh) Connect(ctx context.Context) error {
 		return fmt.Errorf("remote and local cluster have the same, non-unique ID: %s", aiLocal.ClusterID)
 	}
 
-	k.Log("✨ Connecting cluster %s -> %s...", k.client.ClusterName(), remoteCluster.ClusterName())
+	return nil
+}
+
+func (k *K8sClusterMesh) Connect(ctx context.Context) error {
+	localClient, remoteClient, err := k.getClientsForConnect(ctx)
+	if err != nil {
+		return err
+	}
+
+	aiLocal, aiRemote, err := k.getAccessInfoForConnect(localClient, remoteClient, ctx)
+	if err != nil {
+		return err
+	}
+
+	err = k.validateInfoForConnect(aiLocal, aiRemote, ctx)
+	if err != nil {
+		return err
+	}
+
+	k.Log("✨ Connecting cluster %s -> %s...", k.client.ClusterName(), remoteClient.ClusterName())
 	if err := k.patchConfig(ctx, k.client, aiRemote); err != nil {
 		return err
 	}
 
-	k.Log("✨ Connecting cluster %s -> %s...", remoteCluster.ClusterName(), k.client.ClusterName())
-	if err := k.patchConfig(ctx, remoteCluster, aiLocal); err != nil {
+	k.Log("✨ Connecting cluster %s -> %s...", remoteClient.ClusterName(), k.client.ClusterName())
+	if err := k.patchConfig(ctx, remoteClient, aiLocal); err != nil {
 		return err
 	}
 
-	k.Log("✅ Connected cluster %s and %s!", k.client.ClusterName(), remoteCluster.ClusterName())
+	k.Log("✅ Connected cluster %s and %s!", k.client.ClusterName(), aiRemote.ClusterName)
 
 	return nil
 }
@@ -1883,7 +1924,7 @@ func DisableWithHelm(ctx context.Context, k8sClient *k8s.Client, params Paramete
 		"clustermesh.useAPIServer=false",
 		"externalWorkloads.enabled=false",
 	}
-	vals, err := helm.ParseStrVals(helmStrValues)
+	vals, err := helm.ParseVals(helmStrValues)
 	if err != nil {
 		return err
 	}
@@ -1926,128 +1967,73 @@ func (k *K8sClusterMesh) ConnectWithHelm(ctx context.Context) error {
 	k.Log("✅ Detected Helm release with Cilium version %s", v)
 
 	if v < "1.14.0" {
-		// Helm-based clustermesh enable is only supported on Cilium v1.14+ due to
-		// a lack of support for autoconfigured certificates (tls.{crt,key}) for cluster
-		// members when running in certgen (cronJob) PKI mode
+		// Helm-based clustermesh enable is only supported on Cilium v1.14+ due to a lack of support in earlier versions
+		// for autoconfigured certificates (tls.{crt,key}) for cluster members when running in certgen (cronJob) PKI
+		// mode
 		k.Log("⚠️ Cilium Version is less than 1.14.0. Continuing in classic mode.")
 		return k.Connect(ctx)
 	}
 
-	remoteCluster, err := k8s.NewClient(k.params.DestinationContext, "")
+	localClient, remoteClient, err := k.getClientsForConnect(ctx)
 	if err != nil {
-		return fmt.Errorf("unable to create Kubernetes client to access remote cluster %q: %w", k.params.DestinationContext, err)
-	}
-
-	aiRemote, err := k.extractAccessInformation(ctx, remoteCluster, k.params.DestinationEndpoints, true, false)
-	if err != nil {
-		k.Log("❌ Unable to retrieve access information of remote cluster %q: %s", remoteCluster.ClusterName(), err)
 		return err
 	}
 
-	if !aiRemote.validate() {
-		return fmt.Errorf("remote cluster has non-unique name (%s) and/or ID (%s)", aiRemote.ClusterName, aiRemote.ClusterID)
-	}
-
-	aiLocal, err := k.extractAccessInformation(ctx, k.client, k.params.SourceEndpoints, true, false)
+	aiLocal, aiRemote, err := k.getAccessInfoForConnect(localClient, remoteClient, ctx)
 	if err != nil {
-		k.Log("❌ Unable to retrieve access information of local cluster %q: %s", k.client.ClusterName(), err)
 		return err
 	}
 
-	if !aiLocal.validate() {
-		return fmt.Errorf("local cluster has the default name (cluster name: %s) and/or ID 0 (cluster ID: %s)",
-			aiLocal.ClusterName, aiLocal.ClusterID)
-	}
-
-	cid, err := strconv.Atoi(aiRemote.ClusterID)
+	err = k.validateInfoForConnect(aiLocal, aiRemote, ctx)
 	if err != nil {
-		return fmt.Errorf("remote cluster has non-numeric cluster ID %s. Only numeric values 1-255 are allowed", aiRemote.ClusterID)
-	}
-	if cid < 1 || cid > 255 {
-		return fmt.Errorf("remote cluster has cluster ID %d out of acceptable range (1-255)", cid)
+		return err
 	}
 
-	if aiRemote.ClusterName == aiLocal.ClusterName {
-		return fmt.Errorf("remote and local cluster have the same, non-unique name: %s", aiLocal.ClusterName)
-	}
-
-	if aiRemote.ClusterID == aiLocal.ClusterID {
-		return fmt.Errorf("remote and local cluster have the same, non-unique ID: %s", aiLocal.ClusterID)
-	}
-
-	// Attempt to read existing helm values for the local cluster
+	// Attempt to get existing helm values for the local cluster
 	localHelmValues := localRelease.Config
-	k.Log("Our local helm values before: %+v", localHelmValues)
+	// Expand those values to include the clustermesh configuration
 	localHelmValues, err = updateClustermeshConfig(localHelmValues, aiLocal, aiRemote)
 	if err != nil {
 		return err
 	}
-	k.Log("Our local helm values after: %+v", localHelmValues)
 
-	// Validate them
+	// Attempt to get existing helm values for the remote cluster
+	remoteRelease, err := getRelease(remoteClient, k.params.Namespace)
+	if err != nil {
+		k.Log("❌ Unable to find Helm release for the remote cluster")
+		return err
+	}
 
-	// If they don't exist, generate them
-
-	// Attempt to read existing helm values for the remote cluster
-
-	// Validate them
-
-	// If they don't exist, generate them
-
-	helmValuesLocal := genClusterMeshConfig(aiLocal, aiRemote)
-	// We need a deep copy of these Helm values because `helm.Upgrade` mutates them!
-	helmValuesRemote := genClusterMeshConfig(aiRemote, aiLocal)
-
-	// TODO (ajs): Support hostname-based endpoints via --helm-values override
-	//   Using the Helm value `extraDnsNames` should work as-is.
-	//   This can be useful for LoadBalancer reachability.
+	// Attempt to get existing helm values for the local cluster
+	remoteHelmValues := remoteRelease.Config
+	// Expand those values to include the clustermesh configuration
+	remoteHelmValues, err = updateClustermeshConfig(remoteHelmValues, aiRemote, aiLocal)
+	if err != nil {
+		return err
+	}
 
 	// Enable clustermesh using a Helm Upgrade command
 	upgradeParams := helm.UpgradeParameters{
 		Namespace:   k.params.Namespace,
 		Name:        defaults.HelmReleaseName,
-		Values:      helmValuesLocal,
+		Values:      localHelmValues,
 		ResetValues: false,
 		ReuseValues: true,
 	}
 
-	// TODO (ajs): After classic mode removal, use a k8s.Client for this k.client
-	_, err = helm.Upgrade(ctx, k.client.(*k8s.Client).RESTClientGetter, upgradeParams)
+	_, err = helm.Upgrade(ctx, localClient.RESTClientGetter, upgradeParams)
 	if err != nil {
 		return err
 	}
 
-	upgradeParams.Values = helmValuesRemote
-	_, err = helm.Upgrade(ctx, remoteCluster.RESTClientGetter, upgradeParams)
+	upgradeParams.Values = remoteHelmValues
+	_, err = helm.Upgrade(ctx, remoteClient.RESTClientGetter, upgradeParams)
 	if err != nil {
 		return err
 	}
 
-	k.Log("✅ Connected cluster %s and %s!", k.client.ClusterName(), remoteCluster.ClusterName())
+	k.Log("✅ Connected cluster %s and %s!", localClient.ClusterName(), remoteClient.ClusterName())
 	return nil
-}
-
-func genClusterMeshConfig(aiLocal, aiRemote *accessInformation) map[string]interface{} {
-	// TODO (ajs): Support more than two clusters
-	return map[string]interface{}{
-		"clustermesh": map[string]interface{}{
-			"config": map[string]interface{}{
-				"enabled": true,
-				"clusters": []map[string]interface{}{
-					{
-						"name": aiLocal.ClusterName,
-						"ips":  []string{aiLocal.ServiceIPs[0]},
-						"port": aiLocal.ServicePort,
-					},
-					{
-						"name": aiRemote.ClusterName,
-						"ips":  []string{aiRemote.ServiceIPs[0]},
-						"port": aiRemote.ServicePort,
-					},
-				},
-			},
-		},
-	}
 }
 
 func updateClustermeshConfig(

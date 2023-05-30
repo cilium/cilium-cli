@@ -65,7 +65,7 @@ func TestResolveHelmChartVersion(t *testing.T) {
 	}
 }
 
-func TestParseStrVals(t *testing.T) {
+func TestParseVals(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   []string
@@ -124,13 +124,13 @@ func TestParseStrVals(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseStrVals(tt.input)
+			got, err := ParseVals(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("ParseStrVals() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseVals() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("ParseStrVals() got = %v, want %v", got, tt.want)
+				t.Errorf("ParseVals() got = %v, want %v", got, tt.want)
 			}
 		})
 	}
