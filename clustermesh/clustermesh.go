@@ -6,11 +6,12 @@ package clustermesh
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
-	"helm.sh/helm/v3/pkg/release"
 	"io"
 	"net"
 	"os"
@@ -31,6 +32,7 @@ import (
 	"github.com/cilium/cilium/api/v1/models"
 	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	"github.com/cilium/cilium/pkg/versioncheck"
+	"helm.sh/helm/v3/pkg/release"
 
 	"github.com/cilium/cilium-cli/defaults"
 	"github.com/cilium/cilium-cli/internal/certs"
@@ -955,7 +957,7 @@ func (k *K8sClusterMesh) patchConfig(ctx context.Context, client k8sClusterMeshI
 }
 
 // getClientsForConnect returns a k8s.Client for the local and remote cluster, respectively
-func (k *K8sClusterMesh) getClientsForConnect(ctx context.Context) (*k8s.Client, *k8s.Client, error) {
+func (k *K8sClusterMesh) getClientsForConnect() (*k8s.Client, *k8s.Client, error) {
 	remoteClient, err := k8s.NewClient(k.params.DestinationContext, "")
 	if err != nil {
 		return nil, nil, fmt.Errorf(
@@ -968,7 +970,7 @@ func (k *K8sClusterMesh) getClientsForConnect(ctx context.Context) (*k8s.Client,
 // connectAccessInit initializes a Kubernetes client for the local and remote cluster
 // and performs some validation that the two clusters can be connected via clustermesh
 func (k *K8sClusterMesh) getAccessInfoForConnect(
-	localClient, remoteClient *k8s.Client, ctx context.Context,
+	ctx context.Context, localClient, remoteClient *k8s.Client,
 ) (
 	*accessInformation, *accessInformation, error,
 ) {
@@ -978,7 +980,7 @@ func (k *K8sClusterMesh) getAccessInfoForConnect(
 		return nil, nil, err
 	}
 
-	aiLocal, err := k.extractAccessInformation(ctx, k.client, k.params.SourceEndpoints, true, false)
+	aiLocal, err := k.extractAccessInformation(ctx, localClient, k.params.SourceEndpoints, true, false)
 	if err != nil {
 		k.Log("❌ Unable to retrieve access information of local cluster %q: %s", k.client.ClusterName(), err)
 		return nil, nil, err
@@ -989,7 +991,7 @@ func (k *K8sClusterMesh) getAccessInfoForConnect(
 
 // connectAccessInit initializes a Kubernetes client for the local and remote cluster
 // and performs some validation that the two clusters can be connected via clustermesh
-func (k *K8sClusterMesh) validateInfoForConnect(aiLocal, aiRemote *accessInformation, ctx context.Context) error {
+func (k *K8sClusterMesh) validateInfoForConnect(aiLocal, aiRemote *accessInformation) error {
 	if !aiRemote.validate() {
 		return fmt.Errorf("remote cluster has non-unique name (%s) and/or ID (%s)",
 			aiRemote.ClusterName, aiRemote.ClusterID)
@@ -1023,17 +1025,17 @@ func (k *K8sClusterMesh) validateInfoForConnect(aiLocal, aiRemote *accessInforma
 }
 
 func (k *K8sClusterMesh) Connect(ctx context.Context) error {
-	localClient, remoteClient, err := k.getClientsForConnect(ctx)
+	localClient, remoteClient, err := k.getClientsForConnect()
 	if err != nil {
 		return err
 	}
 
-	aiLocal, aiRemote, err := k.getAccessInfoForConnect(localClient, remoteClient, ctx)
+	aiLocal, aiRemote, err := k.getAccessInfoForConnect(ctx, localClient, remoteClient)
 	if err != nil {
 		return err
 	}
 
-	err = k.validateInfoForConnect(aiLocal, aiRemote, ctx)
+	err = k.validateInfoForConnect(aiLocal, aiRemote)
 	if err != nil {
 		return err
 	}
@@ -1948,6 +1950,34 @@ func getRelease(kc *k8s.Client, namespace string) (*release.Release, error) {
 	return release, nil
 }
 
+func (k *K8sClusterMesh) validateCAMatch(aiLocal, aiRemote *accessInformation) error {
+	caLocal := aiLocal.CA
+	block, _ := pem.Decode(caLocal)
+	if block == nil {
+		panic("failed to parse certificate PEM")
+	}
+	localCert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return err
+	}
+
+	caRemote := aiRemote.CA
+	block, _ = pem.Decode(caRemote)
+	if block == nil {
+		panic("failed to parse certificate PEM")
+	}
+	remoteCert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return err
+	}
+
+	// Compare the x509 key identifier of each certificate
+	if !bytes.Equal(localCert.SubjectKeyId, remoteCert.SubjectKeyId) {
+		return fmt.Errorf("Local and Remote cluster cilium-ca certificate keys do not match")
+	}
+	return nil
+}
+
 // ConnectWithHelm enables clustermesh using a Helm Upgrade action Certificates are generated via
 // the Helm chart's cronJob (certgen) mode As with classic mode, only autodetected IP-based
 // clustermesh-apiserver Service endpoints are currently supported.
@@ -1974,22 +2004,28 @@ func (k *K8sClusterMesh) ConnectWithHelm(ctx context.Context) error {
 		return k.Connect(ctx)
 	}
 
-	localClient, remoteClient, err := k.getClientsForConnect(ctx)
+	localClient, remoteClient, err := k.getClientsForConnect()
 	if err != nil {
 		return err
 	}
 
-	aiLocal, aiRemote, err := k.getAccessInfoForConnect(localClient, remoteClient, ctx)
+	aiLocal, aiRemote, err := k.getAccessInfoForConnect(ctx, localClient, remoteClient)
 	if err != nil {
 		return err
 	}
 
-	err = k.validateInfoForConnect(aiLocal, aiRemote, ctx)
+	err = k.validateInfoForConnect(aiLocal, aiRemote)
 	if err != nil {
 		return err
 	}
 
-	// Attempt to get existing helm values for the local cluster
+	// Validate that CA certificates match between the two clusters
+	err = k.validateCAMatch(aiLocal, aiRemote)
+	if err != nil {
+		return err
+	}
+
+	// Get existing helm values for the local cluster
 	localHelmValues := localRelease.Config
 	// Expand those values to include the clustermesh configuration
 	localHelmValues, err = updateClustermeshConfig(localHelmValues, aiLocal, aiRemote)
@@ -1997,14 +2033,12 @@ func (k *K8sClusterMesh) ConnectWithHelm(ctx context.Context) error {
 		return err
 	}
 
-	// Attempt to get existing helm values for the remote cluster
+	// Get existing helm values for the remote cluster
 	remoteRelease, err := getRelease(remoteClient, k.params.Namespace)
 	if err != nil {
 		k.Log("❌ Unable to find Helm release for the remote cluster")
 		return err
 	}
-
-	// Attempt to get existing helm values for the local cluster
 	remoteHelmValues := remoteRelease.Config
 	// Expand those values to include the clustermesh configuration
 	remoteHelmValues, err = updateClustermeshConfig(remoteHelmValues, aiRemote, aiLocal)
