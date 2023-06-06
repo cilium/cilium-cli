@@ -3,7 +3,6 @@ apiVersion: "cilium.io/v2"
 kind: CiliumNetworkPolicy
 metadata:
   name: auth-ingress
-  namespace: cilium-test
 spec:
   description: "Allow other client to contact echo after mutual authentication"
   endpointSelector:
