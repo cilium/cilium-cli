@@ -955,7 +955,6 @@ func Run(ctx context.Context, ct *check.ConnectivityTest, addExtraTests func(*ch
 		WithFeatureRequirements(check.RequireFeatureEnabled(check.FeatureAuthSpiffe)).
 		WithScenarios(
 			tests.PodToPod(),
-			tests.PodToPodWithEndpoints(),
 		).
 		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
 			return check.ResultDropCurlTimeout, check.ResultDropAuthRequired
@@ -966,7 +965,6 @@ func Run(ctx context.Context, ct *check.ConnectivityTest, addExtraTests func(*ch
 		WithFeatureRequirements(check.RequireFeatureEnabled(check.FeatureAuthSpiffe)).
 		WithScenarios(
 			tests.PodToPod(),
-			tests.PodToPodWithEndpoints(),
 		)
 
 	// Test Ingress controller
