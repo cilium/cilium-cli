@@ -1,0 +1,23 @@
+kind delete clusters chart-testing
+kind create cluster --config .github/kind-config.yaml
+
+export worker2_ip=$(kubectl get nodes chart-testing-worker2 -o=jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+export worker3_ip=$(kubectl get nodes chart-testing-worker3 -o=jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+
+cilium install \
+  --nodes-without-cilium chart-testing-worker2,chart-testing-worker3 \
+  --wait=false \
+  --helm-set bpf.monitorAggregation=none \
+  --helm-set cni.chainingMode=portmap \
+  --helm-set loadBalancer.l7.backend=envoy \
+  --helm-set tls.secretsBackend=k8s
+
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.12.0/cert-manager.yaml
+cat .github/external-targets/certs.yaml | envsubst | kubectl apply -f -
+kubectl apply -f ./.github/external-targets/nginx.yaml
+./cilium connectivity test --all-flows --test-namespace test-namespace --curl-insecure \
+  --external-target chart-testing-worker2 \
+  --external-cidr 172.18.0.0/16 \
+  --external-ip ${worker2_ip} \
+  --external-other-ip ${worker3_ip} \
+  --test client-egress-l7-tls-headers

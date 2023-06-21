@@ -1,0 +1,58 @@
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+ name: hello-ca-tls
+spec:
+ secretName: ca
+ isCA: true
+ issuerRef:
+    name: selfsigned-issuer
+    kind: Issuer
+ commonName: "cilium.io"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: external-target-cert
+spec:
+  secretName: external-target-cert
+  subject:
+    countries:
+      - "abc"
+    localities:
+      - "def"
+    organizationalUnits:
+      - "ghi"
+    organizations:
+      - "jkl"
+    postalCodes:
+      - "mno"
+    provinces:
+      - "pqr"
+    streetAddresses:
+      - "stu"
+    serialNumber: 1234,
+  dnsNames:
+  - "chart-testing-worker2"
+  - "chart-testing-worker3"
+  ipAddresses:
+  - "${worker2_ip}"
+  - "${worker3_ip}"
+  issuerRef:
+    name: more-issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: more-issuer
+spec:
+ ca:
+   secretName: ca
