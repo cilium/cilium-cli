@@ -27,7 +27,6 @@ func newCmdClusterMesh() *cobra.Command {
 	}
 
 	cmd.AddCommand(
-		newCmdClusterMeshDisconnect(),
 		newCmdClusterMeshStatus(),
 		newCmdClusterMeshExternalWorkload(),
 	)
@@ -35,12 +34,14 @@ func newCmdClusterMesh() *cobra.Command {
 	if utils.IsInHelmMode() {
 		cmd.AddCommand(
 			newCmdClusterMeshConnectWithHelm(),
+			newCmdClusterMeshDisconnectWithHelm(),
 			newCmdClusterMeshEnableWithHelm(),
 			newCmdClusterMeshDisableWithHelm(),
 		)
 	} else {
 		cmd.AddCommand(
 			newCmdClusterMeshConnect(),
+			newCmdClusterMeshDisconnect(),
 			newCmdClusterMeshEnable(),
 			newCmdClusterMeshDisable(),
 		)
@@ -414,6 +415,30 @@ func newCmdClusterMeshConnectWithHelm() *cobra.Command {
 	}
 
 	addCommonConnectFlags(cmd, &params)
+
+	return cmd
+}
+
+func newCmdClusterMeshDisconnectWithHelm() *cobra.Command {
+	var params = clustermesh.Parameters{
+		Writer: os.Stdout,
+	}
+
+	cmd := &cobra.Command{
+		Use:   "disconnect",
+		Short: "Disconnect from a remote cluster",
+		Long:  ``,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			params.Namespace = namespace
+			cm := clustermesh.NewK8sClusterMesh(k8sClient, params)
+			if err := cm.DisconnectWithHelm(context.Background()); err != nil {
+				fatalf("Unable to disconnect cluster: %s", err)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&params.DestinationContext, "destination-context", "", "Kubernetes configuration context of destination cluster")
 
 	return cmd
 }

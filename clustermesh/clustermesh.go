@@ -1054,17 +1054,26 @@ func (k *K8sClusterMesh) Connect(ctx context.Context) error {
 	return nil
 }
 
-func (k *K8sClusterMesh) disconnectCluster(ctx context.Context, src, dst k8sClusterMeshImplementation) error {
+func (k *K8sClusterMesh) getRemoteClusterName(ctx context.Context, dst k8sClusterMeshImplementation) (string, error) {
 	cm, err := dst.GetConfigMap(ctx, k.params.Namespace, defaults.ConfigMapName, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("unable to retrieve ConfigMap %q: %w", defaults.ConfigMapName, err)
+		return "", fmt.Errorf("unable to retrieve ConfigMap %q: %w", defaults.ConfigMapName, err)
 	}
 
 	if _, ok := cm.Data[configNameClusterName]; !ok {
-		return fmt.Errorf("%s is not set in ConfigMap %q", configNameClusterName, defaults.ConfigMapName)
+		return "", fmt.Errorf("%s is not set in ConfigMap %q", configNameClusterName, defaults.ConfigMapName)
 	}
 
 	clusterName := cm.Data[configNameClusterName]
+
+	return clusterName, nil
+}
+
+func (k *K8sClusterMesh) disconnectCluster(ctx context.Context, src, dst k8sClusterMeshImplementation) error {
+	clusterName, err := k.getRemoteClusterName(ctx, dst)
+	if err != nil {
+		return err
+	}
 
 	k.Log("🔑 Patching existing secret %s...", defaults.ClusterMeshSecretName)
 	meshSecret, err := src.GetSecret(ctx, k.params.Namespace, defaults.ClusterMeshSecretName, metav1.GetOptions{})
@@ -2080,6 +2089,155 @@ func (k *K8sClusterMesh) ConnectWithHelm(ctx context.Context) error {
 
 	k.Log("✅ Connected cluster %s and %s!", localClient.ClusterName(), remoteClient.ClusterName())
 	return nil
+}
+
+// DisconnectWithHelm disconnects 2 clusters from
+// clustermesh using a Helm Upgrade action.
+func (k *K8sClusterMesh) DisconnectWithHelm(ctx context.Context) error {
+	localRelease, err := getRelease(k.client.(*k8s.Client), k.params.Namespace)
+	if err != nil {
+		k.Log("❌ Unable to find Helm release for the target cluster")
+		return err
+	}
+	version := localRelease.Chart.AppVersion()
+	semv, err := utils.ParseCiliumVersion(version)
+	if err != nil {
+		return fmt.Errorf("failed to parse Cilium version: %w", err)
+	}
+
+	v := fmt.Sprintf("%d.%d.%d", semv.Major, semv.Minor, semv.Patch)
+	k.Log("✅ Detected Helm release with Cilium version %s", v)
+
+	if v < "1.14.0" {
+		// Helm-based clustermesh enable is only supported on Cilium
+		// v1.14+ due to a lack of support in earlier versions for
+		// autoconfigured certificates (tls.{crt,key}) for cluster
+		// members when running in certgen (cronJob) PKI mode
+		k.Log("⚠️ Cilium Version is less than 1.14.0. Continuing in classic mode.")
+		return k.Disconnect(ctx)
+	}
+
+	localClient, remoteClient, err := k.getClientsForConnect()
+	if err != nil {
+		return err
+	}
+
+	localClusterName, err := k.getRemoteClusterName(ctx, localClient)
+	if err != nil {
+		return err
+	}
+
+	remoteClusterName, err := k.getRemoteClusterName(ctx, remoteClient)
+	if err != nil {
+		return err
+	}
+
+	// Get existing helm values for the local cluster
+	localHelmValues := localRelease.Config
+	// Expand those values to include the clustermesh configuration
+	localHelmValues, err = removeClustermeshConfig(localHelmValues, remoteClusterName)
+	if err != nil {
+		return err
+	}
+
+	// Get existing helm values for the remote cluster
+	remoteRelease, err := getRelease(remoteClient, k.params.Namespace)
+	if err != nil {
+		k.Log("❌ Unable to find Helm release for the remote cluster")
+		return err
+	}
+	remoteHelmValues := remoteRelease.Config
+	// Expand those values to include the clustermesh configuration
+	remoteHelmValues, err = removeClustermeshConfig(remoteHelmValues, localClusterName)
+	if err != nil {
+		return err
+	}
+
+	upgradeParams := helm.UpgradeParameters{
+		Namespace:   k.params.Namespace,
+		Name:        defaults.HelmReleaseName,
+		Values:      localHelmValues,
+		ResetValues: false,
+		ReuseValues: true,
+	}
+
+	// Disconnect clustermesh using a Helm Upgrade command against our target cluster
+	k.Log("ℹ️ Configuring Cilium in cluster '%s' to disconnect from cluster '%s'",
+		localClient.ClusterName(), remoteClient.ClusterName())
+	_, err = helm.Upgrade(ctx, localClient.RESTClientGetter, upgradeParams)
+	if err != nil {
+		return err
+	}
+
+	// Disconnect clustermesh using a Helm Upgrade command against the remote cluster
+	k.Log("ℹ️ Configuring Cilium in cluster '%s' to disconnect from cluster '%s'",
+		remoteClient.ClusterName(), localClient.ClusterName())
+	upgradeParams.Values = remoteHelmValues
+	_, err = helm.Upgrade(ctx, remoteClient.RESTClientGetter, upgradeParams)
+	if err != nil {
+		return err
+	}
+
+	k.Log("✅ Disconnected cluster %s and %s.", localClient.ClusterName(), remoteClient.ClusterName())
+
+	return nil
+}
+
+func removeClustermeshConfig(
+	values map[string]interface{}, clusterName string,
+) (map[string]interface{}, error) {
+	// get current clusters config slice, if it exists
+	c, found, err := unstructured.NestedFieldCopy(values, "clustermesh", "config", "clusters")
+	if err != nil {
+		return nil, fmt.Errorf("existing clustermesh.config is invalid")
+	}
+	if !found {
+		c = []interface{}{}
+	}
+
+	// parse the existing config slice
+	oldClusters := make([]map[string]interface{}, 0)
+	cs, ok := c.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("existing clustermesh.config.clusters array is invalid")
+	}
+	for _, m := range cs {
+		cluster, ok := m.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("existing clustermesh.config.clusters array is invalid")
+		}
+		oldClusters = append(oldClusters, cluster)
+	}
+
+	// merge new clusters on top of old clusters
+	clusters := map[string]map[string]interface{}{}
+	for _, c := range oldClusters {
+		name, ok := c["name"].(string)
+		if !ok {
+			return nil, fmt.Errorf("existing clustermesh.config.clusters array is invalid")
+		}
+		if name == clusterName {
+			// skip that cluster since this is the remote we want to disconnect from
+			continue
+		}
+		clusters[name] = c
+	}
+
+	outputClusters := make([]map[string]interface{}, 0)
+	for _, v := range clusters {
+		outputClusters = append(outputClusters, v)
+	}
+
+	newValues := map[string]interface{}{
+		"clustermesh": map[string]interface{}{
+			"config": map[string]interface{}{
+				"enabled":  true,
+				"clusters": outputClusters,
+			},
+		},
+	}
+
+	return newValues, nil
 }
 
 func updateClustermeshConfig(
