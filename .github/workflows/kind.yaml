@@ -113,10 +113,7 @@ jobs:
             --collect-sysdump-on-failure --junit-file cilium-junit-${{ matrix.mode }}-1.xml \
             --junit-property mode=${{ matrix.mode }} --junit-property type=no-tunnel \
             --curl-insecure \
-            --external-target chart-testing-worker2 \
-            --external-cidr 172.18.0.0/16 \
-            --external-ip  ${{ steps.external_targets.outputs.worker2_ip }} \
-            --external-other-ip  ${{ steps.external_targets.outputs.worker3_ip }}
+            --external-target chart-testing-worker2
 
       - name: Uninstall cilium
         run: |
