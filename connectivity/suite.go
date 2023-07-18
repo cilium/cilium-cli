@@ -206,6 +206,14 @@ func Run(ctx context.Context, ct *check.ConnectivityTest, addExtraTests func(*ch
 		return ct.Run(ctx)
 	}
 
+	// BandWidth Manager Test
+	if ct.Params().BandWidthManager {
+		ct.NewTest("bandwidth-manager").WithScenarios(
+			tests.BandWidthManager(""),
+		)
+		return ct.Run(ctx)
+	}
+
 	// Conn disrupt Test
 	if ct.Params().IncludeConnDisruptTest {
 		ct.NewTest("no-interrupted-connections").WithScenarios(
