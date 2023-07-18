@@ -47,6 +47,8 @@ type Parameters struct {
 	PerfSamples           int
 	CurlImage             string
 	PerformanceImage      string
+	// BandWidth
+	BandWidthManager      bool
 	JSONMockImage         string
 	AgentDaemonSetName    string
 	DNSTestServerImage    string
