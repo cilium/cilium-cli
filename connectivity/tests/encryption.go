@@ -119,9 +119,13 @@ func (s *podToPodEncryption) Run(ctx context.Context, t *check.Test) {
 	})
 }
 
-func testNoTrafficLeak(ctx context.Context, t *check.Test, s check.Scenario,
+
+// startTcpdump starts tcpdump in the background, and returns a cancel function
+// to stop it, and a channel which is closed when tcpdump has exited.
+// It writes captured pkts to /tmp/$TEST_NAME.pcap.
+func startTcpdump(ctx context.Context, t *check.Test,
 	client, server, clientHost *check.Pod, reqType requestType, ipFam check.IPFamily,
-) {
+) (context.CancelFunc, chan struct{}) {
 	dstAddr := server.Address(ipFam)
 	iface := getInterNodeIface(ctx, t, clientHost, dstAddr)
 	srcAddr := getSourceAddress(ctx, t, client, clientHost, ipFam, dstAddr)
@@ -182,25 +186,12 @@ func testNoTrafficLeak(ctx context.Context, t *check.Test, s check.Scenario,
 		}
 	}
 
-	switch reqType {
-	case requestHTTP:
-		// Curl the server from the client to generate some traffic
-		t.NewAction(s, fmt.Sprintf("curl-%s", ipFam), client, server, ipFam).Run(func(a *check.Action) {
-			a.ExecInPod(ctx, t.Context().CurlCommand(server, ipFam))
-		})
-	case requestICMPEcho:
-		// Ping the server from the client to generate some traffic
-		t.NewAction(s, fmt.Sprintf("ping-%s", ipFam), client, server, ipFam).Run(func(a *check.Action) {
-			a.ExecInPod(ctx, t.Context().PingCommand(server, ipFam))
-		})
-	default:
-		t.Fatalf("Invalid request type: %d", reqType)
-	}
+	return killCmd, bgExited
+}
 
-	// Wait until tcpdump has exited
-	killCmd()
-	<-bgExited
-
+// checkPcapForLeak checks whether there is any unencrypted pkt captured in the
+// pcap file. If so, it fails the test.
+func checkPcapForLeak(ctx context.Context, t *check.Test, clientHost *check.Pod) {
 	// Redirect stderr to /dev/null, as tcpdump logs to stderr, and ExecInPod
 	// will return an error if any char is written to stderr. Anyway, the count
 	// is written to stdout.
@@ -222,6 +213,36 @@ func testNoTrafficLeak(ctx context.Context, t *check.Test, s check.Scenario,
 			t.Debugf("Captured pkts:\n%s", out.String())
 		}
 	}
+}
+
+func testNoTrafficLeak(ctx context.Context, t *check.Test, s check.Scenario,
+	client, server, clientHost *check.Pod, reqType requestType, ipFam check.IPFamily,
+) {
+	// Setup
+	killCmd, bgExited := startTcpdump(ctx, t, client, server, clientHost, reqType, ipFam)
+
+	// Run the test
+	switch reqType {
+	case requestHTTP:
+		// Curl the server from the client to generate some traffic
+		t.NewAction(s, fmt.Sprintf("curl-%s", ipFam), client, server, ipFam).Run(func(a *check.Action) {
+			a.ExecInPod(ctx, t.Context().CurlCommand(server, ipFam))
+		})
+	case requestICMPEcho:
+		// Ping the server from the client to generate some traffic
+		t.NewAction(s, fmt.Sprintf("ping-%s", ipFam), client, server, ipFam).Run(func(a *check.Action) {
+			a.ExecInPod(ctx, t.Context().PingCommand(server, ipFam))
+		})
+	default:
+		t.Fatalf("Invalid request type: %d", reqType)
+	}
+
+	// Wait until tcpdump has exited
+	killCmd()
+	<-bgExited
+
+	// Assert no traffic leak
+	checkPcapForLeak(ctx, t, clientHost)
 }
 
 // bytes.Buffer from the stdlib is non-thread safe, thus our custom
