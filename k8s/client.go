@@ -21,6 +21,7 @@ import (
 	"github.com/distribution/distribution/reference"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chartutil"
+	"helm.sh/helm/v3/pkg/cli/output"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -1082,6 +1083,23 @@ func (c *Client) GetHelmState(ctx context.Context, namespace string, secretName 
 		Version: version,
 		Values:  values,
 	}, nil
+}
+
+// GetHelmValues is the function for cilium cli sysdump to collect the helm values from the release directly
+func (c *Client) GetHelmValues(_ context.Context, releaseName string) ([]byte, error) {
+	client := action.NewGetValues(c.HelmActionConfig)
+	vals, err := client.Run(releaseName)
+	if err != nil {
+		return nil, fmt.Errorf("unable to retrive the helm value from the release %s: %w", releaseName, err)
+	}
+
+	valuesBuf := new(bytes.Buffer)
+	encodeErr := output.EncodeYAML(valuesBuf, vals)
+	if encodeErr != nil {
+		return nil, fmt.Errorf("unable to parse from helm values from release %s: %w", releaseName, err)
+	}
+	return valuesBuf.Bytes(), nil
+
 }
 
 func (c *Client) ListAPIResources(_ context.Context) ([]string, error) {

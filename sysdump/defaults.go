@@ -4,6 +4,7 @@
 package sysdump
 
 import (
+	"github.com/cilium/cilium-cli/defaults"
 	"runtime"
 	"time"
 )
@@ -15,6 +16,7 @@ const (
 const (
 	DefaultCiliumLabelSelector               = labelPrefix + "cilium"
 	DefaultCiliumEnvoyLabelSelector          = labelPrefix + "cilium-envoy"
+	DefaultCiliumHelmChartName               = defaults.HelmReleaseName
 	DefaultCiliumOperatorLabelSelector       = "io.cilium/app=operator"
 	DefaultClustermeshApiserverLabelSelector = labelPrefix + "clustermesh-apiserver"
 	DefaultDebug                             = false
