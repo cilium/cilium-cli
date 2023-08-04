@@ -753,6 +753,20 @@ func Run(ctx context.Context, ct *check.ConnectivityTest, addExtraTests func(*ch
 		)
 
 	if ct.Params().IncludeUnsafeTests {
+		ct.NewTest("pod-to-pod-strict-wireguard-encryption").
+			WithFeatureRequirements(
+				check.RequireFeatureEnabled(check.FeatureEncryptionPod),
+				check.RequireFeatureEnabled(check.FeatureStrictEncryption),
+				check.RequireFeatureEnabled(check.FeatureIPv4), // strict encryption only supported for IPv4
+				check.RequireFeatureDisabled(check.FeatureIPv6),
+				check.RequireFeatureEnabled(check.FeatureCiliumEndpointSlice),
+			).
+			WithScenarios(
+				tests.PodToPodStrictEncryption(),
+			)
+	}
+
+	if ct.Params().IncludeUnsafeTests {
 		ct.NewTest("egress-gateway").
 			WithCiliumEgressGatewayPolicy(egressGatewayPolicyYAML, check.CiliumEgressGatewayPolicyParams{}).
 			WithIPRoutesFromOutsideToPodCIDRs().

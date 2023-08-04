@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/cilium/cilium/pkg/defaults"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/cilium/cilium-cli/connectivity/check"
 )
@@ -115,10 +116,48 @@ func (s *podToPodEncryption) Run(ctx context.Context, t *check.Test) {
 	clientHost := ct.HostNetNSPodsByNode()[client.Pod.Spec.NodeName]
 
 	t.ForEachIPFamily(func(ipFam check.IPFamily) {
-		testNoTrafficLeak(ctx, t, s, client, &server, &clientHost, requestHTTP, ipFam)
+		testNoTrafficLeak(ctx, t, client, &server, &clientHost, requestHTTP, ipFam, false)
 	})
 }
 
+// PodToPodEncryption is a test case which checks the following:
+//   - There is a connectivity between pods on different nodes when any
+//     encryption mode is on (either WireGuard or IPsec).
+//   - No unencrypted packet is leaked.
+//
+// The checks are implemented by curl'ing a server pod from a client pod, and
+// then inspecting tcpdump captures from the client pod's node.
+func PodToPodStrictEncryption() check.Scenario {
+	return &podToPodStrictEncryption{}
+}
+
+type podToPodStrictEncryption struct{}
+
+func (s *podToPodStrictEncryption) Name() string {
+	return "pod-to-pod-strict-encryption"
+}
+
+func (s *podToPodStrictEncryption) Run(ctx context.Context, t *check.Test) {
+	ct := t.Context()
+	client := ct.RandomClientPod()
+
+	var server check.Pod
+	for _, pod := range ct.EchoPods() {
+		// Make sure that the server pod is on another node than client
+		if pod.Pod.Status.HostIP != client.Pod.Status.HostIP {
+			server = pod
+			break
+		}
+	}
+
+	// clientHost is a pod running on the same node as the client pod, just in
+	// the host netns.
+	clientHost := ct.HostNetNSPodsByNode()[client.Pod.Spec.NodeName]
+
+	t.ForEachIPFamily(func(ipFam check.IPFamily) {
+		testNoTrafficLeakStrict(ctx, t, client, &server, &clientHost, requestHTTP, ipFam)
+	})
+}
 
 // startTcpdump starts tcpdump in the background, and returns a cancel function
 // to stop it, and a channel which is closed when tcpdump has exited.
@@ -215,26 +254,115 @@ func checkPcapForLeak(ctx context.Context, t *check.Test, clientHost *check.Pod)
 	}
 }
 
-func testNoTrafficLeak(ctx context.Context, t *check.Test, s check.Scenario,
+func testNoTrafficLeakStrict(ctx context.Context, t *check.Test,
 	client, server, clientHost *check.Pod, reqType requestType, ipFam check.IPFamily,
+) {
+	deleteCES := func(endpointName string) {
+		cesList, err := clientHost.K8sClient.CiliumClientset.CiliumV2alpha1().CiliumEndpointSlices().List(ctx, metav1.ListOptions{})
+		if err != nil {
+			t.Fatalf("Failed to list CiliumEndpointSlices: %s", err)
+		}
+		var cesToDelete string
+		for _, ces := range cesList.Items {
+			for _, ep := range ces.Endpoints {
+				if ep.Name == endpointName {
+					cesToDelete = ces.Name
+					break
+				}
+			}
+		}
+		if cesToDelete == "" {
+			t.Fatalf("Failed to find CiliumEndpointSlice for pod %s", server.Pod.Name)
+		}
+		if err := clientHost.K8sClient.CiliumClientset.CiliumV2alpha1().CiliumEndpointSlices().Delete(ctx, cesToDelete, metav1.DeleteOptions{}); err != nil {
+			t.Fatalf("Failed to delete CiliumEndpointSlice %s: %s", cesToDelete, err)
+		}
+	}
+	setCiliumOperatorScale := func(replicas int32) int32 {
+		scale, err := clientHost.K8sClient.Clientset.AppsV1().Deployments(t.Context().Params().CiliumNamespace).GetScale(ctx, "cilium-operator", metav1.GetOptions{})
+		if err != nil {
+			t.Fatalf("Failed to get cilium-operator scale: %s", err)
+		}
+		savedReplicas := scale.Spec.Replicas
+		scale.Spec.Replicas = replicas
+		if _, err := clientHost.K8sClient.Clientset.AppsV1().Deployments(t.Context().Params().CiliumNamespace).UpdateScale(ctx, "cilium-operator", scale, metav1.UpdateOptions{}); err != nil {
+			t.Fatalf("Failed to scale cilium-operator: %s", err)
+		}
+		return savedReplicas
+	}
+	waitForIPCacheEntry := func(clientPod, dstPod *check.Pod) {
+		timeout := time.After(20 * time.Second)
+		var ciliumHostPodName string
+		for _, pod := range t.Context().CiliumPods() {
+			if pod.NodeName() == clientPod.Pod.Spec.NodeName {
+				ciliumHostPodName = pod.Pod.Name
+				break
+			}
+		}
+		for found := false; !found; {
+			select {
+			case <-timeout:
+				t.Fatalf("Failed to wait for ipcache to contain pod %s's IP", dstPod.Pod.Name)
+			default:
+				cmd := []string{"/bin/sh", "-c", "cilium bpf ipcache list"}
+				out, err := clientPod.K8sClient.ExecInPod(ctx, t.Context().Params().CiliumNamespace, ciliumHostPodName, "", cmd)
+				if err != nil {
+					t.Fatalf("Failed to retrieve ipcache output: %s", err)
+				}
+				if strings.Contains(out.String(), dstPod.Pod.Status.PodIP) {
+					found = true
+					break
+				}
+
+				time.Sleep(500 * time.Millisecond)
+			}
+		}
+	}
+
+	// Disable endpoint propagation by scaling down the cilium-operator in the cilium namespace
+	savedScale := setCiliumOperatorScale(0)
+
+	// Delete CES of the server pod
+	deleteCES(server.Pod.Name)
+	deleteCES(client.Pod.Name)
+
+	// Run the test
+	testNoTrafficLeak(ctx, t, client, server, clientHost, reqType, ipFam, true)
+
+	// Restore the cilium-operator scale
+	_ = setCiliumOperatorScale(savedScale)
+
+	// wait for the ipcache to contain the server pod's IP
+	waitForIPCacheEntry(client, server)
+
+	// Run the test
+	testNoTrafficLeak(ctx, t, client, server, clientHost, reqType, ipFam, false)
+}
+
+func testNoTrafficLeak(ctx context.Context, t *check.Test, client, server, clientHost *check.Pod,
+	reqType requestType, ipFam check.IPFamily, expectFail bool,
 ) {
 	// Setup
 	killCmd, bgExited := startTcpdump(ctx, t, client, server, clientHost, reqType, ipFam)
 
+	var cmd []string
 	// Run the test
 	switch reqType {
 	case requestHTTP:
 		// Curl the server from the client to generate some traffic
-		t.NewAction(s, fmt.Sprintf("curl-%s", ipFam), client, server, ipFam).Run(func(a *check.Action) {
-			a.ExecInPod(ctx, t.Context().CurlCommand(server, ipFam))
-		})
+		cmd = t.Context().CurlCommand(server, ipFam)
 	case requestICMPEcho:
 		// Ping the server from the client to generate some traffic
-		t.NewAction(s, fmt.Sprintf("ping-%s", ipFam), client, server, ipFam).Run(func(a *check.Action) {
-			a.ExecInPod(ctx, t.Context().PingCommand(server, ipFam))
-		})
+		cmd = t.Context().PingCommand(server, ipFam)
 	default:
 		t.Fatalf("Invalid request type: %d", reqType)
+	}
+
+	_, err := client.K8sClient.ExecInPod(ctx, client.Pod.Namespace, client.Pod.Name, "", cmd)
+	if expectFail && err == nil {
+		t.Failf("Expected curl to fail, but it succeeded")
+	} else if !expectFail && err != nil {
+		t.Fatalf("Failed to curl server: %s", err)
 	}
 
 	// Wait until tcpdump has exited
@@ -309,10 +437,10 @@ func (s *nodeToNodeEncryption) Run(ctx context.Context, t *check.Test) {
 	t.ForEachIPFamily(func(ipFam check.IPFamily) {
 		// Test pod-to-remote-host (ICMP Echo instead of HTTP because a remote host
 		// does not have a HTTP server running)
-		testNoTrafficLeak(ctx, t, s, client, &serverHost, &clientHost, requestICMPEcho, ipFam)
+		testNoTrafficLeak(ctx, t, client, &serverHost, &clientHost, requestICMPEcho, ipFam, false)
 		// Test host-to-remote-host
-		testNoTrafficLeak(ctx, t, s, &clientHost, &serverHost, &clientHost, requestICMPEcho, ipFam)
+		testNoTrafficLeak(ctx, t, &clientHost, &serverHost, &clientHost, requestICMPEcho, ipFam, false)
 		// Test host-to-remote-pod
-		testNoTrafficLeak(ctx, t, s, &clientHost, &server, &clientHost, requestHTTP, ipFam)
+		testNoTrafficLeak(ctx, t, &clientHost, &server, &clientHost, requestHTTP, ipFam, false)
 	})
 }
