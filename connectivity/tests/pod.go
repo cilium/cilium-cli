@@ -52,9 +52,13 @@ func (s *podToPod) Run(ctx context.Context, t *check.Test) {
 			t.ForEachIPFamily(func(ipFam check.IPFamily) {
 				t.NewAction(s, fmt.Sprintf("curl-%s-%d", ipFam, i), &client, echo, ipFam).Run(func(a *check.Action) {
 					if s.method == "" {
-						a.ExecInPod(ctx, ct.CurlCommand(echo, ipFam))
+						a.ExecInPod(ctx, ct.CurlCommand(
+							echo, ipFam, "--retry", "5",
+						))
 					} else {
-						a.ExecInPod(ctx, ct.CurlCommand(echo, ipFam, "-X", s.method))
+						a.ExecInPod(ctx, ct.CurlCommand(
+							echo, ipFam, "--retry", "5", "-X", s.method,
+						))
 					}
 
 					a.ValidateFlows(ctx, client, a.GetEgressRequirements(check.FlowParameters{}))
