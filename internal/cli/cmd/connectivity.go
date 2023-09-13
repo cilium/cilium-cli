@@ -186,6 +186,8 @@ func newCmdConnectivityTest(hooks Hooks) *cobra.Command {
 	cmd.Flags().MarkHidden("flush-ct")
 	cmd.Flags().StringVar(&params.SecondaryNetworkIface, "secondary-network-iface", "", "Secondary network iface name (e.g., to test NodePort BPF on multiple networks)")
 
+	cmd.Flags().BoolVar(&params.Short, "short", false, "Run small set of connectivity tests (short runtime)")
+
 	hooks.AddConnectivityTestFlags(cmd.Flags())
 
 	return cmd

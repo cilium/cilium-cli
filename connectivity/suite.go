@@ -250,7 +250,11 @@ func Run(ctx context.Context, ct *check.ConnectivityTest, addExtraTests func(*ch
 		ct.NewTest("no-missed-tail-calls").WithScenarios(tests.NoMissedTailCalls())
 	}
 
-	addFullSuite(ct, renderedTemplates)
+	if ct.Params().Short {
+		addShortSuite(ct, renderedTemplates)
+	} else {
+		addFullSuite(ct, renderedTemplates)
+	}
 
 	// Tests with DNS redirects to the proxy (e.g., client-egress-l7, dns-only,
 	// and to-fqdns) should always be executed last. See #367 for details.
@@ -264,6 +268,68 @@ func Run(ctx context.Context, ct *check.ConnectivityTest, addExtraTests func(*ch
 	}
 
 	return ct.Run(ctx)
+}
+
+// The main idea of --short is to give a quick signal whether basic features of
+// Cilium work as expected. --short is used by the upgrade GH workflows in
+// order to reduce their runtime.
+//
+// List of things to test (optimized for low runtime):
+// * pod-to-pod, pod-to-host, pod-to-service
+// * no-netpol / L3+L4-netpol / L7-netpol
+// * N/S LB
+func addShortSuite(ct *check.ConnectivityTest, renderedTemplates map[string]string) {
+	// Run all tests without any policies in place.
+	noPoliciesScenarios := []check.Scenario{
+		tests.PodToPod(),
+		tests.ClientToClient(),
+		tests.PodToService(),
+		tests.PodToWorld(tests.WithRetryAll()),
+		tests.PodToHost(),
+	}
+
+	ct.NewTest("no-policies").WithScenarios(noPoliciesScenarios...)
+
+	ct.NewTest("echo-ingress").WithCiliumPolicy(echoIngressFromOtherClientPolicyYAML).
+		WithScenarios(tests.PodToPod()).
+		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			if a.Destination().HasLabel("kind", "echo") && !a.Source().HasLabel("other", "client") {
+				// TCP handshake fails both in egress and ingress when
+				// L3(/L4) policy drops at either location.
+				return check.ResultDropCurlTimeout, check.ResultDropCurlTimeout
+			}
+			return check.ResultOK, check.ResultOK
+		})
+
+	// Test L7 HTTP introspection using an ingress policy on echo pods.
+	ct.NewTest("echo-ingress-l7").
+		WithFeatureRequirements(features.RequireEnabled(features.L7Proxy)).
+		WithCiliumPolicy(echoIngressL7HTTPPolicyYAML). // L7 allow policy with HTTP introspection
+		WithScenarios(
+			tests.PodToPodWithEndpoints(),
+		).
+		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			if a.Source().HasLabel("other", "client") { // Only client2 is allowed to make HTTP calls.
+				// Trying to access private endpoint without "secret" header set
+				// should lead to a drop.
+				if a.Destination().Path() == "/private" && !a.Destination().HasLabel("X-Very-Secret-Token", "42") {
+					return check.ResultDropCurlHTTPError, check.ResultNone
+				}
+				egress = check.ResultOK
+				// Expect all curls from client2 to be proxied and to be GET calls.
+				egress.HTTP = check.HTTP{
+					Method: "GET",
+				}
+				return egress, check.ResultNone
+			}
+			return check.ResultDrop, check.ResultDefaultDenyIngressDrop
+		})
+
+	ct.NewTest("north-south-loadbalancing").
+		WithFeatureRequirements(features.RequireEnabled(features.NodeWithoutCilium)).
+		WithScenarios(
+			tests.OutsideToNodePort(),
+		)
 }
 
 func addFullSuite(ct *check.ConnectivityTest, renderedTemplates map[string]string) {

@@ -94,6 +94,8 @@ type Parameters struct {
 
 	ExternalTargetCANamespace string
 	ExternalTargetCAName      string
+
+	Short bool
 }
 
 type podCIDRs struct {
