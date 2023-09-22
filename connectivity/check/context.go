@@ -81,6 +81,8 @@ type ConnectivityTest struct {
 
 	manifests      map[string]string
 	helmYAMLValues string
+
+	hookData any
 }
 
 type PerfTests struct {
@@ -964,4 +966,12 @@ func (ct *ConnectivityTest) Feature(f Feature) (FeatureStatus, bool) {
 
 func (ct *ConnectivityTest) Clients() []*k8s.Client {
 	return ct.clients.clients()
+}
+
+func (ct *ConnectivityTest) SetHookData(hookData any) {
+	ct.hookData = hookData
+}
+
+func (ct *ConnectivityTest) HookData() any {
+	return ct.hookData
 }
