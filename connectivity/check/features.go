@@ -27,13 +27,14 @@ import (
 type Feature string
 
 const (
-	FeatureCNIChaining        Feature = "cni-chaining"
-	FeatureMonitorAggregation Feature = "monitor-aggregation"
-	FeatureL7Proxy            Feature = "l7-proxy"
-	FeatureHostFirewall       Feature = "host-firewall"
-	FeatureICMPPolicy         Feature = "icmp-policy"
-	FeatureTunnel             Feature = "tunnel"
-	FeatureEndpointRoutes     Feature = "endpoint-routes"
+	FeatureCNIChaining         Feature = "cni-chaining"
+	FeatureMonitorAggregation  Feature = "monitor-aggregation"
+	FeatureL7Proxy             Feature = "l7-proxy"
+	FeatureHostFirewall        Feature = "host-firewall"
+	FeatureICMPPolicy          Feature = "icmp-policy"
+	FeatureTunnel              Feature = "tunnel"
+	FeatureEndpointRoutes      Feature = "endpoint-routes"
+	FeatureCiliumEndpointSlice Feature = "cilium-endpoint-slice"
 
 	FeatureKPRMode                Feature = "kpr-mode"
 	FeatureKPRExternalIPs         Feature = "kpr-external-ips"
@@ -49,8 +50,9 @@ const (
 
 	FeatureHealthChecking Feature = "health-checking"
 
-	FeatureEncryptionPod  Feature = "encryption-pod"
-	FeatureEncryptionNode Feature = "encryption-node"
+	FeatureEncryptionPod    Feature = "encryption-pod"
+	FeatureEncryptionNode   Feature = "encryption-node"
+	FeatureStrictEncryption Feature = "encryption-strict"
 
 	FeatureIPv4 Feature = "ipv4"
 	FeatureIPv6 Feature = "ipv6"
@@ -241,6 +243,15 @@ func (ct *ConnectivityTest) extractFeaturesFromConfigMap(ctx context.Context, cl
 			Enabled: mode != "native",
 			Mode:    tunnelProto,
 		}
+	}
+
+	result[FeatureStrictEncryption] = FeatureStatus{
+		Enabled: cm.Data["enable-encryption-strict-mode"] == "true",
+		Mode:    cm.Data["encryption-strict-mode-cidr"],
+	}
+
+	result[FeatureCiliumEndpointSlice] = FeatureStatus{
+		Enabled: cm.Data["enable-cilium-endpoint-slice"] == "true",
 	}
 
 	result[FeatureIPv4] = FeatureStatus{
