@@ -1585,9 +1585,13 @@ if [ "$1" = "uninstall" ] ; then
         echo "Shutting down running Cilium agent"
         ${SUDO} docker rm -f cilium || true
     fi
-    if [ -f /usr/bin/cilium ] ; then
+    if [ -e /usr/bin/cilium ]; then
         echo "Removing /usr/bin/cilium"
         ${SUDO} rm /usr/bin/cilium
+    fi
+    if [ -e /usr/bin/cilium-dbg ] ; then
+        echo "Removing /usr/bin/cilium-dbg"
+        ${SUDO} rm /usr/bin/cilium-dbg
     fi
     pushd /etc
     if [ -f resolv.conf.orig ] ; then
@@ -1689,11 +1693,12 @@ while [ $cilium_started = false ]; do
     ${SUDO} docker run --name cilium $DOCKER_OPTS $CILIUM_IMAGE cilium-agent $CILIUM_OPTS
 
     # Copy Cilium CLI
-    ${SUDO} docker cp cilium:/usr/bin/cilium /usr/bin/cilium
+    ${SUDO} docker cp -L cilium:/usr/bin/cilium /usr/bin/cilium-dbg
+    ${SUDO} ln -s /usr/bin/cilium-dbg /usr/bin/cilium
 
     # Wait for cilium agent to become available
     for ((i = 0 ; i < 12; i++)); do
-        if ${SUDO} cilium status --brief > /dev/null 2>&1; then
+        if ${SUDO} cilium-dbg status --brief > /dev/null 2>&1; then
             cilium_started=true
             break
         fi
@@ -1702,7 +1707,7 @@ while [ $cilium_started = false ]; do
     done
 
     echo "Cilium status:"
-    ${SUDO} cilium status || true
+    ${SUDO} cilium-dbg status || true
 
     if [ "$cilium_started" = true ] ; then
         echo 'Cilium successfully started!'
@@ -1719,7 +1724,7 @@ done
 # Wait for kube-dns service to become available
 kubedns=""
 for ((i = 0 ; i < 24; i++)); do
-    kubedns=$(${SUDO} cilium service list get -o jsonpath='{[?(@.spec.frontend-address.port==53)].spec.frontend-address.ip}')
+    kubedns=$(${SUDO} cilium-dbg service list get -o jsonpath='{[?(@.spec.frontend-address.port==53)].spec.frontend-address.ip}')
     if [ -n "$kubedns" ] ; then
         break
     fi
@@ -1727,7 +1732,7 @@ for ((i = 0 ; i < 24; i++)); do
     echo "Waiting for kube-dns service to come available..."
 done
 
-namespace=$(${SUDO} cilium endpoint get -l reserved:host -o jsonpath='{$[0].status.identity.labels}' | tr -d "[]\"" | tr "," "\n" | grep io.kubernetes.pod.namespace | cut -d= -f2)
+namespace=$(${SUDO} cilium-dbg endpoint get -l reserved:host -o jsonpath='{$[0].status.identity.labels}' | tr -d "[]\"" | tr "," "\n" | grep io.kubernetes.pod.namespace | cut -d= -f2)
 
 if [ -n "$kubedns" ] ; then
     if grep "nameserver $kubedns" /etc/resolv.conf ; then
