@@ -43,6 +43,7 @@ require (
 require (
 	github.com/Microsoft/hcsshim v0.11.0 // indirect
 	github.com/cilium/proxy v0.0.0-20230623092907-8fddead4e52c // indirect
+	github.com/distribution/reference v0.5.0 // indirect
 	github.com/frankban/quicktest v1.14.5 // indirect
 	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
@@ -74,7 +75,7 @@ require (
 	github.com/containerd/containerd v1.7.6 // indirect
 	github.com/cyphar/filepath-securejoin v0.2.4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/distribution/distribution v2.8.2+incompatible
+	github.com/distribution/distribution v2.8.3+incompatible
 	github.com/docker/cli v23.0.3+incompatible // indirect
 	github.com/docker/distribution v2.8.2+incompatible // indirect
 	github.com/docker/docker v24.0.2+incompatible // indirect
