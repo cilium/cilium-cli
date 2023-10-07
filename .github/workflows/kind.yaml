@@ -30,6 +30,7 @@ jobs:
     steps:
       - name: Set mode
         run: |
+          df -h
           echo "CILIUM_CLI_MODE=${{ matrix.mode }}" >> $GITHUB_ENV
       - name: Checkout
         uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
@@ -50,6 +51,7 @@ jobs:
 
       - name: Set up Go for root
         run: |
+          df -h
           sudo ln -sf `which go` `sudo which go` || true
           sudo go version
 
@@ -64,12 +66,14 @@ jobs:
 
       - name: Set NODES_WITHOUT_CILIUM
         run: |
+          df -h
           # To add more elements, keep it comma-separated.
           echo "NODES_WITHOUT_CILIUM=chart-testing-worker2,chart-testing-worker3" >> $GITHUB_ENV
 
       # Install Cilium with HostPort support and enables Prometheus for extended connectivity test.
       - name: Install Cilium
         run: |
+          df -h
           cilium install \
             --version=${{ env.cilium_version }} \
             --nodes-without-cilium="${NODES_WITHOUT_CILIUM}" \
@@ -82,11 +86,13 @@ jobs:
 
       - name: Enable Relay
         run: |
+          df -h
           cilium hubble enable --ui
           cilium status --wait
 
       - name: Relay Port Forward
         run: |
+          df -h
           cilium hubble port-forward&
           sleep 10s
           [[ $(pgrep -f "cilium.*hubble.*port-forward|kubectl.*port-forward.*hubble-relay" | wc -l) == 2 ]]
@@ -94,6 +100,7 @@ jobs:
       - name: Set up external targets
         id: external_targets
         run: |
+          df -h
           export worker2_ip=$(kubectl get nodes chart-testing-worker2 -o=jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
           export worker3_ip=$(kubectl get nodes chart-testing-worker3 -o=jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
           echo "worker2_ip=${worker2_ip}" >> $GITHUB_OUTPUT
@@ -109,6 +116,7 @@ jobs:
 
       - name: Connectivity Test
         run: |
+          df -h
           # Setup the connectivity disruption tests. We don't really care about the result
           # here (in the sense that we don't perform any operation which might cause a
           # disruption), but we want to make sure that the command works as expected.
@@ -130,12 +138,14 @@ jobs:
 
       - name: Uninstall cilium
         run: |
+          df -h
           pkill -f "cilium.*hubble.*port-forward|kubectl.*port-forward.*hubble-relay" || test $? -eq 1
           cilium uninstall --wait
 
       - name: Install Cilium with IPsec Encryption
         if: ${{ matrix.mode == 'classic' }}
         run: |
+          df -h
           cilium install \
           --version=${{ env.cilium_version}} \
           --encryption=ipsec \
@@ -145,6 +155,7 @@ jobs:
       - name: Install Cilium with IPsec Encryption
         if: ${{ matrix.mode == 'helm' }}
         run: |
+          df -h
           kubectl create -n kube-system secret generic cilium-ipsec-keys \
             --from-literal=keys="3 rfc4106(gcm(aes)) $(echo $(dd if=/dev/urandom count=20 bs=1 2> /dev/null | xxd -p -c 64)) 128"
           cilium install \
@@ -156,17 +167,20 @@ jobs:
 
       - name: Enable Relay
         run: |
+          df -h
           cilium hubble enable
           cilium status --wait
 
       - name: Relay Port Forward
         run: |
+          df -h
           cilium hubble port-forward&
           sleep 10s
           [[ $(pgrep -f "cilium.*hubble.*port-forward|kubectl.*port-forward.*hubble-relay" | wc -l) == 2 ]]
 
       - name: Connectivity test
         run: |
+          df -h
           cilium connectivity test --debug --force-deploy --all-flows --test-namespace test-namespace \
             --include-unsafe-tests \
             --collect-sysdump-on-failure --junit-file cilium-junit-${{ matrix.mode }}-2.xml \
@@ -232,6 +246,7 @@ jobs:
 
       - name: Install kubectl
         run: |
+          df -h
           curl -sLO "https://dl.k8s.io/release/${{ env.kubectl_version }}/bin/linux/amd64/kubectl"
           curl -sLO "https://dl.k8s.io/${{ env.kubectl_version }}/bin/linux/amd64/kubectl.sha256"
           echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
@@ -246,6 +261,7 @@ jobs:
 
       - name: Set up Go for root
         run: |
+          df -h
           sudo ln -sf `which go` `sudo which go` || true
           sudo go version
 
@@ -261,6 +277,7 @@ jobs:
 
       - name: Install Cilium on cluster 1
         run: |
+          df -h
           cilium install --context $CLUSTER1 \
             --version=${{ env.cilium_version }} \
             --wait=true \
@@ -278,6 +295,7 @@ jobs:
 
       - name: Install Cilium on cluster 2
         run: |
+          df -h
           cilium install --context $CLUSTER2 \
             --version=${{ env.cilium_version }} \
             --wait=true \
@@ -288,6 +306,7 @@ jobs:
 
       - name: Enable ClusterMesh on cluster 1 using helm-based upgrade
         run: |
+          df -h
           cilium upgrade --reuse-values --context $CLUSTER1 \
             --wait=true \
             --helm-set clustermesh.useAPIServer=true \
@@ -296,6 +315,7 @@ jobs:
 
       - name: Copy CA cert from cluster 1 to cluster 2
         run: |
+          df -h
           kubectl --context $CLUSTER2 delete secret -n kube-system cilium-ca && \
           kubectl --context $CLUSTER1 get secrets -n kube-system cilium-ca -oyaml \
             | kubectl --context $CLUSTER2 apply -f -
@@ -304,6 +324,7 @@ jobs:
 
       - name: Enable ClusterMesh on cluster 2 using helm-based upgrade
         run: |
+          df -h
           cilium upgrade --reuse-values --context $CLUSTER2 \
             --wait=true \
             --helm-set clustermesh.useAPIServer=true \
@@ -312,6 +333,7 @@ jobs:
 
       - name: Rename the secrets expected by the clustermesh connect command
         run: |
+          df -h
           kubectl get secrets --context $CLUSTER1 \
             -n kube-system clustermesh-apiserver-remote-cert -oyaml \
               | sed 's/name: .*/name: clustermesh-apiserver-client-cert/' \
@@ -323,11 +345,13 @@ jobs:
 
       - name: Connect the two clusters using clustermesh
         run: |
+          df -h
           cilium clustermesh connect --context $CLUSTER1 --destination-context $CLUSTER2
           cilium clustermesh status --context $CLUSTER1 --wait
 
       - name: Run the multicluster connectivity tests
         run: |
+          df -h
           # Remove unused docker stuff to avoid running out of disk space.
           docker system prune -fa
           # Setup the connectivity disruption tests. We don't really care about the result
@@ -352,6 +376,7 @@ jobs:
       - name: Cleanup
         if: ${{ always() }}
         run: |
+          df -h
           cilium --context $CLUSTER1 status
           kubectl --context $CLUSTER1 get pods --all-namespaces -o wide
           cilium --context $CLUSTER1 sysdump --output-filename cilium-sysdump-out-c1
