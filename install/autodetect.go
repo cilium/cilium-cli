@@ -198,32 +198,50 @@ func (k *K8sInstaller) autodetectAndValidate(ctx context.Context, helmValues map
 		return fmt.Errorf("invalid encryption mode")
 	}
 
-	k.autodetectKubeProxy(ctx)
+	apiServerHost, apiServerPort, err := k.autodetectKubeProxy(ctx)
+	if err != nil {
+		return err
+	}
+
+	if host, ok := helmValues["k8sServiceHost"].(string); ok {
+		apiServerHost = host
+	}
+	if apiServerHost != "" {
+		k.params.HelmOpts.Values = append(k.params.HelmOpts.Values, fmt.Sprintf("k8sServiceHost=%s", apiServerHost))
+	}
+
+	if port, ok := helmValues["k8sServicePort"].(string); ok {
+		apiServerPort = port
+	}
+	if apiServerPort != "" {
+		k.params.HelmOpts.Values = append(k.params.HelmOpts.Values, fmt.Sprintf("k8sServicePort=%s", apiServerPort))
+	}
+
+	if k.params.UserSetKubeProxyReplacement && (apiServerHost == "" || apiServerPort == "") {
+		k.Log("❌ Could not autodetect API server endpoint. Either set a valid kubernetes context or set k8sServerHost & k8sServerPort.")
+		return fmt.Errorf("could not autodetect API server endpoint, cannot replace kubeproxy")
+	}
 	return k.autoEnableBPFMasq()
 }
 
-func (k *K8sInstaller) autodetectKubeProxy(ctx context.Context) error {
-	if k.params.UserSetKubeProxyReplacement {
-		return nil
-	} else if k.flavor.Kind == k8s.KindK3s {
-		return nil
-	}
+func (k *K8sInstaller) autodetectKubeProxy(ctx context.Context) (string, string, error) {
+	var apiServerHost, apiServerPort string
 
 	kubeSysNameSpace := "kube-system"
 
 	dsList, err := k.client.ListDaemonSet(ctx, kubeSysNameSpace, metav1.ListOptions{})
 	if err != nil {
 		k.Log("⏭️ Skipping auto kube-proxy detection")
-		return nil
+		return apiServerHost, apiServerPort, err
 	}
 
 	for _, ds := range dsList.Items {
 		if strings.Contains(ds.Name, "kube-proxy") {
 			k.Log("🔮 Auto-detected kube-proxy has been installed")
-			return nil
+			return apiServerHost, apiServerPort, err
 		}
 	}
-	apiServerHost, apiServerPort := k.client.GetAPIServerHostAndPort()
+
 	if k.flavor.Kind == k8s.KindKind {
 		k.Log("ℹ️  Detecting real Kubernetes API server addr and port on Kind")
 
@@ -231,7 +249,7 @@ func (k *K8sInstaller) autodetectKubeProxy(ctx context.Context) error {
 		eps, err := k.client.GetEndpoints(ctx, "default", "kubernetes", metav1.GetOptions{})
 		if err != nil {
 			k.Log("❌ Couldn't find 'kubernetes' service endpoint on Kind")
-			return fmt.Errorf("failed to detect API server endpoint")
+			return "", "", fmt.Errorf("failed to detect API server endpoint")
 		}
 
 		if len(eps.Subsets) != 0 {
@@ -241,32 +259,29 @@ func (k *K8sInstaller) autodetectKubeProxy(ctx context.Context) error {
 				apiServerHost = subset.Addresses[0].IP
 			} else {
 				k.Log("❌ Couldn't find endpoint address of the 'kubernetes' service endpoint on Kind")
-				return fmt.Errorf("failed to detect API server address")
+				return "", "", fmt.Errorf("failed to detect API server address")
 			}
 
 			if len(subset.Ports) != 0 {
 				apiServerPort = strconv.FormatInt(int64(subset.Ports[0].Port), 10)
 			} else {
 				k.Log("❌ Couldn't find endpoint port of the 'kubernetes' service endpoint on Kind")
-				return fmt.Errorf("failed to detect API server address")
+				return "", "", fmt.Errorf("failed to detect API server address")
 			}
 		} else {
 			k.Log("❌ Couldn't find 'kubernetes' service endpoint subset on Kind")
-			return fmt.Errorf("failed to detect API server endpoint")
+			return "", "", fmt.Errorf("failed to detect API server endpoint")
 		}
 	}
 
-	if apiServerHost != "" && apiServerPort != "" {
-		k.Log("🔮 Auto-detected kube-proxy has not been installed")
-		k.Log("ℹ️  Cilium will fully replace all functionalities of kube-proxy")
-		// Use HelmOpts to set auto kube-proxy installation
-		k.params.HelmOpts.Values = append(k.params.HelmOpts.Values,
-			"kubeProxyReplacement=strict",
-			fmt.Sprintf("k8sServiceHost=%s", apiServerHost),
-			fmt.Sprintf("k8sServicePort=%s", apiServerPort))
+	k.Log("🔮 Auto-detected kube-proxy has not been installed")
+	k.Log("ℹ️  Cilium will fully replace all functionalities of kube-proxy")
+	k.params.HelmOpts.Values = append(k.params.HelmOpts.Values, "kubeProxyReplacement=strict")
+	// Use HelmOpts to set auto kube-proxy installation
+	if apiServerHost == "" && apiServerPort == "" {
+		apiServerHost, apiServerPort = k.client.GetAPIServerHostAndPort()
 	}
-
-	return nil
+	return apiServerHost, apiServerPort, err
 }
 
 func (k *K8sInstaller) autoEnableBPFMasq() error {

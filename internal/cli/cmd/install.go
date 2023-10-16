@@ -266,6 +266,11 @@ cilium install
 cilium install --context kind-cluster1 --set cluster.id=1 --set cluster.name=cluster1
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			cmd.Flags().Visit(func(f *pflag.Flag) {
+				if f.Name == "set" && strings.Contains(f.Value.String(), "kubeProxyReplacement") {
+					params.UserSetKubeProxyReplacement = true
+				}
+			})
 			params.Namespace = namespace
 			// Don't log anything if it's a dry run so that the dry run output can easily be piped to other commands.
 			if params.DryRun || params.DryRunHelmValues {
@@ -344,6 +349,11 @@ cilium upgrade
 cilium upgrade --helm-set cluster.id=1 --helm-set cluster.name=cluster1
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			cmd.Flags().Visit(func(f *pflag.Flag) {
+				if f.Name == "set" && strings.Contains(f.Value.String(), "kubeProxyReplacement") {
+					params.UserSetKubeProxyReplacement = true
+				}
+			})
 			params.Namespace = namespace
 			// Don't log anything if it's a dry run so that the dry run output can easily be piped to other commands.
 			if params.DryRun || params.DryRunHelmValues {
