@@ -186,6 +186,15 @@
         "\/\/ renovate: datasource=(?<datasource>.*?)\\s+.+Image = \"(?<depName>.*):(?<currentValue>.*)@(?<currentDigest>sha256:[a-f0-9]+)\"",
         "\/\/ renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s+Version = \"(?<currentValue>.*)\""
       ]
+    },
+    {
+      "customType": "regex",
+      "fileMatch": [
+        "^go\\.mod$"
+      ],
+      "matchStrings": [
+        "// renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s+go (?<currentValue>.*)"
+      ]
     }
   ]
 }
