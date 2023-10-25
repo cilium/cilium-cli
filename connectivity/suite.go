@@ -140,6 +140,9 @@ var (
 	//go:embed manifests/echo-ingress-l7-http.yaml
 	echoIngressL7HTTPPolicyYAML string
 
+	//go:embed manifests/echo-ingress-l7-http-mutual-auth.yaml
+	echoIngressL7HTTPMutualAuthPolicyYAML string
+
 	//go:embed manifests/echo-ingress-l7-http-from-anywhere.yaml
 	echoIngressL7HTTPFromAnywherePolicyYAML string
 
@@ -160,6 +163,9 @@ var (
 
 	//go:embed manifests/echo-ingress-mutual-authentication.yaml
 	echoIngressMutualAuthPolicyYAML string
+
+	//go:embed manifests/echo-egress-mutual-authentication.yaml
+	echoEgressMutualAuthPolicyYAML string
 
 	//go:embed manifests/egress-gateway-policy.yaml
 	egressGatewayPolicyYAML string
@@ -828,6 +834,29 @@ func Run(ctx context.Context, ct *check.ConnectivityTest, addExtraTests func(*ch
 			return check.ResultDrop, check.ResultDefaultDenyIngressDrop
 		})
 
+	ct.NewTest("echo-ingress-l7-mutual-auth").
+		WithFeatureRequirements(features.RequireEnabled(features.L7Proxy), features.RequireEnabled(features.AuthSpiffe)).
+		WithCiliumPolicy(echoIngressL7HTTPMutualAuthPolicyYAML). // L7 allow policy with HTTP introspection
+		WithScenarios(
+			tests.PodToPodWithEndpoints(),
+		).
+		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			if a.Source().HasLabel("other", "client") { // Only client2 is allowed to make HTTP calls.
+				// Trying to access private endpoint without "secret" header set
+				// should lead to a drop.
+				if a.Destination().Path() == "/private" && !a.Destination().HasLabel("X-Very-Secret-Token", "42") {
+					return check.ResultDropCurlHTTPError, check.ResultNone
+				}
+				egress = check.ResultOK
+				// Expect all curls from client2 to be proxied and to be GET calls.
+				egress.HTTP = check.HTTP{
+					Method: "GET",
+				}
+				return egress, check.ResultNone
+			}
+			return check.ResultDrop, check.ResultDefaultDenyIngressDrop
+		})
+
 	// Test L7 HTTP introspection using an ingress policy on echo pods.
 	ct.NewTest("echo-ingress-l7-named-port").
 		WithFeatureRequirements(features.RequireEnabled(features.L7Proxy)).
@@ -1002,6 +1031,12 @@ func Run(ctx context.Context, ct *check.ConnectivityTest, addExtraTests func(*ch
 
 	// Test mutual auth with SPIFFE
 	ct.NewTest("echo-ingress-mutual-auth-spiffe").WithCiliumPolicy(echoIngressMutualAuthPolicyYAML).
+		WithFeatureRequirements(features.RequireEnabled(features.AuthSpiffe)).
+		WithScenarios(
+			tests.PodToPod(),
+		)
+
+	ct.NewTest("echo-egress-mutual-auth-spiffe").WithCiliumPolicy(echoEgressMutualAuthPolicyYAML).
 		WithFeatureRequirements(features.RequireEnabled(features.AuthSpiffe)).
 		WithScenarios(
 			tests.PodToPod(),
