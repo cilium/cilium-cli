@@ -13,7 +13,8 @@ cilium install \
   --set kubeProxyReplacement=strict \
   --set loadBalancer.l7.backend=envoy \
   --set tls.secretsBackend=k8s \
-  --set ipv4NativeRoutingCIDR="${CLUSTER_CIDR}"
+  --set ipv4NativeRoutingCIDR="${CLUSTER_CIDR}" \
+  --set debug.enabled=true
 
 # Enable Relay
 cilium hubble enable
