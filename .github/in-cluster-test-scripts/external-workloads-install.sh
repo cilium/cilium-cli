@@ -6,13 +6,14 @@ set -e
 # Install Cilium in cluster
 # We can't get rid of --cluster-name until we fix https://github.com/cilium/cilium-cli/issues/1347.
 cilium install \
-  --version "${CILIUM_VERSION}" \
+  --version "v1.14.2" \
   --cluster-name "${CLUSTER_NAME}" \
   --set bpf.monitorAggregation=none \
   --set routingMode=tunnel \
   --set kubeProxyReplacement=strict \
   --set loadBalancer.l7.backend=envoy \
   --set tls.secretsBackend=k8s \
+  --set image.override="quay.io/cilium/cilium:v1.14.2" \
   --set ipv4NativeRoutingCIDR="${CLUSTER_CIDR}"
 
 # Enable Relay
