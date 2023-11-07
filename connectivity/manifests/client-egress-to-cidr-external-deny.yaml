@@ -9,7 +9,7 @@ spec:
   endpointSelector:
     matchLabels:
       kind: client
-  egressDeny:
+  egress:
   - toCIDRSet:
     - cidr: {{.ExternalCIDR}}
       except:
