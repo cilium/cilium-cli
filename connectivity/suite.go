@@ -250,6 +250,23 @@ func Run(ctx context.Context, ct *check.ConnectivityTest, addExtraTests func(*ch
 		ct.NewTest("no-missed-tail-calls").WithScenarios(tests.NoMissedTailCalls())
 	}
 
+	addFullSuite(ct, renderedTemplates)
+
+	// Tests with DNS redirects to the proxy (e.g., client-egress-l7, dns-only,
+	// and to-fqdns) should always be executed last. See #367 for details.
+
+	if err := addExtraTests(ct); err != nil {
+		return err
+	}
+
+	if ct.Params().IncludeUnsafeTests {
+		ct.NewTest("check-log-errors").WithScenarios(tests.NoErrorsInLogs(ct.CiliumVersion))
+	}
+
+	return ct.Run(ctx)
+}
+
+func addFullSuite(ct *check.ConnectivityTest, renderedTemplates map[string]string) {
 	// Run all tests without any policies in place.
 	noPoliciesScenarios := []check.Scenario{
 		tests.PodToPod(),
@@ -1131,17 +1148,4 @@ func Run(ctx context.Context, ct *check.ConnectivityTest, addExtraTests func(*ch
 				tests.PodToK8sLocal(),
 			)
 	}
-
-	// Tests with DNS redirects to the proxy (e.g., client-egress-l7, dns-only,
-	// and to-fqdns) should always be executed last. See #367 for details.
-
-	if err := addExtraTests(ct); err != nil {
-		return err
-	}
-
-	if ct.Params().IncludeUnsafeTests {
-		ct.NewTest("check-log-errors").WithScenarios(tests.NoErrorsInLogs(ct.CiliumVersion))
-	}
-
-	return ct.Run(ctx)
 }
