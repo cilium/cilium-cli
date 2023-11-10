@@ -258,7 +258,7 @@ func (s *egressGateway) Run(ctx context.Context, t *check.Test) {
 		for _, node := range ct.Nodes() {
 			for _, echo := range ct.EchoServices() {
 				// convert the service to a ServiceExternalIP as we want to access it through its external IP
-				echo := echo.ToNodeportService(node)
+				echo := echo.ToNodeportService(node.Status.Addresses)
 
 				t.NewAction(s, fmt.Sprintf("curl-echo-service-%d", i), &client, echo, features.IPFamilyV4).Run(func(a *check.Action) {
 					a.ExecInPod(ctx, ct.CurlCommand(echo, features.IPFamilyV4))
