@@ -155,7 +155,6 @@ func (s *podToRemoteNodePort) Run(ctx context.Context, t *check.Test) {
 				// If src and dst pod are running on different nodes,
 				// call the Cilium Pod's host IP on the service's NodePort.
 				curlNodePort(ctx, s, t, fmt.Sprintf("curl-%d", i), &pod, svc, node, true, false)
-
 				i++
 			}
 		}
@@ -191,7 +190,6 @@ func (s *podToLocalNodePort) Run(ctx context.Context, t *check.Test) {
 						// If src and dst pod are running on the same node,
 						// call the Cilium Pod's host IP on the service's NodePort.
 						curlNodePort(ctx, s, t, fmt.Sprintf("curl-%d", i), &pod, svc, node, true, false)
-
 						i++
 					}
 				}
@@ -203,9 +201,6 @@ func (s *podToLocalNodePort) Run(ctx context.Context, t *check.Test) {
 func curlNodePort(ctx context.Context, s check.Scenario, t *check.Test,
 	name string, pod *check.Pod, svc check.Service, node *corev1.Node,
 	validateFlows bool, secondaryNetwork bool) {
-
-	// Get the NodePort allocated to the Service.
-	np := uint32(svc.Service.Spec.Ports[0].NodePort)
 
 	addrs := slices.Clone(node.Status.Addresses)
 
@@ -239,27 +234,28 @@ func curlNodePort(ctx context.Context, s check.Scenario, t *check.Test,
 			}
 
 			//  Skip IPv6 requests when running on <1.14.0 Cilium with CNPs
-			if features.GetIPFamily(addr.Address) == features.IPFamilyV6 &&
+			if ipFam == features.IPFamilyV6 &&
 				versioncheck.MustCompile("<1.14.0")(t.Context().CiliumVersion) &&
 				(len(t.CiliumNetworkPolicies()) > 0 || len(t.KubernetesNetworkPolicies()) > 0) {
 				continue
 			}
 
-			// Manually construct an HTTP endpoint to override the destination IP
-			// and port of the request.
-			ep := check.HTTPEndpoint(name, fmt.Sprintf("%s://%s:%d%s", svc.Scheme(), addr.Address, np, svc.Path()))
+			containerPort := svc.Port()
+			// Convert svc to NodeportService with the current address
+			svc := svc.ToNodeportService([]corev1.NodeAddress{addr})
 
 			// Create the Action with the original svc as this will influence what the
 			// flow matcher looks for in the flow logs.
-			t.NewAction(s, name, pod, svc, features.IPFamilyAny).Run(func(a *check.Action) {
-				a.ExecInPod(ctx, t.Context().CurlCommand(ep, features.IPFamilyAny))
+			t.NewAction(s, name, pod, svc, ipFam).Run(func(a *check.Action) {
+				a.ExecInPod(ctx, t.Context().CurlCommand(svc, ipFam))
 
 				if validateFlows {
 					a.ValidateFlows(ctx, pod, a.GetEgressRequirements(check.FlowParameters{
 						// The fact that curl is hitting the NodePort instead of the
 						// backend Pod's port is specified here. This will cause the matcher
 						// to accept both the NodePort and the ClusterIP (container) port.
-						AltDstPort: np,
+						AltDstIP:   "ANY",
+						AltDstPort: containerPort,
 					}))
 				}
 			})

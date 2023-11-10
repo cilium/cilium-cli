@@ -516,8 +516,12 @@ func (a *Action) GetEgressRequirements(p FlowParameters) (reqs []filters.FlowSet
 	ipRequest := filters.IP(srcIP, dstIP)
 	ipResponse := filters.IP(dstIP, srcIP)
 	if len(p.AltDstIP) != 0 && p.AltDstIP != dstIP {
-		ipRequest = filters.Or(filters.IP(srcIP, p.AltDstIP), ipRequest)
-		ipResponse = filters.Or(filters.IP(p.AltDstIP, srcIP), ipResponse)
+		altDstIP := p.AltDstIP
+		if altDstIP == "ANY" {
+			altDstIP = ""
+		}
+		ipRequest = filters.Or(filters.IP(srcIP, altDstIP), ipRequest)
+		ipResponse = filters.Or(filters.IP(altDstIP, srcIP), ipResponse)
 	}
 
 	var egress filters.FlowSetRequirement
