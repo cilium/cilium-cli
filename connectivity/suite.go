@@ -59,6 +59,9 @@ var (
 	//go:embed manifests/allow-ingress-identity.yaml
 	allowIngressIdentityPolicyYAML string
 
+	//go:embed manifests/allow-ingress-from-custom-node.yaml
+	allowIngressFromCustomNodePolicyYAML string
+
 	//go:embed manifests/client-egress-only-dns.yaml
 	clientEgressOnlyDNSPolicyYAML string
 
@@ -121,6 +124,9 @@ var (
 
 	//go:embed manifests/client-egress-to-entities-world.yaml
 	clientEgressToEntitiesWorldPolicyYAML string
+
+	//go:embed manifests/client-egress-to-custom-node.yaml
+	clientEgressToCustomNodePolicyYAML string
 
 	//go:embed manifests/client-egress-to-cidr-cp-host-knp.yaml
 	clientEgressToCIDRCPHostPolicyYAML string
@@ -210,6 +216,8 @@ func Run(ctx context.Context, ct *check.ConnectivityTest, addExtraTests func(*ch
 		"clientEgressL7TLSPolicyYAML":              clientEgressL7TLSPolicyYAML,
 		"clientEgressL7HTTPMatchheaderSecretYAML":  clientEgressL7HTTPMatchheaderSecretYAML,
 		"echoIngressFromCIDRYAML":                  echoIngressFromCIDRYAML,
+		"clientEgressToCustomNodePolicyYAML":       clientEgressToCustomNodePolicyYAML,
+		"allowIngressFromCustomNodePolicyYAML":     allowIngressFromCustomNodePolicyYAML,
 	}
 
 	if ct.Params().K8sLocalHostTest {
@@ -1157,6 +1165,59 @@ func Run(ctx context.Context, ct *check.ConnectivityTest, addExtraTests func(*ch
 				tests.PodToK8sLocal(),
 			)
 	}
+
+	// Check that pods can access nodes when referencing them by node labels
+	// (when this feature is enabled).
+	// The policy allows access to nodes selected by --allowed-node-labels
+	ct.NewTest("pod-to-custom-node").
+		WithFeatureRequirements(features.RequireEnabled(features.PerNodeIdentity)).
+		WithCiliumPolicy(renderedTemplates["clientEgressToCustomNodePolicyYAML"]).
+		WithCiliumPolicy(denyAllEgressPolicyYAML). // default deny
+		WithScenarios(
+			tests.PodToHost(),
+		).
+		WithExpectations(func(a *check.Action) (egress check.Result, ingress check.Result) {
+			// loop through all --allowed-node-labels e.g. 'kubernetes.io/hostname=kind-control-plane'
+			// and compare with tested dst node labels
+			for key, val := range ct.Params().AllowedNodeLabels {
+				if a.Destination().HasLabel(key, val) {
+					// allowed label found in dst, connection is allowed
+					return check.ResultOK, check.ResultNone
+				}
+
+			}
+
+			// dst node does not have any of the allowed labels, expected to be dropped
+			return check.ResultDrop, check.ResultNone
+		})
+
+	// Check that nodes can access pods when referencing nodes by node labels
+	// (when this feature is enabled).
+	// The policy allows access from kind-control-plane to client, expected to fail
+	ct.NewTest("custom-node-to-pod-blocked").
+		WithFeatureRequirements(features.RequireEnabled(features.PerNodeIdentity)).
+		WithCiliumPolicy(renderedTemplates["allowIngressFromCustomNodePolicyYAML"]). // allow only kind-control-plane
+		WithCiliumPolicy(denyAllIngressPolicyYAML).                                  // default deny
+		WithScenarios(
+			tests.HostToPod("kind-worker"),
+		).
+		WithExpectations(func(a *check.Action) (egress check.Result, ingress check.Result) {
+			return check.ResultNone, check.ResultDrop
+		})
+
+	// Check that nodes can access pods when referencing nodes by node labels
+	// (when this feature is enabled).
+	// The policy allows access from kind-control-plane to client, expected to be allowed
+	ct.NewTest("custom-node-to-pod-allowed").
+		WithFeatureRequirements(features.RequireEnabled(features.PerNodeIdentity)).
+		WithCiliumPolicy(renderedTemplates["allowIngressFromCustomNodePolicyYAML"]). // allow only kind-control-plane
+		WithCiliumPolicy(denyAllIngressPolicyYAML).                                  // default deny
+		WithScenarios(
+			tests.HostToPod("kind-control-plane"),
+		).
+		WithExpectations(func(a *check.Action) (egress check.Result, ingress check.Result) {
+			return check.ResultNone, check.ResultOK
+		})
 
 	// Tests with DNS redirects to the proxy (e.g., client-egress-l7, dns-only,
 	// and to-fqdns) should always be executed last. See #367 for details.

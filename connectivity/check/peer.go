@@ -347,10 +347,11 @@ func (e ExternalWorkload) FlowFilters() []*flow.FlowFilter {
 }
 
 // ICMPEndpoint returns a new ICMP endpoint.
-func ICMPEndpoint(name, host string) TestPeer {
+func ICMPEndpoint(name, host string, labels map[string]string) TestPeer {
 	return icmpEndpoint{
-		name: name,
-		host: host,
+		name:   name,
+		host:   host,
+		labels: labels,
 	}
 }
 
@@ -362,6 +363,9 @@ type icmpEndpoint struct {
 
 	// Address of the endpoint.
 	host string
+
+	// Labels of the endpoint.
+	labels map[string]string
 }
 
 // Name is the absolute name of the network endpoint.
@@ -390,13 +394,19 @@ func (ie icmpEndpoint) Port() uint32 {
 }
 
 // HasLabel checks if given label exists and value matches.
-func (ie icmpEndpoint) HasLabel(_, _ string) bool {
+func (ie icmpEndpoint) HasLabel(key, val string) bool {
+	if value, ok := ie.labels[key]; ok && value == val {
+		return true
+	}
 	return false
 }
 
 // Labels returns the copy of labels
 func (ie icmpEndpoint) Labels() map[string]string {
-	return make(map[string]string)
+	if ie.labels == nil {
+		ie.labels = make(map[string]string)
+	}
+	return ie.labels
 }
 
 func (ie icmpEndpoint) FlowFilters() []*flow.FlowFilter {

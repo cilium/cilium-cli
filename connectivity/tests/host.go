@@ -53,7 +53,7 @@ func (s *podToHost) Run(ctx context.Context, t *check.Test) {
 						addrType = "hostname"
 					}
 
-					dst := check.ICMPEndpoint("", addr.Address)
+					dst := check.ICMPEndpoint("", addr.Address, node.Labels)
 					ipFam := features.GetIPFamily(addr.Address)
 
 					t.NewAction(s, fmt.Sprintf("ping-%s-%s", ipFam, addrType), &pod, dst, ipFam).Run(func(a *check.Action) {
@@ -94,7 +94,7 @@ func (s *podToControlPlaneHost) Run(ctx context.Context, t *check.Test) {
 					if features.GetIPFamily(addr.Address) != ipFam {
 						continue
 					}
-					dst := check.ICMPEndpoint("", addr.Address)
+					dst := check.ICMPEndpoint("", addr.Address, node.Labels)
 					ipFam := features.GetIPFamily(addr.Address)
 
 					t.NewAction(s, fmt.Sprintf("ping-%s-node-%s-from-pod-%s", ipFam, node.Name, pod.Name()), &pod, dst, ipFam).Run(func(a *check.Action) {
@@ -157,5 +157,48 @@ func (s *podToHostPort) Run(ctx context.Context, t *check.Test) {
 
 			i++
 		}
+	}
+}
+
+// HostToPod sends an ICMP ping from selected node to all client Pods
+// in the test context.
+func HostToPod(host string) check.Scenario {
+	return &hostToPod{
+		sourceHost: host,
+	}
+}
+
+// HostToPod implements a Scenario.
+type hostToPod struct {
+	sourceHost string
+}
+
+func (s *hostToPod) Name() string {
+	return "host-to-pod"
+}
+
+func (s *hostToPod) Run(ctx context.Context, t *check.Test) {
+	ct := t.Context()
+
+	hostNsPod := ct.HostNetNSPodsByNode()[s.sourceHost]
+
+	for _, pod := range ct.ClientPods() {
+		pod := pod // copy to avoid memory aliasing when using reference
+
+		// if target pod is located on the sourceHost we continue with remaining pods
+		if pod.NodeName() == s.sourceHost {
+			continue
+		}
+		ipFam := features.GetIPFamily(pod.Pod.Status.PodIP)
+
+		t.NewAction(s, fmt.Sprintf("ping-%s", pod.Name()), &hostNsPod, pod, ipFam).Run(func(a *check.Action) {
+			a.ExecInPod(ctx, ct.PingCommand(pod, ipFam))
+
+			a.ValidateFlows(ctx, pod, a.GetIngressRequirements(check.FlowParameters{
+				Protocol: check.ICMP,
+			}))
+
+			a.ValidateMetrics(ctx, pod, a.GetIngressMetricsRequirements())
+		})
 	}
 }

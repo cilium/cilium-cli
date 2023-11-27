@@ -1,0 +1,14 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-ingress-from-custom-node
+spec:
+  endpointSelector:
+    matchLabels:
+      kind: client
+  ingress:
+  - fromNodes:
+    - matchLabels:
+{{- range $key, $value := .AllowedNodeLabels }}
+        {{ $key }}: {{ $value }}
+{{ end }}
