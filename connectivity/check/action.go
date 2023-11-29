@@ -373,7 +373,13 @@ func (a *Action) printFlows(peer TestPeer) {
 	}
 
 	a.Logf("📄 Flow logs for peer %s:", peer.Name())
-	printer := hubprinter.New(hubprinter.Compact(), hubprinter.WithIPTranslation())
+	var printer *hubprinter.Printer
+	if a.test.ctx.Numeric() {
+		printer = hubprinter.New(hubprinter.Compact())
+	} else {
+		printer = hubprinter.New(hubprinter.Compact(), hubprinter.WithIPTranslation())
+	}
+
 	defer printer.Close()
 
 	r := a.flowResults[peer]

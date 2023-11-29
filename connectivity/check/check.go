@@ -25,6 +25,7 @@ type Parameters struct {
 	TestNamespace         string
 	SingleNode            bool
 	PrintFlows            bool
+	Numeric               bool
 	ForceDeploy           bool
 	Hubble                bool
 	HubbleServer          string

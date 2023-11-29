@@ -1126,6 +1126,10 @@ func (ct *ConnectivityTest) PrintFlows() bool {
 	return ct.params.PrintFlows
 }
 
+func (ct *ConnectivityTest) Numeric() bool {
+	return ct.params.Numeric
+}
+
 func (ct *ConnectivityTest) AllFlows() bool {
 	return ct.params.AllFlows
 }
