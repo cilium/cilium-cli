@@ -271,10 +271,10 @@ func (r *FlowRequirementResults) Merge(from *FlowRequirementResults) {
 type L4Protocol int
 
 const (
-	TCP L4Protocol = iota
+	NONE L4Protocol = iota
+	TCP
 	UDP
 	ICMP
-	NONE
 )
 
 // FlowParameters defines parameters for test result flow matching

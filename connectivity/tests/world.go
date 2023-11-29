@@ -38,6 +38,7 @@ func (s *podToWorld) Run(ctx context.Context, t *check.Test) {
 
 	fp := check.FlowParameters{
 		DNSRequired: true,
+		Protocol:    check.TCP,
 		RSTAllowed:  true,
 	}
 
@@ -130,6 +131,7 @@ func (s *podToWorld2) Run(ctx context.Context, t *check.Test) {
 
 	fp := check.FlowParameters{
 		DNSRequired: true,
+		Protocol:    check.TCP,
 		RSTAllowed:  true,
 	}
 
@@ -177,6 +179,7 @@ func (s *podToWorldWithTLSIntercept) Run(ctx context.Context, t *check.Test) {
 
 	fp := check.FlowParameters{
 		DNSRequired: true,
+		Protocol:    check.TCP,
 		RSTAllowed:  true,
 	}
 

@@ -147,6 +147,7 @@ func (s *podToHostPort) Run(ctx context.Context, t *check.Test) {
 				a.ExecInPod(ctx, ct.CurlCommand(ep, features.IPFamilyAny))
 
 				a.ValidateFlows(ctx, client, a.GetEgressRequirements(check.FlowParameters{
+					Protocol: check.TCP,
 					// Because the HostPort request is NATed, we might only
 					// observe flows after DNAT has been applied (e.g. by
 					// HostReachableServices),

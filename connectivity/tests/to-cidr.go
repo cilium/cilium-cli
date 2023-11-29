@@ -46,6 +46,7 @@ func (s *podToCIDR) Run(ctx context.Context, t *check.Test) {
 				a.ExecInPod(ctx, ct.CurlCommand(ep, features.IPFamilyAny, opts...))
 
 				a.ValidateFlows(ctx, src, a.GetEgressRequirements(check.FlowParameters{
+					Protocol:   check.TCP,
 					RSTAllowed: true,
 				}))
 			})

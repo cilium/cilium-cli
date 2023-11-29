@@ -58,8 +58,12 @@ func (s *podToPod) Run(ctx context.Context, t *check.Test) {
 						a.ExecInPod(ctx, ct.CurlCommand(echo, ipFam, "-X", s.method))
 					}
 
-					a.ValidateFlows(ctx, client, a.GetEgressRequirements(check.FlowParameters{}))
-					a.ValidateFlows(ctx, echo, a.GetIngressRequirements(check.FlowParameters{}))
+					a.ValidateFlows(ctx, client, a.GetEgressRequirements(check.FlowParameters{
+						Protocol: check.TCP,
+					}))
+					a.ValidateFlows(ctx, echo, a.GetIngressRequirements(check.FlowParameters{
+						Protocol: check.TCP,
+					}))
 
 					a.ValidateMetrics(ctx, echo, a.GetIngressMetricsRequirements())
 					a.ValidateMetrics(ctx, echo, a.GetEgressMetricsRequirements())
@@ -142,8 +146,12 @@ func (s *podToPodWithEndpoints) curlEndpoints(ctx context.Context, t *check.Test
 		t.NewAction(s, epName, client, ep, ipFam).Run(func(a *check.Action) {
 			a.ExecInPod(ctx, ct.CurlCommand(ep, ipFam, curlOpts...))
 
-			a.ValidateFlows(ctx, client, a.GetEgressRequirements(check.FlowParameters{}))
-			a.ValidateFlows(ctx, ep, a.GetIngressRequirements(check.FlowParameters{}))
+			a.ValidateFlows(ctx, client, a.GetEgressRequirements(check.FlowParameters{
+				Protocol: check.TCP,
+			}))
+			a.ValidateFlows(ctx, ep, a.GetIngressRequirements(check.FlowParameters{
+				Protocol: check.TCP,
+			}))
 		})
 
 		// Additionally test private endpoint access with HTTP header expected by policy.
@@ -159,8 +167,12 @@ func (s *podToPodWithEndpoints) curlEndpoints(ctx context.Context, t *check.Test
 
 				a.ExecInPod(ctx, ct.CurlCommand(ep, ipFam, opts...))
 
-				a.ValidateFlows(ctx, client, a.GetEgressRequirements(check.FlowParameters{}))
-				a.ValidateFlows(ctx, ep, a.GetIngressRequirements(check.FlowParameters{}))
+				a.ValidateFlows(ctx, client, a.GetEgressRequirements(check.FlowParameters{
+					Protocol: check.TCP,
+				}))
+				a.ValidateFlows(ctx, ep, a.GetIngressRequirements(check.FlowParameters{
+					Protocol: check.TCP,
+				}))
 			})
 		}
 	}

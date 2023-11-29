@@ -33,6 +33,7 @@ func (s *podToK8sLocal) Run(ctx context.Context, t *check.Test) {
 			a.ExecInPod(ctx, ct.CurlCommand(k8sSvc, features.IPFamilyAny))
 			a.ValidateFlows(ctx, pod, a.GetEgressRequirements(check.FlowParameters{
 				DNSRequired: true,
+				Protocol:    check.TCP,
 				AltDstPort:  k8sSvc.Port(),
 			}))
 
