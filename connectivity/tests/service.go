@@ -57,8 +57,8 @@ func (s *podToService) Run(ctx context.Context, t *check.Test) {
 				a.ExecInPod(ctx, ct.CurlCommand(svc, features.IPFamilyAny))
 
 				a.ValidateFlows(ctx, pod, a.GetEgressRequirements(check.FlowParameters{
-					DNSRequired: true,
 					Protocol:    check.TCP,
+					DNSProtocol: check.ANY,
 					AltDstPort:  svc.Port(),
 				}))
 
@@ -111,8 +111,8 @@ func (s *podToIngress) Run(ctx context.Context, t *check.Test) {
 				a.ExecInPod(ctx, ct.CurlCommand(svc, features.IPFamilyAny))
 
 				a.ValidateFlows(ctx, pod, a.GetEgressRequirements(check.FlowParameters{
-					DNSRequired: true,
 					Protocol:    check.TCP,
+					DNSProtocol: check.ANY,
 					AltDstPort:  svc.Port(),
 				}))
 			})

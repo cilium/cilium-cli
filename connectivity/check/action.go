@@ -640,14 +640,24 @@ func (a *Action) GetEgressRequirements(p FlowParameters) (reqs []filters.FlowSet
 		a.Failf("Invalid egress flow matching protocol %d", p.Protocol)
 	}
 
-	if p.DNSRequired || a.expEgress.DNSProxy {
+	if p.DNSProtocol != NONE || a.expEgress.DNSProxy {
 		// Override to allow for any DNS server
 		ipRequest := filters.IP(srcIP, "")
 		ipResponse := filters.IP("", srcIP)
 
-		dnsRequest := filters.Or(filters.UDP(0, 53), filters.TCP(0, 53))
-		dnsResponse := filters.Or(filters.UDP(53, 0), filters.TCP(53, 0))
-
+		var dnsRequest, dnsResponse filters.FlowFilterImplementation
+		switch p.DNSProtocol {
+		// NONE covers the case when a.expEgress.DNSProxy is true
+		case ANY, NONE:
+			dnsRequest = filters.Or(filters.UDP(0, 53), filters.TCP(0, 53))
+			dnsResponse = filters.Or(filters.UDP(53, 0), filters.TCP(53, 0))
+		case TCP:
+			dnsRequest = filters.TCP(0, 53)
+			dnsResponse = filters.TCP(53, 0)
+		case UDP:
+			dnsRequest = filters.UDP(0, 53)
+			dnsResponse = filters.UDP(53, 0)
+		}
 		dns := filters.FlowSetRequirement{First: filters.FlowRequirement{Filter: filters.And(ipRequest, dnsRequest), Msg: "DNS request"}}
 		if a.expEgress.DNSProxy {
 			qname := a.dst.Address(a.ipFam) + "."

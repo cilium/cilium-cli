@@ -37,8 +37,8 @@ func (s *podToWorld) Run(ctx context.Context, t *check.Test) {
 	httpsindex := check.HTTPEndpoint(extTarget+"-https-index", fmt.Sprintf("https://%s/index.html", extTarget))
 
 	fp := check.FlowParameters{
-		DNSRequired: true,
 		Protocol:    check.TCP,
+		DNSProtocol: check.ANY,
 		RSTAllowed:  true,
 	}
 
@@ -98,7 +98,7 @@ func (s *podDigTCPWorld) Run(ctx context.Context, t *check.Test) {
 
 	fp := check.FlowParameters{
 		Protocol:    check.NONE,
-		DNSRequired: true,
+		DNSProtocol: check.TCP,
 	}
 
 	ct := t.Context()
@@ -130,8 +130,8 @@ func (s *podToWorld2) Run(ctx context.Context, t *check.Test) {
 	https := check.HTTPEndpoint("cilium-io-https", "https://cilium.io")
 
 	fp := check.FlowParameters{
-		DNSRequired: true,
 		Protocol:    check.TCP,
+		DNSProtocol: check.ANY,
 		RSTAllowed:  true,
 	}
 
@@ -178,8 +178,8 @@ func (s *podToWorldWithTLSIntercept) Run(ctx context.Context, t *check.Test) {
 	https := check.HTTPEndpoint(extTarget+"-https", "https://"+extTarget)
 
 	fp := check.FlowParameters{
-		DNSRequired: true,
 		Protocol:    check.TCP,
+		DNSProtocol: check.ANY,
 		RSTAllowed:  true,
 	}
 
