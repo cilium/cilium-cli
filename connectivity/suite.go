@@ -1127,6 +1127,16 @@ func Run(ctx context.Context, ct *check.ConnectivityTest, addExtraTests func(*ch
 			return check.ResultDNSOKDropCurlTimeout, check.ResultNone
 		})
 
+	// This policy only allows port 80 to domain-name, default one.one.one.one,. DNS proxy enabled.
+	ct.NewTest("dns-tcp").WithCiliumPolicy(clientEgressOnlyDNSPolicyYAML).
+		WithFeatureRequirements(features.RequireEnabled(features.L7Proxy)).
+		WithScenarios(
+			tests.PodDigTCPWorld(),
+		).
+		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			return check.ResultDNSOK, check.ResultNone
+		})
+
 	if ct.Params().K8sLocalHostTest {
 		ct.NewTest("pod-to-controlplane-host").
 			WithCiliumPolicy(clientEgressToEntitiesHostPolicyYAML).

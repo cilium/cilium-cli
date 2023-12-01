@@ -526,10 +526,13 @@ func (a *Action) GetEgressRequirements(p FlowParameters) (reqs []filters.FlowSet
 	}
 
 	var egress filters.FlowSetRequirement
+	haveEgress := false
 	var http filters.FlowSetRequirement
 	haveHTTP := false
 
 	switch p.Protocol {
+	case NONE:
+		// No payload protocol requirement
 	case ICMP:
 		icmpRequest := filters.Or(filters.ICMP(8), filters.ICMPv6(128))
 		icmpResponse := filters.Or(filters.ICMP(0), filters.ICMPv6(129))
@@ -569,6 +572,7 @@ func (a *Action) GetEgressRequirements(p FlowParameters) (reqs []filters.FlowSet
 				}
 			}
 		}
+		haveEgress = true
 	case TCP:
 		tcpRequest := filters.TCP(0, a.dst.Port())
 		tcpResponse := filters.TCP(a.dst.Port(), 0)
@@ -629,6 +633,7 @@ func (a *Action) GetEgressRequirements(p FlowParameters) (reqs []filters.FlowSet
 				}
 			}
 		}
+		haveEgress = true
 	case UDP:
 		a.Fail("UDP egress flow matching not implemented yet")
 	default:
@@ -656,7 +661,9 @@ func (a *Action) GetEgressRequirements(p FlowParameters) (reqs []filters.FlowSet
 
 		reqs = append(reqs, dns)
 	}
-	reqs = append(reqs, egress)
+	if haveEgress {
+		reqs = append(reqs, egress)
+	}
 	if haveHTTP {
 		reqs = append(reqs, http)
 	}

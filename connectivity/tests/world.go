@@ -72,6 +72,46 @@ func (s *podToWorld) Run(ctx context.Context, t *check.Test) {
 	}
 }
 
+// PodDigTCPWorld resolves the external target via dig using TCP for name resolution
+// from each client Pod.
+func PodDigTCPWorld(opts ...RetryOption) check.Scenario {
+	cond := &retryCondition{}
+	for _, op := range opts {
+		op(cond)
+	}
+	return &podDigTCPWorld{rc: cond}
+}
+
+// podDigTCPWorld implements a Scenario.
+type podDigTCPWorld struct {
+	rc *retryCondition
+}
+
+func (s *podDigTCPWorld) Name() string {
+	return "pod-to-world"
+}
+
+func (s *podDigTCPWorld) Run(ctx context.Context, t *check.Test) {
+	extTarget := t.Context().Params().ExternalTarget
+	dns := check.DNSEndpoint(extTarget+"-dns-tcp", extTarget)
+
+	fp := check.FlowParameters{
+		Protocol:    check.NONE,
+		DNSRequired: true,
+	}
+
+	ct := t.Context()
+
+	for _, client := range ct.ClientPods() {
+		client := client // copy to avoid memory aliasing when using reference
+
+		t.NewAction(s, fmt.Sprintf("dns-tcp-%s", extTarget), &client, dns, features.IPFamilyAny).Run(func(a *check.Action) {
+			a.ExecInPod(ctx, []string{"dig", "+tcp", extTarget})
+			a.ValidateFlows(ctx, client, a.GetEgressRequirements(fp))
+		})
+	}
+}
+
 // PodToWorld2 sends an HTTPS request to cilium.io from from random client
 // Pods.
 func PodToWorld2() check.Scenario {

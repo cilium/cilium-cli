@@ -274,11 +274,13 @@ const (
 	TCP L4Protocol = iota
 	UDP
 	ICMP
+	NONE
 )
 
 // FlowParameters defines parameters for test result flow matching
 type FlowParameters struct {
 	// Protocol is the network protocol being tested
+	// Use NONE to skip the payload flow validation, if only DNS is required
 	Protocol L4Protocol
 
 	// DNSRequired is true if DNS flows must be seen before the test protocol

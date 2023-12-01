@@ -492,6 +492,56 @@ func (he httpEndpoint) FlowFilters() []*flow.FlowFilter {
 	return nil
 }
 
+// DNSEndpoint returns a new endpoint with the given name
+func DNSEndpoint(name, dns string) TestPeer {
+	return dnsEndpoint{
+		name: name,
+		dns:  dns,
+	}
+}
+
+// dnsEndpoint is an DNS endpoint acting as a peer in a connectivity test.
+// It implements interface TestPeer.
+type dnsEndpoint struct {
+	// Name of the endpoint instance.
+	name string
+
+	// Domain Name of the endpoint
+	dns string
+}
+
+func (de dnsEndpoint) Name() string {
+	return de.name
+}
+
+func (de dnsEndpoint) Scheme() string {
+	return ""
+}
+
+func (de dnsEndpoint) Path() string {
+	return ""
+}
+
+func (de dnsEndpoint) Address(features.IPFamily) string {
+	return de.dns
+}
+
+func (de dnsEndpoint) Port() uint32 {
+	return 0
+}
+
+func (de dnsEndpoint) HasLabel(string, string) bool {
+	return false
+}
+
+func (de dnsEndpoint) Labels() map[string]string {
+	return nil
+}
+
+func (de dnsEndpoint) FlowFilters() []*flow.FlowFilter {
+	return nil
+}
+
 // EchoIPPod is a Kubernetes Pod that prints back the client IP, acting as a peer in a connectivity test.
 type EchoIPPod struct {
 	Pod
