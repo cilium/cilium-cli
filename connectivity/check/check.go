@@ -95,6 +95,8 @@ type Parameters struct {
 
 	ExternalTargetCANamespace string
 	ExternalTargetCAName      string
+
+	AllowedNodeLabels map[string]string
 }
 
 type podCIDRs struct {

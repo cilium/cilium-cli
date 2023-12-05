@@ -186,6 +186,7 @@ func newCmdConnectivityTest(hooks Hooks) *cobra.Command {
 	cmd.Flags().BoolVar(&params.FlushCT, "flush-ct", false, "Flush conntrack of Cilium on each node")
 	cmd.Flags().MarkHidden("flush-ct")
 	cmd.Flags().StringVar(&params.SecondaryNetworkIface, "secondary-network-iface", "", "Secondary network iface name (e.g., to test NodePort BPF on multiple networks)")
+	cmd.Flags().StringToStringVar(&params.AllowedNodeLabels, "allowed-node-labels", map[string]string{}, "Add key=value node labels to allow access from/to in connectivity tests")
 
 	hooks.AddConnectivityTestFlags(cmd.Flags())
 

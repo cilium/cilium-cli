@@ -1,0 +1,14 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: client-egress-to-entities-remote-node
+spec:
+  endpointSelector:
+    matchLabels:
+      kind: client
+  egress:
+  - toNodes:
+    - matchLabels:
+{{- range $key, $value := .AllowedNodeLabels }}
+        {{ $key }}: {{ $value }}
+{{ end }}
