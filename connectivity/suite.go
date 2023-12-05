@@ -15,6 +15,7 @@ import (
 
 	"github.com/cilium/cilium-cli/connectivity/check"
 	"github.com/cilium/cilium-cli/connectivity/manifests/template"
+	"github.com/cilium/cilium-cli/connectivity/perf/benchmarks/netperf"
 	"github.com/cilium/cilium-cli/connectivity/tests"
 	"github.com/cilium/cilium-cli/utils/features"
 )
@@ -231,7 +232,7 @@ func Run(ctx context.Context, ct *check.ConnectivityTest, addExtraTests func(*ch
 	// Network Performance Test
 	if ct.Params().Perf {
 		ct.NewTest("network-perf").WithScenarios(
-			tests.NetperfPodtoPod(""),
+			netperf.NetperfPodtoPod(""),
 		)
 		return ct.Run(ctx)
 	}

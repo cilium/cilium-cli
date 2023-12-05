@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/cilium/cilium-cli/connectivity"
 	"github.com/cilium/cilium-cli/connectivity/check"
@@ -32,6 +33,7 @@ func newCmdConnectivity(hooks Hooks) *cobra.Command {
 	}
 
 	cmd.AddCommand(newCmdConnectivityTest(hooks))
+	cmd.AddCommand(newCmdConnectivityPerf(hooks))
 
 	return cmd
 }
@@ -46,68 +48,72 @@ var params = check.Parameters{
 }
 var tests []string
 
+func RunE(hooks Hooks) func(cmd *cobra.Command, args []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		params.CiliumNamespace = namespace
+
+		for _, test := range tests {
+			if strings.HasPrefix(test, "!") {
+				rgx, err := regexp.Compile(strings.TrimPrefix(test, "!"))
+				if err != nil {
+					return fmt.Errorf("test filter: %w", err)
+				}
+				params.SkipTests = append(params.SkipTests, rgx)
+			} else {
+				rgx, err := regexp.Compile(test)
+				if err != nil {
+					return fmt.Errorf("test filter: %w", err)
+				}
+				params.RunTests = append(params.RunTests, rgx)
+			}
+		}
+
+		// Instantiate the test harness.
+		cc, err := check.NewConnectivityTest(k8sClient, params, version)
+		if err != nil {
+			return err
+		}
+
+		ctx, _ := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+
+		go func() {
+			<-ctx.Done()
+			cc.Log("Interrupt received, cancelling tests...")
+		}()
+
+		done := make(chan struct{})
+		var finished bool
+
+		// Execute connectivity.Run() in its own goroutine, it might call Fatal()
+		// and end the goroutine without returning.
+		go func() {
+			defer func() { done <- struct{}{} }()
+			err = connectivity.Run(ctx, cc, hooks.AddConnectivityTests, hooks.SetupAndValidate)
+
+			// If Fatal() was called in the test suite, the statement below won't fire.
+			finished = true
+		}()
+		<-done
+
+		if !finished {
+			// Exit with a non-zero return code.
+			return errInternal
+		}
+
+		if err != nil {
+			return fmt.Errorf("connectivity test failed: %w", err)
+		}
+
+		return nil
+	}
+}
+
 func newCmdConnectivityTest(hooks Hooks) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "test",
 		Short: "Validate connectivity in cluster",
 		Long:  ``,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			params.CiliumNamespace = namespace
-
-			for _, test := range tests {
-				if strings.HasPrefix(test, "!") {
-					rgx, err := regexp.Compile(strings.TrimPrefix(test, "!"))
-					if err != nil {
-						return fmt.Errorf("test filter: %w", err)
-					}
-					params.SkipTests = append(params.SkipTests, rgx)
-				} else {
-					rgx, err := regexp.Compile(test)
-					if err != nil {
-						return fmt.Errorf("test filter: %w", err)
-					}
-					params.RunTests = append(params.RunTests, rgx)
-				}
-			}
-
-			// Instantiate the test harness.
-			cc, err := check.NewConnectivityTest(k8sClient, params, version)
-			if err != nil {
-				return err
-			}
-
-			ctx, _ := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-
-			go func() {
-				<-ctx.Done()
-				cc.Log("Interrupt received, cancelling tests...")
-			}()
-
-			done := make(chan struct{})
-			var finished bool
-
-			// Execute connectivity.Run() in its own goroutine, it might call Fatal()
-			// and end the goroutine without returning.
-			go func() {
-				defer func() { done <- struct{}{} }()
-				err = connectivity.Run(ctx, cc, hooks.AddConnectivityTests, hooks.SetupAndValidate)
-
-				// If Fatal() was called in the test suite, the statement below won't fire.
-				finished = true
-			}()
-			<-done
-
-			if !finished {
-				// Exit with a non-zero return code.
-				return errInternal
-			}
-
-			if err != nil {
-				return fmt.Errorf("connectivity test failed: %w", err)
-			}
-
-			return nil
-		},
+		RunE:  RunE(hooks),
 	}
 
 	cmd.Flags().BoolVar(&params.SingleNode, "single-node", false, "Limit to tests able to run on a single node")
@@ -116,13 +122,10 @@ func newCmdConnectivityTest(hooks Hooks) *cobra.Command {
 	cmd.Flags().BoolVar(&params.ForceDeploy, "force-deploy", false, "Force re-deploying test artifacts")
 	cmd.Flags().BoolVar(&params.Hubble, "hubble", true, "Automatically use Hubble for flow validation & troubleshooting")
 	cmd.Flags().StringVar(&params.HubbleServer, "hubble-server", "localhost:4245", "Address of the Hubble endpoint for flow validation")
-	cmd.Flags().StringVar(&params.TestNamespace, "test-namespace", defaults.ConnectivityCheckNamespace, "Namespace to perform the connectivity test in")
 	cmd.Flags().StringVar(&params.AgentDaemonSetName, "agent-daemonset-name", defaults.AgentDaemonSetName, "Name of cilium agent daemonset")
 	cmd.Flags().StringVar(&params.AgentPodSelector, "agent-pod-selector", defaults.AgentPodSelector, "Label on cilium-agent pods to select with")
-	cmd.Flags().StringToStringVar(&params.NodeSelector, "node-selector", map[string]string{}, "Restrict connectivity test pods to nodes matching this label")
 	cmd.Flags().Var(&params.NamespaceAnnotations, "namespace-annotations", "Add annotations to the connectivity test namespace, e.g. '{\"foo\":\"bar\"}'")
 	cmd.Flags().MarkHidden("namespace-annotations")
-	cmd.Flags().Var(&params.DeploymentAnnotations, "deployment-pod-annotations", "Add annotations to the connectivity test pods, e.g. '{\"client\":{\"foo\":\"bar\"}}'")
 	cmd.Flags().MarkHidden("deployment-pod-annotations")
 	cmd.Flags().StringVar(&params.MultiCluster, "multi-cluster", "", "Test across clusters to given context")
 	cmd.Flags().StringSliceVar(&tests, "test", []string{}, "Run tests that match one of the given regular expressions, skip tests by starting the expression with '!', target Scenarios with e.g. '/pod-to-cidr'")
@@ -130,7 +133,6 @@ func newCmdConnectivityTest(hooks Hooks) *cobra.Command {
 	cmd.Flags().BoolVar(&params.AllFlows, "all-flows", false, "Print all flows during flow validation")
 	cmd.Flags().StringVar(&params.AssumeCiliumVersion, "assume-cilium-version", "", "Assume Cilium version for connectivity tests")
 	cmd.Flags().BoolVarP(&params.Verbose, "verbose", "v", false, "Show informational messages and don't buffer any lines")
-	cmd.Flags().BoolVarP(&params.Debug, "debug", "d", false, "Show debug messages")
 	cmd.Flags().BoolVarP(&params.Timestamp, "timestamp", "t", false, "Show timestamp in messages")
 	cmd.Flags().BoolVarP(&params.PauseOnFail, "pause-on-fail", "p", false, "Pause execution on test failure")
 	cmd.Flags().StringVar(&params.ExternalTarget, "external-target", "one.one.one.one", "Domain name to use as external target in connectivity tests")
@@ -154,13 +156,6 @@ func newCmdConnectivityTest(hooks Hooks) *cobra.Command {
 	cmd.Flags().StringVar(&params.HelmValuesSecretName, "helm-values-secret-name", defaults.HelmValuesSecretName, "Secret name to store the auto-generated helm values file. The namespace is the same as where Cilium will be installed")
 
 	cmd.Flags().StringSliceVar(&params.DeleteCiliumOnNodes, "delete-cilium-pod-on-nodes", []string{}, "List of node names from which Cilium pods will be delete before running tests")
-
-	cmd.Flags().BoolVar(&params.Perf, "perf", false, "Run network Performance tests")
-	cmd.Flags().DurationVar(&params.PerfDuration, "perf-duration", 10*time.Second, "Duration for the Performance test to run")
-	cmd.Flags().IntVar(&params.PerfSamples, "perf-samples", 1, "Number of Performance samples to capture (how many times to run each test)")
-	cmd.Flags().BoolVar(&params.PerfCRR, "perf-crr", false, "Run Netperf CRR Test. --perf-samples and --perf-duration ignored")
-	cmd.Flags().BoolVar(&params.PerfHostNet, "host-net", false, "Use host networking during network performance tests")
-	cmd.Flags().BoolVar(&params.PerfLatency, "perf-latency", false, "Run network latency tests")
 
 	cmd.Flags().StringVar(&params.CurlImage, "curl-image", defaults.ConnectivityCheckAlpineCurlImage, "Image path to use for curl")
 	cmd.Flags().StringVar(&params.PerformanceImage, "performance-image", defaults.ConnectivityPerformanceImage, "Image path to use for performance")
@@ -189,5 +184,33 @@ func newCmdConnectivityTest(hooks Hooks) *cobra.Command {
 
 	hooks.AddConnectivityTestFlags(cmd.Flags())
 
+	registerCommonFlags(cmd.Flags())
+
 	return cmd
+}
+
+func newCmdConnectivityPerf(hooks Hooks) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "perf",
+		Short: "Test network performance",
+		Long:  ``,
+		RunE:  RunE(hooks),
+	}
+
+	cmd.Flags().BoolVar(&params.Perf, "perf", true, "Run network Performance tests")
+	cmd.Flags().DurationVar(&params.PerfDuration, "perf-duration", 1*time.Second, "Duration for the Performance test to run")
+	cmd.Flags().IntVar(&params.PerfSamples, "perf-samples", 1, "Number of Performance samples to capture (how many times to run each test)")
+	//cmd.Flags().BoolVar(&params.PerfHostNet, "host-net", false, "Use host networking during network performance tests")
+
+	cmd.Flags().StringVar(&params.PerformanceImage, "performance-image", defaults.ConnectivityPerformanceImage, "Image path to use for performance")
+	registerCommonFlags(cmd.Flags())
+
+	return cmd
+}
+
+func registerCommonFlags(flags *pflag.FlagSet) {
+	flags.BoolVarP(&params.Debug, "debug", "d", false, "Show debug messages")
+	flags.StringToStringVar(&params.NodeSelector, "node-selector", map[string]string{}, "Restrict connectivity test pods to nodes matching this label")
+	flags.StringVar(&params.TestNamespace, "test-namespace", defaults.ConnectivityCheckNamespace, "Namespace to perform the connectivity test in")
+	flags.Var(&params.DeploymentAnnotations, "deployment-pod-annotations", "Add annotations to the connectivity test pods, e.g. '{\"client\":{\"foo\":\"bar\"}}'")
 }
