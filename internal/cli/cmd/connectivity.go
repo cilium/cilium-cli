@@ -47,7 +47,98 @@ var params = check.Parameters{
 
 var tests []string
 
+var validTests = []string{
+	"network-perf",
+	"no-interrupted-connections",
+	"no-ipsec-xfrm-errors",
+	"no-missed-tail-calls",
+	"no-policies",
+	"no-policies-from-outside",
+	"no-policies-extra",
+	"allow-all-except-world",
+	"client-ingress",
+	"client-ingress-knp",
+	"allow-all-with-metrics-check",
+	"all-ingress-deny",
+	"all-ingress-deny-from-outside",
+	"all-ingress-deny-knp",
+	"all-egress-deny",
+	"all-egress-deny-knp",
+	"all-entities-deny",
+	"cluster-entity",
+	"cluster-entity-multi-cluster",
+	"host-entity",
+	"echo-ingress",
+	"echo-ingress-from-outside",
+	"echo-ingress-knp",
+	"client-ingress-icmp",
+	"client-egress",
+	"client-egress-knp",
+	"client-egress-expression",
+	"client-egress-expression-knp",
+	"client-with-service-account-egress-to-echo",
+	"client-egress-to-echo-service-account",
+	"to-entities-world",
+	"to-cidr-external",
+	"to-cidr-external-knp",
+	"from-cidr-host-netns",
+	"echo-ingress-from-other-client-deny",
+	"client-ingress-from-other-client-icmp-deny",
+	"client-egress-to-echo-deny",
+	"client-ingress-to-echo-named-port-deny",
+	"client-egress-to-echo-expression-deny",
+	"client-with-service-account-egress-to-echo-deny",
+	"client-egress-to-echo-service-account-deny",
+	"client-egress-to-cidr-deny",
+	"client-egress-to-cidr-deny-default",
+	"health",
+	"north-south-loadbalancing",
+	"pod-to-pod-encryption",
+	"node-to-node-encryption",
+	"egress-gateway",
+	"egress-gateway-excluded-cidrs",
+	"pod-to-node-cidrpolicy",
+	"north-south-loadbalancing-with-l7-policy",
+	"echo-ingress-l7",
+	"echo-ingress-l7-named-port",
+	"client-egress-l7-method",
+	"client-egress-l7",
+	"client-egress-l7-named-port",
+	"client-egress-l7-tls-deny-without-headers",
+	"client-egress-l7-tls-headers",
+	"client-egress-l7-set-header",
+	"echo-ingress-auth-always-fail",
+	"echo-ingress-mutual-auth-spiffe",
+	"pod-to-ingress-service",
+	"pod-to-ingress-service-deny-all",
+	"pod-to-ingress-service-deny-ingress-identity",
+	"pod-to-ingress-service-deny-backend-service",
+	"pod-to-ingress-service-allow-ingress-identity",
+	"dns-only",
+	"to-fqdns",
+	"pod-to-controlplane-host",
+	"pod-to-k8s-on-controlplane",
+	"pod-to-controlplane-host-cidr",
+	"pod-to-k8s-on-controlplane-cidr",
+	"check-log-errors",
+}
+
+func isValidConnectivityTest(test string) error {
+	for _, v := range validTests {
+		if test == v {
+			return nil
+		}
+	}
+	var errMsg string
+	errMsg += fmt.Sprintf("invalid test: %s!\nvalid connectivity tests are:\n", test)
+	for _, v := range validTests {
+		errMsg += v + "\n"
+	}
+	return fmt.Errorf(errMsg)
+}
+
 func newCmdConnectivityTest(hooks Hooks) *cobra.Command {
+
 	cmd := &cobra.Command{
 		Use:   "test",
 		Short: "Validate connectivity in cluster",
@@ -61,11 +152,19 @@ func newCmdConnectivityTest(hooks Hooks) *cobra.Command {
 					if err != nil {
 						return fmt.Errorf("test filter: %w", err)
 					}
+					err = isValidConnectivityTest(rgx.String())
+					if err != nil {
+						return err
+					}
 					params.SkipTests = append(params.SkipTests, rgx)
 				} else {
 					rgx, err := regexp.Compile(test)
 					if err != nil {
 						return fmt.Errorf("test filter: %w", err)
+					}
+					err = isValidConnectivityTest(rgx.String())
+					if err != nil {
+						return err
 					}
 					params.RunTests = append(params.RunTests, rgx)
 				}
