@@ -162,11 +162,3 @@ func netperf(ctx context.Context, sip string, perfTest common.PerfTests, a *chec
 
 	return res
 }
-
-func listAvg(list []float64) float64 {
-	total := 0.0
-	for _, v := range list {
-		total = total + v
-	}
-	return float64(total) / float64(len(list))
-}
