@@ -25,9 +25,8 @@ type LatencyMetric struct {
 func (metric *LatencyMetric) ToPerfData(labels map[string]string) DataItem {
 	return DataItem{
 		Data: map[string]float64{
-			"Min":    float64(metric.Min) / float64(time.Microsecond),
-			"Avg":    float64(metric.Avg) / float64(time.Microsecond),
-			"Max":    float64(metric.Max) / float64(time.Microsecond),
+			// Let's only export percentiles
+			// Max is skewing results and doesn't make much sense to keep track of
 			"Perc50": float64(metric.Perc50) / float64(time.Microsecond),
 			"Perc90": float64(metric.Perc90) / float64(time.Microsecond),
 			"Perc99": float64(metric.Perc99) / float64(time.Microsecond),
@@ -85,6 +84,9 @@ type PerfSummary struct {
 	Result   PerfResult
 }
 
+// These two structures are borrowed from kubernetes/perf-tests:
+// https://github.com/kubernetes/perf-tests/blob/master/clusterloader2/pkg/measurement/util/perftype.go
+// this is done in order to be compatible with perfdash
 type DataItem struct {
 	// Data is a map from bucket to real data point (e.g. "Perc90" -> 23.5). Notice
 	// that all data items with the same label combination should have the same buckets.
@@ -104,12 +106,6 @@ type PerfData struct {
 	DataItems []DataItem `json:"dataItems"`
 	// Labels is the labels of the dataset.
 	Labels map[string]string `json:"labels,omitempty"`
-}
-
-type genericSummary struct {
-	name      string
-	timestamp time.Time
-	content   PerfData
 }
 
 func getLabelsForTest(summary PerfSummary, metric string) map[string]string {
@@ -141,31 +137,19 @@ func ExportPerfSummaries(summaries []PerfSummary, reporitDir string) {
 			perfData = append(perfData, summary.Result.ThroughputMetric.ToPerfData(labels))
 		}
 	}
-
-	summary := createSummary("NetworkPerformance", PerfData{Version: "v1", DataItems: perfData})
-	exportSummaries([]*genericSummary{summary}, reporitDir)
+	exportSummary(PerfData{Version: "v1", DataItems: perfData}, reporitDir)
 }
 
-// CreateSummary creates generic summary.
-func createSummary(name string, content PerfData) *genericSummary {
-	return &genericSummary{
-		name:      name,
-		timestamp: time.Now(),
-		content:   content,
+func exportSummary(content PerfData, reportDir string) error {
+	// this filename needs to be in a specific format for perfdash
+	fileName := strings.Join([]string{"NetworkPerformance_benchmark", time.Now().Format(time.RFC3339)}, "_")
+	filePath := path.Join(reportDir, strings.Join([]string{fileName, "json"}, "."))
+	contentStr, err := prettyPrintJSON(content)
+	if err != nil {
+		return fmt.Errorf("error formatting summary: %v error: %v", content, err)
 	}
-}
-
-func exportSummaries(summaries []*genericSummary, reportDir string) error {
-	for _, summary := range summaries {
-		fileName := strings.Join([]string{summary.name, summary.timestamp.Format(time.RFC3339)}, "_")
-		filePath := path.Join(reportDir, strings.Join([]string{fileName, "json"}, "."))
-		content, err := prettyPrintJSON(summary.content)
-		if err != nil {
-			return fmt.Errorf("error formatting summary: %v error: %v", summary.content, err)
-		}
-		if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-			return fmt.Errorf("writing to file %v error: %v", filePath, err)
-		}
+	if err := os.WriteFile(filePath, []byte(contentStr), 0644); err != nil {
+		return fmt.Errorf("writing to file %v error: %v", filePath, err)
 	}
 	return nil
 }

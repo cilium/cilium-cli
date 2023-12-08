@@ -198,7 +198,7 @@ func newCmdConnectivityPerf(hooks Hooks) *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&params.Perf, "perf", true, "Run network Performance tests")
-	cmd.Flags().DurationVar(&params.PerfDuration, "perf-duration", 1*time.Second, "Duration for the Performance test to run")
+	cmd.Flags().DurationVar(&params.PerfDuration, "perf-duration", 10*time.Second, "Duration for the Performance test to run")
 	cmd.Flags().IntVar(&params.PerfSamples, "perf-samples", 1, "Number of Performance samples to capture (how many times to run each test)")
 	cmd.Flags().BoolVar(&params.ForceDeploy, "force-deploy", true, "Force re-deploying test artifacts")
 	cmd.Flags().MarkHidden("force-deploy") // This is a bit hack to always force deployment
