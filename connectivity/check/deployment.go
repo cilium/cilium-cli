@@ -66,21 +66,22 @@ const (
 )
 
 type deploymentParameters struct {
-	Name           string
-	Kind           string
-	Image          string
-	Replicas       int
-	NamedPort      string
-	Port           int
-	HostPort       int
-	Command        []string
-	Affinity       *corev1.Affinity
-	NodeSelector   map[string]string
-	ReadinessProbe *corev1.Probe
-	Labels         map[string]string
-	Annotations    map[string]string
-	HostNetwork    bool
-	Tolerations    []corev1.Toleration
+	Name                          string
+	Kind                          string
+	Image                         string
+	Replicas                      int
+	NamedPort                     string
+	Port                          int
+	HostPort                      int
+	Command                       []string
+	Affinity                      *corev1.Affinity
+	NodeSelector                  map[string]string
+	ReadinessProbe                *corev1.Probe
+	Labels                        map[string]string
+	Annotations                   map[string]string
+	HostNetwork                   bool
+	Tolerations                   []corev1.Toleration
+	TerminationGracePeriodSeconds *int64
 }
 
 func newDeployment(p deploymentParameters) *appsv1.Deployment {
@@ -131,11 +132,12 @@ func newDeployment(p deploymentParameters) *appsv1.Deployment {
 							},
 						},
 					},
-					Affinity:           p.Affinity,
-					NodeSelector:       p.NodeSelector,
-					HostNetwork:        p.HostNetwork,
-					Tolerations:        p.Tolerations,
-					ServiceAccountName: p.Name,
+					Affinity:                      p.Affinity,
+					NodeSelector:                  p.NodeSelector,
+					HostNetwork:                   p.HostNetwork,
+					Tolerations:                   p.Tolerations,
+					ServiceAccountName:            p.Name,
+					TerminationGracePeriodSeconds: p.TerminationGracePeriodSeconds,
 				},
 			},
 			Replicas: &replicas32,
@@ -854,6 +856,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 
 func (ct *ConnectivityTest) createClientPerfDeployment(ctx context.Context, name string, nodeName string, hostNetwork bool) error {
 	ct.Logf("✨ [%s] Deploying %s deployment...", ct.clients.src.ClusterName(), name)
+	gracePeriod := int64(1)
 	perfClientDeployment := newDeployment(deploymentParameters{
 		Name:      name,
 		Kind:      kindPerfName,
@@ -863,10 +866,11 @@ func (ct *ConnectivityTest) createClientPerfDeployment(ctx context.Context, name
 		Labels: map[string]string{
 			"client": "role",
 		},
-		Annotations:  ct.params.DeploymentAnnotations.Match(name),
-		Command:      []string{"/bin/bash", "-c", "sleep 10000000"},
-		NodeSelector: map[string]string{"kubernetes.io/hostname": nodeName},
-		HostNetwork:  hostNetwork,
+		Annotations:                   ct.params.DeploymentAnnotations.Match(name),
+		Command:                       []string{"/bin/bash", "-c", "sleep 10000000"},
+		NodeSelector:                  map[string]string{"kubernetes.io/hostname": nodeName},
+		HostNetwork:                   hostNetwork,
+		TerminationGracePeriodSeconds: &gracePeriod,
 	})
 	_, err := ct.clients.src.CreateServiceAccount(ctx, ct.params.TestNamespace, k8s.NewServiceAccount(name), metav1.CreateOptions{})
 	if err != nil {
@@ -881,6 +885,7 @@ func (ct *ConnectivityTest) createClientPerfDeployment(ctx context.Context, name
 
 func (ct *ConnectivityTest) createOtherClientPerfDeployment(ctx context.Context, name, nodeName string, hostNetwork bool) error {
 	ct.Logf("✨ [%s] Deploying %s deployment...", ct.clients.src.ClusterName(), name)
+	gracePeriod := int64(1)
 	perfOtherClientDeployment := newDeployment(deploymentParameters{
 		Name: name,
 		Kind: kindPerfName,
@@ -888,11 +893,12 @@ func (ct *ConnectivityTest) createOtherClientPerfDeployment(ctx context.Context,
 		Labels: map[string]string{
 			"client": "role",
 		},
-		Annotations:  ct.params.DeploymentAnnotations.Match(name),
-		Image:        ct.params.PerformanceImage,
-		Command:      []string{"/bin/bash", "-c", "sleep 10000000"},
-		NodeSelector: map[string]string{"kubernetes.io/hostname": nodeName},
-		HostNetwork:  hostNetwork,
+		Annotations:                   ct.params.DeploymentAnnotations.Match(name),
+		Image:                         ct.params.PerformanceImage,
+		Command:                       []string{"/bin/bash", "-c", "sleep 10000000"},
+		NodeSelector:                  map[string]string{"kubernetes.io/hostname": nodeName},
+		HostNetwork:                   hostNetwork,
+		TerminationGracePeriodSeconds: &gracePeriod,
 	})
 	_, err := ct.clients.src.CreateServiceAccount(ctx, ct.params.TestNamespace, k8s.NewServiceAccount(name), metav1.CreateOptions{})
 	if err != nil {
@@ -908,18 +914,20 @@ func (ct *ConnectivityTest) createOtherClientPerfDeployment(ctx context.Context,
 
 func (ct *ConnectivityTest) createServerPerfDeployment(ctx context.Context, name, nodeName string, hostNetwork bool) error {
 	ct.Logf("✨ [%s] Deploying %s deployment...", ct.clients.src.ClusterName(), name)
+	gracePeriod := int64(1)
 	perfServerDeployment := newDeployment(deploymentParameters{
 		Name: name,
 		Kind: kindPerfName,
 		Labels: map[string]string{
 			"server": "role",
 		},
-		Annotations:  ct.params.DeploymentAnnotations.Match(name),
-		Port:         5001,
-		Image:        ct.params.PerformanceImage,
-		Command:      []string{"/bin/bash", "-c", "netserver;sleep 10000000"},
-		NodeSelector: map[string]string{"kubernetes.io/hostname": nodeName},
-		HostNetwork:  hostNetwork,
+		Annotations:                   ct.params.DeploymentAnnotations.Match(name),
+		Port:                          5001,
+		Image:                         ct.params.PerformanceImage,
+		Command:                       []string{"/bin/bash", "-c", "netserver;sleep 10000000"},
+		NodeSelector:                  map[string]string{"kubernetes.io/hostname": nodeName},
+		HostNetwork:                   hostNetwork,
+		TerminationGracePeriodSeconds: &gracePeriod,
 	})
 	_, err := ct.clients.src.CreateServiceAccount(ctx, ct.params.TestNamespace, k8s.NewServiceAccount(name), metav1.CreateOptions{})
 	if err != nil {
