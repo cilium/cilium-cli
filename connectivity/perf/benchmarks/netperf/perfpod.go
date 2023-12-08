@@ -42,7 +42,7 @@ func (s *netPerf) Run(ctx context.Context, t *check.Test) {
 	samples := t.Context().Params().PerfSamples
 	duration := t.Context().Params().PerfDuration
 
-	for i := 0; i < samples; i++ {
+	for sample := 1; sample <= samples; sample++ {
 		for _, c := range t.Context().PerfClientPods() {
 			c := c
 			for _, server := range t.Context().PerfServerPod() {
@@ -79,6 +79,7 @@ func (s *netPerf) Run(ctx context.Context, t *check.Test) {
 							Test:     test,
 							Tool:     "netperf",
 							SameNode: sameNode,
+							Sample:   sample,
 							Duration: duration,
 							Scenario: scenarioName,
 						}

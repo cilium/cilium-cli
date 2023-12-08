@@ -63,8 +63,8 @@ type ConnectivityTest struct {
 	echoExternalPods  map[string]Pod
 	clientPods        map[string]Pod
 	clientCPPods      map[string]Pod
-	perfClientPods    map[string]Pod
-	perfServerPod     map[string]Pod
+	perfClientPods    []Pod
+	perfServerPod     []Pod
 	PerfResults       []common.PerfSummary
 	echoServices      map[string]Service
 	ingressService    map[string]Service
@@ -206,8 +206,8 @@ func NewConnectivityTest(client *k8s.Client, p Parameters, version string) (*Con
 		echoExternalPods:         make(map[string]Pod),
 		clientPods:               make(map[string]Pod),
 		clientCPPods:             make(map[string]Pod),
-		perfClientPods:           make(map[string]Pod),
-		perfServerPod:            make(map[string]Pod),
+		perfClientPods:           []Pod{},
+		perfServerPod:            []Pod{},
 		PerfResults:              []common.PerfSummary{},
 		echoServices:             make(map[string]Service),
 		ingressService:           make(map[string]Service),
@@ -1090,11 +1090,11 @@ func (ct *ConnectivityTest) SecondaryNetworkNodeIPv6() map[string]string {
 	return ct.secondaryNetworkNodeIPv6
 }
 
-func (ct *ConnectivityTest) PerfServerPod() map[string]Pod {
+func (ct *ConnectivityTest) PerfServerPod() []Pod {
 	return ct.perfServerPod
 }
 
-func (ct *ConnectivityTest) PerfClientPods() map[string]Pod {
+func (ct *ConnectivityTest) PerfClientPods() []Pod {
 	return ct.perfClientPods
 }
 

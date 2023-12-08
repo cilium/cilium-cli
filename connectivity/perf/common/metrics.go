@@ -76,6 +76,7 @@ type PerfTests struct {
 	Test     string
 	SameNode bool
 	Scenario string
+	Sample   int
 	Duration time.Duration
 }
 

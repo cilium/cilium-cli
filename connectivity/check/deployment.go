@@ -6,6 +6,7 @@ package check
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1101,18 +1102,25 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 			}
 			_, hasLabel := perfPod.GetLabels()["server"]
 			if hasLabel {
-				ct.perfServerPod[perfPod.Name] = Pod{
+				ct.perfServerPod = append(ct.perfServerPod, Pod{
 					K8sClient: ct.client,
 					Pod:       perfPod.DeepCopy(),
 					port:      5201,
-				}
+				})
 			} else {
-				ct.perfClientPods[perfPod.Name] = Pod{
+				ct.perfClientPods = append(ct.perfClientPods, Pod{
 					K8sClient: ct.client,
 					Pod:       perfPod.DeepCopy(),
-				}
+				})
 			}
 		}
+		// Sort pods so results are always displayed in the same order in console
+		sort.SliceStable(ct.perfServerPod, func(i, j int) bool {
+			return ct.perfServerPod[i].Pod.Name < ct.perfServerPod[j].Pod.Name
+		})
+		sort.SliceStable(ct.perfClientPods, func(i, j int) bool {
+			return ct.perfClientPods[i].Pod.Name < ct.perfClientPods[j].Pod.Name
+		})
 		return nil
 	}
 
