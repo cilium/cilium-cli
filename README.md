@@ -235,21 +235,56 @@ To install Cilium while automatically detected:
 #### Network Performance test 
 
     cilium connectivity perf
-    🔥 Performance Test Summary
-    -----------------------------------------------------------------------------------------------------------------------------
-    📋 Scenario                                           | Test            | Num Samples     | Duration        | Avg value      
-    -----------------------------------------------------------------------------------------------------------------------------
-    📋 perf-client-5d7cb4d587-cn8sw                       | TCP_RR          | 1               | 10s             | 29975.37 (OP/s)
-    📋 perf-client-5d7cb4d587-cn8sw                       | TCP_CRR         | 1               | 10s             | 3926.56 (OP/s)
-    📋 perf-client-5d7cb4d587-cn8sw                       | TCP_STREAM      | 1               | 10s             | 2275.42 (Mb/s)
-    📋 perf-client-other-node-7867748554-vfvgt            | TCP_RR          | 1               | 10s             | 964.55 (OP/s)
-    📋 perf-client-other-node-7867748554-vfvgt            | TCP_STREAM      | 1               | 10s             | 4743.39 (Mb/s)
-    📋 perf-client-other-node-7867748554-vfvgt            | UDP_RR          | 1               | 10s             | 1134.20 (OP/s)
-    📋 perf-client-other-node-7867748554-vfvgt            | UDP_STREAM      | 1               | 10s             | 1425.74 (Mb/s)
-    📋 perf-client-5d7cb4d587-cn8sw                       | UDP_RR          | 1               | 10s             | 31737.62 (OP/s)
-    📋 perf-client-5d7cb4d587-cn8sw                       | UDP_STREAM      | 1               | 10s             | 865.24 (Mb/s)
-    📋 perf-client-other-node-7867748554-vfvgt            | TCP_CRR         | 1               | 10s             | 435.80 (OP/s)
-    -----------------------------------------------------------------------------------------------------------------------------
+    🔥 Network Performance Test Summary:
+    --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    📋 Scenario        | Node       | Test            | Duration        | Min             | Mean            | Max             | P50             | P90             | P99             | Transaction rate OP/s
+    --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    📋 pod-to-pod      | same-node  | TCP_RR          | 10s             | 16µs            | 31.39µs         | 3.086ms         | 18µs            | 50µs            | 99µs            | 31551.18    
+    📋 pod-to-pod      | same-node  | UDP_RR          | 10s             | 14µs            | 33.45µs         | 2.208ms         | 41µs            | 49µs            | 96µs            | 29715.19    
+    📋 pod-to-pod      | same-node  | TCP_CRR         | 10s             | 295µs           | 511.06µs        | 10.787ms        | 471µs           | 621µs           | 1.2ms           | 1953.55     
+    📋 pod-to-host     | same-node  | TCP_RR          | 10s             | 16µs            | 36.34µs         | 2.386ms         | 33µs            | 54µs            | 104µs           | 27320.01    
+    📋 pod-to-host     | same-node  | UDP_RR          | 10s             | 14µs            | 31.99µs         | 2.513ms         | 21µs            | 48µs            | 95µs            | 31080.21    
+    📋 pod-to-host     | same-node  | TCP_CRR         | 10s             | 297µs           | 555.68µs        | 11.156ms        | 472µs           | 638µs           | 2.5ms           | 1796.80     
+    📋 host-to-pod     | same-node  | TCP_RR          | 10s             | 12µs            | 30.56µs         | 2.967ms         | 37µs            | 43µs            | 88µs            | 32479.61    
+    📋 host-to-pod     | same-node  | UDP_RR          | 10s             | 12µs            | 32.23µs         | 1.879ms         | 37µs            | 44µs            | 86µs            | 30814.58    
+    📋 host-to-pod     | same-node  | TCP_CRR         | 10s             | 186µs           | 375µs           | 7.997ms         | 325µs           | 438µs           | 1.62ms          | 2660.54     
+    📋 host-to-host    | same-node  | TCP_RR          | 10s             | 12µs            | 30.51µs         | 3.56ms          | 36µs            | 45µs            | 94µs            | 32561.50    
+    📋 host-to-host    | same-node  | UDP_RR          | 10s             | 12µs            | 29.12µs         | 2.925ms         | 37µs            | 43µs            | 85µs            | 34131.85    
+    📋 host-to-host    | same-node  | TCP_CRR         | 10s             | 186µs           | 361.14µs        | 9.881ms         | 321µs           | 420µs           | 1.02ms          | 2762.34     
+    📋 pod-to-pod      | other-node | TCP_RR          | 10s             | 331µs           | 605.8µs         | 5.573ms         | 553µs           | 854µs           | 1.287ms         | 1644.28     
+    📋 pod-to-pod      | other-node | UDP_RR          | 10s             | 290µs           | 717.82µs        | 10.996ms        | 617µs           | 1.017ms         | 2.3ms           | 1388.74     
+    📋 pod-to-pod      | other-node | TCP_CRR         | 10s             | 874µs           | 1.99344ms       | 9.142ms         | 1.404ms         | 5.38ms          | 6.4ms           | 501.11      
+    📋 pod-to-host     | other-node | TCP_RR          | 10s             | 317µs           | 723.7µs         | 12.603ms        | 613µs           | 1.045ms         | 2.65ms          | 1376.52     
+    📋 pod-to-host     | other-node | UDP_RR          | 10s             | 320µs           | 607.08µs        | 6.007ms         | 546µs           | 868µs           | 1.25ms          | 1641.78     
+    📋 pod-to-host     | other-node | TCP_CRR         | 10s             | 898µs           | 1.92644ms       | 12.837ms        | 1.425ms         | 3.4ms           | 6.7ms           | 517.86      
+    📋 host-to-pod     | other-node | TCP_RR          | 10s             | 231µs           | 547.07µs        | 7.694ms         | 487µs           | 775µs           | 1.35ms          | 1821.12     
+    📋 host-to-pod     | other-node | UDP_RR          | 10s             | 207µs           | 480.13µs        | 4.321ms         | 435µs           | 690µs           | 1.116ms         | 2075.78     
+    📋 host-to-pod     | other-node | TCP_CRR         | 10s             | 564µs           | 1.09663ms       | 15.776ms        | 983µs           | 1.455ms         | 2.466ms         | 909.72      
+    📋 host-to-host    | other-node | TCP_RR          | 10s             | 237µs           | 528.38µs        | 8.312ms         | 471µs           | 768µs           | 1.283ms         | 1884.93     
+    📋 host-to-host    | other-node | UDP_RR          | 10s             | 234µs           | 530.19µs        | 11.855ms        | 478µs           | 763µs           | 1.16ms          | 1878.87     
+    📋 host-to-host    | other-node | TCP_CRR         | 10s             | 610µs           | 1.19379ms       | 6.209ms         | 1.104ms         | 1.559ms         | 2.85ms          | 834.69      
+    --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    -------------------------------------------------------------------------------------
+    📋 Scenario        | Node       | Test            | Duration        | Throughput Mb/s
+    -------------------------------------------------------------------------------------
+    📋 pod-to-pod      | same-node  | TCP_STREAM      | 10s             | 964.08       
+    📋 pod-to-pod      | same-node  | UDP_STREAM      | 10s             | 479.63       
+    📋 pod-to-host     | same-node  | TCP_STREAM      | 10s             | 859.55       
+    📋 pod-to-host     | same-node  | UDP_STREAM      | 10s             | 468.56       
+    📋 host-to-pod     | same-node  | TCP_STREAM      | 10s             | 965.07       
+    📋 host-to-pod     | same-node  | UDP_STREAM      | 10s             | 652.91       
+    📋 host-to-host    | same-node  | TCP_STREAM      | 10s             | 1046.55      
+    📋 host-to-host    | same-node  | UDP_STREAM      | 10s             | 622.70       
+    📋 pod-to-pod      | other-node | TCP_STREAM      | 10s             | 416.15       
+    📋 pod-to-pod      | other-node | UDP_STREAM      | 10s             | 151.06       
+    📋 pod-to-host     | other-node | TCP_STREAM      | 10s             | 387.82       
+    📋 pod-to-host     | other-node | UDP_STREAM      | 10s             | 147.43       
+    📋 host-to-pod     | other-node | TCP_STREAM      | 10s             | 3629.44      
+    📋 host-to-pod     | other-node | UDP_STREAM      | 10s             | 145.47       
+    📋 host-to-host    | other-node | TCP_STREAM      | 10s             | 3509.33      
+    📋 host-to-host    | other-node | UDP_STREAM      | 10s             | 197.37       
+    -------------------------------------------------------------------------------------
+
 
 ### ClusterMesh
 
