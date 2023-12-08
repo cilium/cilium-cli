@@ -20,17 +20,17 @@ const (
 )
 
 // Network Performance
-func NetperfPodtoPod(n string) check.Scenario {
-	return &netPerfPodtoPod{
+func Netperf(n string) check.Scenario {
+	return &netPerf{
 		name: n,
 	}
 }
 
-type netPerfPodtoPod struct {
+type netPerf struct {
 	name string
 }
 
-func (s *netPerfPodtoPod) Name() string {
+func (s *netPerf) Name() string {
 	tn := "perf-pod-to-pod"
 	if s.name == "" {
 		return tn
@@ -38,7 +38,7 @@ func (s *netPerfPodtoPod) Name() string {
 	return fmt.Sprintf("%s:%s", tn, s.name)
 }
 
-func (s *netPerfPodtoPod) Run(ctx context.Context, t *check.Test) {
+func (s *netPerf) Run(ctx context.Context, t *check.Test) {
 	samples := t.Context().Params().PerfSamples
 	duration := t.Context().Params().PerfDuration
 
@@ -141,7 +141,7 @@ func netperf(ctx context.Context, sip string, perfTest common.PerfTests, a *chec
 			TransactionRate: parseFloat(a, values[6]),
 		},
 		ThroughputMetric: &common.ThroughputMetric{
-			Throughput: parseFloat(a, values[7]) * 1000000, // by default throughput has unit "10^6bits/s"
+			Throughput: parseFloat(a, values[7]) * 1000000, // by default throughput has unit "10^6bits/s", we verify that later
 		},
 	}
 

@@ -232,7 +232,7 @@ func Run(ctx context.Context, ct *check.ConnectivityTest, addExtraTests func(*ch
 	// Network Performance Test
 	if ct.Params().Perf {
 		ct.NewTest("network-perf").WithScenarios(
-			netperf.NetperfPodtoPod(""),
+			netperf.Netperf(""),
 		)
 		return ct.Run(ctx)
 	}
