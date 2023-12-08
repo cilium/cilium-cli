@@ -17,6 +17,7 @@ import (
 
 const (
 	messageSize = 1024
+	tool        = "netperf"
 )
 
 // Network Performance
@@ -31,11 +32,10 @@ type netPerf struct {
 }
 
 func (s *netPerf) Name() string {
-	tn := "perf-pod-to-pod"
 	if s.name == "" {
-		return tn
+		return tool
 	}
-	return fmt.Sprintf("%s:%s", tn, s.name)
+	return fmt.Sprintf("%s:%s", tool, s.name)
 }
 
 func (s *netPerf) Run(ctx context.Context, t *check.Test) {
@@ -72,12 +72,12 @@ func (s *netPerf) Run(ctx context.Context, t *check.Test) {
 				}
 
 				for _, test := range tests {
-					action := t.NewAction(s, "netperf", &c, server, features.IPFamilyV4)
+					action := t.NewAction(s, tool, &c, server, features.IPFamilyV4)
 					action.CollectFlows = false
 					action.Run(func(a *check.Action) {
 						k := common.PerfTests{
 							Test:     test,
-							Tool:     "netperf",
+							Tool:     tool,
 							SameNode: sameNode,
 							Sample:   sample,
 							Duration: duration,
