@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/cilium/cilium-cli/defaults"
@@ -936,35 +937,25 @@ func (ct *ConnectivityTest) createServerPerfDeployment(ctx context.Context, name
 func (ct *ConnectivityTest) deployPerf(ctx context.Context) error {
 	var err error
 
-	// For performance workloads, we want to ensure the client/server are in the same zone
-	// If a zone has > 1 node, use that zone
-	zones := map[string]int{}
-	zone := ""
-	n, err := ct.client.ListNodes(ctx, metav1.ListOptions{})
+	nodeSelector := labels.SelectorFromSet(ct.params.NodeSelector).String()
+	nodes, err := ct.client.ListNodes(ctx, metav1.ListOptions{LabelSelector: nodeSelector})
 	if err != nil {
 		return fmt.Errorf("unable to query nodes")
 	}
-	for _, l := range n.Items {
-		if _, ok := zones[l.GetLabels()[corev1.LabelTopologyZone]]; ok {
-			zone = l.GetLabels()[corev1.LabelTopologyZone]
-			break
-		}
-		zones[l.GetLabels()[corev1.LabelTopologyZone]] = 1
-	}
-	// No zone had > 1, use the last zone.
-	if zone == "" {
-		return fmt.Errorf("Each zone only has a single node - can't perform performance test")
-	}
 
-	zoneNodes, err := ct.client.ListNodes(ctx, metav1.ListOptions{LabelSelector: corev1.LabelTopologyZone + "=" + zone})
-	if len(zoneNodes.Items) < 2 {
-		return fmt.Errorf("Insufficient number of nodes in zone: %s", zone)
+	if len(nodes.Items) < 2 {
+		return fmt.Errorf("Insufficient number of nodes selected with nodeSelector: %s", nodeSelector)
 	}
-	firstNodeName := zoneNodes.Items[0].Name
-	secondNodeName := zoneNodes.Items[1].Name
+	firstNodeName := nodes.Items[0].Name
+	firstNodeZone := nodes.Items[0].Labels[corev1.LabelTopologyZone]
+	secondNodeName := nodes.Items[1].Name
+	secondNodeZone := nodes.Items[1].Labels[corev1.LabelTopologyZone]
 	ct.Info("Nodes used for performance testing:")
-	ct.Info(firstNodeName)
-	ct.Info(secondNodeName)
+	ct.Infof("Node name: %s, zone: %s", firstNodeName, firstNodeZone)
+	ct.Infof("Node name: %s, zone: %s", secondNodeName, secondNodeZone)
+	if firstNodeZone != secondNodeZone {
+		ct.Warn("Selected nodes have different zones, tweak nodeSelector if that's not what yuou want")
+	}
 
 	_, err = ct.clients.src.GetDeployment(ctx, ct.params.TestNamespace, perfClientDeploymentName, metav1.GetOptions{})
 	if err != nil {
