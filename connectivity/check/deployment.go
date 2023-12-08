@@ -868,7 +868,6 @@ func (ct *ConnectivityTest) createClientPerfDeployment(ctx context.Context, name
 		NodeSelector: map[string]string{"kubernetes.io/hostname": nodeName},
 		HostNetwork:  hostNetwork,
 	})
-	ct.Logf("%v", perfClientDeployment)
 	_, err := ct.clients.src.CreateServiceAccount(ctx, ct.params.TestNamespace, k8s.NewServiceAccount(name), metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("unable to create service account %s: %s", name, err)
@@ -957,44 +956,23 @@ func (ct *ConnectivityTest) deployPerf(ctx context.Context) error {
 		ct.Warn("Selected nodes have different zones, tweak nodeSelector if that's not what yuou want")
 	}
 
-	_, err = ct.clients.src.GetDeployment(ctx, ct.params.TestNamespace, perfClientDeploymentName, metav1.GetOptions{})
-	if err != nil {
-		if err = ct.createClientPerfDeployment(ctx, perfClientDeploymentName, firstNodeName, false); err != nil {
-			ct.Warnf("unable to create deployment: %w", err)
-		}
+	if err = ct.createClientPerfDeployment(ctx, perfClientDeploymentName, firstNodeName, false); err != nil {
+		ct.Warnf("unable to create deployment: %w", err)
 	}
-	_, err = ct.clients.src.GetDeployment(ctx, ct.params.TestNamespace, perfClientDeploymentName+"-host-net", metav1.GetOptions{})
-	if err != nil {
-		if err = ct.createClientPerfDeployment(ctx, perfClientDeploymentName+"-host-net", firstNodeName, true); err != nil {
-			ct.Warnf("unable to create deployment: %w", err)
-		}
+	if err = ct.createClientPerfDeployment(ctx, perfClientDeploymentName+"-host-net", firstNodeName, true); err != nil {
+		ct.Warnf("unable to create deployment: %w", err)
 	}
-
-	_, err = ct.clients.src.GetDeployment(ctx, ct.params.TestNamespace, perfServerDeploymentName, metav1.GetOptions{})
-	if err != nil {
-		if err = ct.createServerPerfDeployment(ctx, perfServerDeploymentName, firstNodeName, false); err != nil {
-			ct.Warnf("unable to create deployment: %w", err)
-		}
+	if err = ct.createServerPerfDeployment(ctx, perfServerDeploymentName, firstNodeName, false); err != nil {
+		ct.Warnf("unable to create deployment: %w", err)
 	}
-
-	_, err = ct.clients.src.GetDeployment(ctx, ct.params.TestNamespace, perfServerDeploymentName+"-host-net", metav1.GetOptions{})
-	if err != nil {
-		if err = ct.createServerPerfDeployment(ctx, perfServerDeploymentName+"-host-net", firstNodeName, false); err != nil {
-			ct.Warnf("unable to create deployment: %w", err)
-		}
+	if err = ct.createServerPerfDeployment(ctx, perfServerDeploymentName+"-host-net", firstNodeName, false); err != nil {
+		ct.Warnf("unable to create deployment: %w", err)
 	}
-
-	_, err = ct.clients.src.GetDeployment(ctx, ct.params.TestNamespace, perfClientAcrossDeploymentName, metav1.GetOptions{})
-	if err != nil {
-		if err = ct.createOtherClientPerfDeployment(ctx, perfClientAcrossDeploymentName, secondNodeName, false); err != nil {
-			ct.Warnf("unable to create deployment: %w", err)
-		}
+	if err = ct.createOtherClientPerfDeployment(ctx, perfClientAcrossDeploymentName, secondNodeName, false); err != nil {
+		ct.Warnf("unable to create deployment: %w", err)
 	}
-	_, err = ct.clients.src.GetDeployment(ctx, ct.params.TestNamespace, perfClientAcrossDeploymentName+"-host-net", metav1.GetOptions{})
-	if err != nil {
-		if err = ct.createOtherClientPerfDeployment(ctx, perfClientAcrossDeploymentName+"-host-net", secondNodeName, true); err != nil {
-			ct.Warnf("unable to create deployment: %w", err)
-		}
+	if err = ct.createOtherClientPerfDeployment(ctx, perfClientAcrossDeploymentName+"-host-net", secondNodeName, true); err != nil {
+		ct.Warnf("unable to create deployment: %w", err)
 	}
 
 	return nil
