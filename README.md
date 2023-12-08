@@ -234,7 +234,7 @@ To install Cilium while automatically detected:
 
 #### Network Performance test 
 
-    cilium connectivity test --perf
+    cilium connectivity perf
     🔥 Performance Test Summary
     -----------------------------------------------------------------------------------------------------------------------------
     📋 Scenario                                           | Test            | Num Samples     | Duration        | Avg value      
