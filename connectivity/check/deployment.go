@@ -27,9 +27,14 @@ import (
 )
 
 const (
-	perfClientDeploymentName       = "perf-client"
-	perfClientAcrossDeploymentName = "perf-client-other-node"
-	perfServerDeploymentName       = "perf-server"
+	PerfHostName                          = "-host-net"
+	PerfOtherNode                         = "-other-node"
+	perfClientDeploymentName              = "perf-client"
+	perfClientHostNetDeploymentName       = perfClientDeploymentName + PerfHostName
+	perfClientAcrossDeploymentName        = perfClientDeploymentName + PerfOtherNode
+	perfClientHostNetAcrossDeploymentName = perfClientAcrossDeploymentName + PerfHostName
+	perfServerDeploymentName              = "perf-server"
+	perfServerHostNetDeploymentName       = perfServerDeploymentName + PerfHostName
 
 	perfHostNetNamingSuffix = "-host-net"
 
@@ -967,19 +972,19 @@ func (ct *ConnectivityTest) deployPerf(ctx context.Context) error {
 	if err = ct.createClientPerfDeployment(ctx, perfClientDeploymentName, firstNodeName, false); err != nil {
 		ct.Warnf("unable to create deployment: %w", err)
 	}
-	if err = ct.createClientPerfDeployment(ctx, perfClientDeploymentName+"-host-net", firstNodeName, true); err != nil {
+	if err = ct.createClientPerfDeployment(ctx, perfClientHostNetDeploymentName, firstNodeName, true); err != nil {
 		ct.Warnf("unable to create deployment: %w", err)
 	}
 	if err = ct.createServerPerfDeployment(ctx, perfServerDeploymentName, firstNodeName, false); err != nil {
 		ct.Warnf("unable to create deployment: %w", err)
 	}
-	if err = ct.createServerPerfDeployment(ctx, perfServerDeploymentName+"-host-net", firstNodeName, false); err != nil {
+	if err = ct.createServerPerfDeployment(ctx, perfServerHostNetDeploymentName, firstNodeName, false); err != nil {
 		ct.Warnf("unable to create deployment: %w", err)
 	}
 	if err = ct.createOtherClientPerfDeployment(ctx, perfClientAcrossDeploymentName, secondNodeName, false); err != nil {
 		ct.Warnf("unable to create deployment: %w", err)
 	}
-	if err = ct.createOtherClientPerfDeployment(ctx, perfClientAcrossDeploymentName+"-host-net", secondNodeName, true); err != nil {
+	if err = ct.createOtherClientPerfDeployment(ctx, perfClientHostNetAcrossDeploymentName, secondNodeName, true); err != nil {
 		ct.Warnf("unable to create deployment: %w", err)
 	}
 
@@ -995,9 +1000,9 @@ func (ct *ConnectivityTest) deploymentList() (srcList []string, dstList []string
 			perfClientDeploymentName,
 			perfClientAcrossDeploymentName,
 			perfServerDeploymentName,
-			perfClientDeploymentName + "-host-net",
-			perfClientAcrossDeploymentName + "-host-net",
-			perfServerDeploymentName + "-host-net",
+			perfClientHostNetDeploymentName,
+			perfClientHostNetAcrossDeploymentName,
+			perfServerHostNetDeploymentName,
 		}
 	}
 

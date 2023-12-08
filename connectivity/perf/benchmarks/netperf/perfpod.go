@@ -47,19 +47,19 @@ func (s *netPerfPodtoPod) Run(ctx context.Context, t *check.Test) {
 			c := c
 			for _, server := range t.Context().PerfServerPod() {
 				scenarioName := ""
-				if strings.Contains(c.Pod.Name, "host-net") {
+				if strings.Contains(c.Pod.Name, check.PerfHostName) {
 					scenarioName += "host"
 				} else {
 					scenarioName += "pod"
 				}
 				scenarioName += "-to-"
-				if strings.Contains(server.Pod.Name, "host-net") {
+				if strings.Contains(server.Pod.Name, check.PerfHostName) {
 					scenarioName += "host"
 				} else {
 					scenarioName += "pod"
 				}
 				sameNode := true
-				if strings.Contains(c.Pod.Name, "other-node") {
+				if strings.Contains(c.Pod.Name, check.PerfOtherNode) {
 					sameNode = false
 				}
 
