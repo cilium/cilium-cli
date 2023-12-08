@@ -970,29 +970,26 @@ func (ct *ConnectivityTest) deployPerf(ctx context.Context) error {
 		ct.Warn("Selected nodes have different zones, tweak nodeSelector if that's not what yuou want")
 	}
 
-	createPodNetworkPods := ct.params.PerfNetworkTestType == "all" || ct.params.PerfNetworkTestType == "pod"
-	createHostNetworkPods := ct.params.PerfNetworkTestType == "all" || ct.params.PerfNetworkTestType == "host"
-
-	if createPodNetworkPods {
+	if ct.params.PerfPodNet {
 		if err = ct.createClientPerfDeployment(ctx, perfClientDeploymentName, firstNodeName, false); err != nil {
 			ct.Warnf("unable to create deployment: %w", err)
 		}
 		if err = ct.createServerPerfDeployment(ctx, perfServerDeploymentName, firstNodeName, false); err != nil {
 			ct.Warnf("unable to create deployment: %w", err)
 		}
-		if err = ct.createServerPerfDeployment(ctx, perfServerHostNetDeploymentName, firstNodeName, false); err != nil {
+		if err = ct.createOtherClientPerfDeployment(ctx, perfClientAcrossDeploymentName, secondNodeName, false); err != nil {
 			ct.Warnf("unable to create deployment: %w", err)
 		}
 	}
 
-	if createHostNetworkPods {
+	if ct.params.PerfHostNet {
 		if err = ct.createClientPerfDeployment(ctx, perfClientHostNetDeploymentName, firstNodeName, true); err != nil {
 			ct.Warnf("unable to create deployment: %w", err)
 		}
-		if err = ct.createOtherClientPerfDeployment(ctx, perfClientAcrossDeploymentName, secondNodeName, false); err != nil {
+		if err = ct.createOtherClientPerfDeployment(ctx, perfClientHostNetAcrossDeploymentName, secondNodeName, true); err != nil {
 			ct.Warnf("unable to create deployment: %w", err)
 		}
-		if err = ct.createOtherClientPerfDeployment(ctx, perfClientHostNetAcrossDeploymentName, secondNodeName, true); err != nil {
+		if err = ct.createServerPerfDeployment(ctx, perfServerHostNetDeploymentName, firstNodeName, true); err != nil {
 			ct.Warnf("unable to create deployment: %w", err)
 		}
 	}
@@ -1005,13 +1002,16 @@ func (ct *ConnectivityTest) deploymentList() (srcList []string, dstList []string
 	if !ct.params.Perf {
 		srcList = []string{clientDeploymentName, client2DeploymentName, echoSameNodeDeploymentName}
 	} else {
-		srcList = []string{
-			perfClientDeploymentName,
-			perfClientAcrossDeploymentName,
-			perfServerDeploymentName,
-			perfClientHostNetDeploymentName,
-			perfClientHostNetAcrossDeploymentName,
-			perfServerHostNetDeploymentName,
+		srcList = []string{}
+		if ct.params.PerfPodNet {
+			srcList = append(srcList, perfClientDeploymentName)
+			srcList = append(srcList, perfClientAcrossDeploymentName)
+			srcList = append(srcList, perfServerDeploymentName)
+		}
+		if ct.params.PerfHostNet {
+			srcList = append(srcList, perfClientHostNetDeploymentName)
+			srcList = append(srcList, perfClientHostNetAcrossDeploymentName)
+			srcList = append(srcList, perfServerHostNetDeploymentName)
 		}
 	}
 
