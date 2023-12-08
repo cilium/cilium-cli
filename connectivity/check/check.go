@@ -44,6 +44,7 @@ type Parameters struct {
 	Perf                  bool
 	PerfReportDir         string
 	PerfDuration          time.Duration
+	PerfNetworkTestType   string
 	PerfSamples           int
 	CurlImage             string
 	PerformanceImage      string

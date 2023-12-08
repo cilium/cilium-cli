@@ -970,23 +970,31 @@ func (ct *ConnectivityTest) deployPerf(ctx context.Context) error {
 		ct.Warn("Selected nodes have different zones, tweak nodeSelector if that's not what yuou want")
 	}
 
-	if err = ct.createClientPerfDeployment(ctx, perfClientDeploymentName, firstNodeName, false); err != nil {
-		ct.Warnf("unable to create deployment: %w", err)
+	createPodNetworkPods := ct.params.PerfNetworkTestType == "all" || ct.params.PerfNetworkTestType == "pod"
+	createHostNetworkPods := ct.params.PerfNetworkTestType == "all" || ct.params.PerfNetworkTestType == "host"
+
+	if createPodNetworkPods {
+		if err = ct.createClientPerfDeployment(ctx, perfClientDeploymentName, firstNodeName, false); err != nil {
+			ct.Warnf("unable to create deployment: %w", err)
+		}
+		if err = ct.createServerPerfDeployment(ctx, perfServerDeploymentName, firstNodeName, false); err != nil {
+			ct.Warnf("unable to create deployment: %w", err)
+		}
+		if err = ct.createServerPerfDeployment(ctx, perfServerHostNetDeploymentName, firstNodeName, false); err != nil {
+			ct.Warnf("unable to create deployment: %w", err)
+		}
 	}
-	if err = ct.createClientPerfDeployment(ctx, perfClientHostNetDeploymentName, firstNodeName, true); err != nil {
-		ct.Warnf("unable to create deployment: %w", err)
-	}
-	if err = ct.createServerPerfDeployment(ctx, perfServerDeploymentName, firstNodeName, false); err != nil {
-		ct.Warnf("unable to create deployment: %w", err)
-	}
-	if err = ct.createServerPerfDeployment(ctx, perfServerHostNetDeploymentName, firstNodeName, false); err != nil {
-		ct.Warnf("unable to create deployment: %w", err)
-	}
-	if err = ct.createOtherClientPerfDeployment(ctx, perfClientAcrossDeploymentName, secondNodeName, false); err != nil {
-		ct.Warnf("unable to create deployment: %w", err)
-	}
-	if err = ct.createOtherClientPerfDeployment(ctx, perfClientHostNetAcrossDeploymentName, secondNodeName, true); err != nil {
-		ct.Warnf("unable to create deployment: %w", err)
+
+	if createHostNetworkPods {
+		if err = ct.createClientPerfDeployment(ctx, perfClientHostNetDeploymentName, firstNodeName, true); err != nil {
+			ct.Warnf("unable to create deployment: %w", err)
+		}
+		if err = ct.createOtherClientPerfDeployment(ctx, perfClientAcrossDeploymentName, secondNodeName, false); err != nil {
+			ct.Warnf("unable to create deployment: %w", err)
+		}
+		if err = ct.createOtherClientPerfDeployment(ctx, perfClientHostNetAcrossDeploymentName, secondNodeName, true); err != nil {
+			ct.Warnf("unable to create deployment: %w", err)
+		}
 	}
 
 	return nil
