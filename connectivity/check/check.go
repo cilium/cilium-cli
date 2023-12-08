@@ -42,6 +42,7 @@ type Parameters struct {
 	PauseOnFail           bool
 	SkipIPCacheCheck      bool
 	Perf                  bool
+	PerfReportDir         string
 	PerfDuration          time.Duration
 	PerfSamples           int
 	CurlImage             string

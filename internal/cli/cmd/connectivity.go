@@ -198,12 +198,14 @@ func newCmdConnectivityPerf(hooks Hooks) *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&params.Perf, "perf", true, "Run network Performance tests")
-	cmd.Flags().DurationVar(&params.PerfDuration, "perf-duration", 10*time.Second, "Duration for the Performance test to run")
-	cmd.Flags().IntVar(&params.PerfSamples, "perf-samples", 1, "Number of Performance samples to capture (how many times to run each test)")
+	cmd.Flags().MarkHidden("perf")
+	cmd.Flags().DurationVar(&params.PerfDuration, "duration", 10*time.Second, "Duration for the Performance test to run")
+	cmd.Flags().IntVar(&params.PerfSamples, "samples", 1, "Number of Performance samples to capture (how many times to run each test)")
 	cmd.Flags().BoolVar(&params.ForceDeploy, "force-deploy", true, "Force re-deploying test artifacts")
 	cmd.Flags().MarkHidden("force-deploy") // This is a bit hack to always force deployment
 
 	cmd.Flags().StringVar(&params.PerformanceImage, "performance-image", defaults.ConnectivityPerformanceImage, "Image path to use for performance")
+	cmd.Flags().StringVar(&params.PerfReportDir, "report-dir", "", "Directory to save perf results in json format")
 	registerCommonFlags(cmd.Flags())
 
 	return cmd
@@ -211,7 +213,7 @@ func newCmdConnectivityPerf(hooks Hooks) *cobra.Command {
 
 func registerCommonFlags(flags *pflag.FlagSet) {
 	flags.BoolVarP(&params.Debug, "debug", "d", false, "Show debug messages")
-	flags.StringToStringVar(&params.NodeSelector, "node-selector", map[string]string{}, "Restrict connectivity test pods to nodes matching this label")
-	flags.StringVar(&params.TestNamespace, "test-namespace", defaults.ConnectivityCheckNamespace, "Namespace to perform the connectivity test in")
-	flags.Var(&params.DeploymentAnnotations, "deployment-pod-annotations", "Add annotations to the connectivity test pods, e.g. '{\"client\":{\"foo\":\"bar\"}}'")
+	flags.StringToStringVar(&params.NodeSelector, "node-selector", map[string]string{}, "Restrict connectivity pods to nodes matching this label")
+	flags.StringVar(&params.TestNamespace, "test-namespace", defaults.ConnectivityCheckNamespace, "Namespace to perform the connectivity in")
+	flags.Var(&params.DeploymentAnnotations, "deployment-pod-annotations", "Add annotations to the connectivity pods, e.g. '{\"client\":{\"foo\":\"bar\"}}'")
 }

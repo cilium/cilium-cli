@@ -623,7 +623,9 @@ func (ct *ConnectivityTest) report() error {
 			}
 		}
 		ct.Logf("%s", strings.Repeat("-", 85))
-		common.ExportPerfSummaries(ct.PerfResults, "./report/")
+		if ct.Params().PerfReportDir != "" {
+			common.ExportPerfSummaries(ct.PerfResults, ct.Params().PerfReportDir)
+		}
 	}
 
 	ct.Headerf("✅ All %d tests (%d actions) successful, %d tests skipped, %d scenarios skipped.", nt-nst, na, nst, nss)
