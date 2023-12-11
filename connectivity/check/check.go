@@ -49,6 +49,8 @@ type Parameters struct {
 	PerfLatency           bool
 	CurlImage             string
 	PerformanceImage      string
+	// BandWidth
+	BandWidthManager      bool
 	JSONMockImage         string
 	AgentDaemonSetName    string
 	DNSTestServerImage    string
