@@ -98,11 +98,13 @@ func (n *noUnexpectedPacketDrops) Run(ctx context.Context, t *check.Test) {
 		fmt.Sprintf("cilium metrics list -o json | jq '.[] | select((.name == \"cilium_drop_count_total\") and (.labels.reason | IN(%s) | not))'", filter),
 	}
 
+	fmt.Println("!!!!!!!!!!!!!!!", cmd)
+
 	for _, pod := range ct.CiliumPods() {
 		pod := pod
 		stdout, err := pod.K8sClient.ExecInPod(ctx, pod.Pod.Namespace, pod.Pod.Name, defaults.AgentContainerName, cmd)
 		if err != nil {
-			t.Fatalf("Error fetching packet drop counts: %s %q", err, cmd)
+			t.Fatalf("Error fetching packet drop counts: %s", err)
 		}
 		countStr := strings.TrimSpace(stdout.String())
 		if countStr != "" {
