@@ -102,7 +102,7 @@ func (n *noUnexpectedPacketDrops) Run(ctx context.Context, t *check.Test) {
 		pod := pod
 		stdout, err := pod.K8sClient.ExecInPod(ctx, pod.Pod.Namespace, pod.Pod.Name, defaults.AgentContainerName, cmd)
 		if err != nil {
-			t.Fatalf("Error fetching packet drop counts: %s", err)
+			t.Fatalf("Error fetching packet drop counts: %s %q", err, cmd)
 		}
 		countStr := strings.TrimSpace(stdout.String())
 		if countStr != "" {
