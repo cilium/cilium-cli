@@ -285,7 +285,7 @@ func (t *Test) Infof(format string, a ...interface{}) {
 	t.logf(info+" "+format, a...)
 }
 
-func (t *Test) failCommon() {
+func (t *Test) failCommon(ctx context.Context) {
 	t.failed = true
 	t.flush()
 	if t.ctx.params.PauseOnFail {
@@ -295,7 +295,7 @@ func (t *Test) failCommon() {
 			fmt.Scanln()
 			close(cont)
 		}()
-		ctx, _ := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		ctx, _ := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 		select {
 		case <-cont:
 		case <-ctx.Done():
@@ -312,7 +312,7 @@ func (t *Test) failCommon() {
 // will go directly to the user-specified writer.
 func (t *Test) Fail(a ...interface{}) {
 	t.log(fail, a...)
-	t.failCommon()
+	t.failCommon(t.ctx.Context())
 }
 
 // Failf marks the Test as failed and logs a formatted failure message.
@@ -321,14 +321,14 @@ func (t *Test) Fail(a ...interface{}) {
 // will go directly to the user-specified writer.
 func (t *Test) Failf(format string, a ...interface{}) {
 	t.logf(fail+" "+format, a...)
-	t.failCommon()
+	t.failCommon(t.ctx.Context())
 }
 
 // Fatal marks the test as failed, logs an error and exits the
 // calling goroutine.
 func (t *Test) Fatal(a ...interface{}) {
 	t.log(fatal, a...)
-	t.failCommon()
+	t.failCommon(t.ctx.Context())
 	runtime.Goexit()
 }
 
@@ -336,7 +336,7 @@ func (t *Test) Fatal(a ...interface{}) {
 // calling goroutine.
 func (t *Test) Fatalf(format string, a ...interface{}) {
 	t.logf(fatal+" "+format, a...)
-	t.failCommon()
+	t.failCommon(t.ctx.Context())
 	runtime.Goexit()
 }
 
