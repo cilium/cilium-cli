@@ -312,7 +312,7 @@ func (t *Test) failCommon(ctx context.Context) {
 // will go directly to the user-specified writer.
 func (t *Test) Fail(a ...interface{}) {
 	t.log(fail, a...)
-	t.failCommon(t.ctx.Context())
+	t.failCommon(ctx)
 }
 
 // Failf marks the Test as failed and logs a formatted failure message.
@@ -321,14 +321,14 @@ func (t *Test) Fail(a ...interface{}) {
 // will go directly to the user-specified writer.
 func (t *Test) Failf(format string, a ...interface{}) {
 	t.logf(fail+" "+format, a...)
-	t.failCommon(t.ctx.Context())
+	t.failCommon(ctx)
 }
 
 // Fatal marks the test as failed, logs an error and exits the
 // calling goroutine.
 func (t *Test) Fatal(a ...interface{}) {
 	t.log(fatal, a...)
-	t.failCommon(t.ctx.Context())
+	t.failCommon(ctx)
 	runtime.Goexit()
 }
 
@@ -336,7 +336,7 @@ func (t *Test) Fatal(a ...interface{}) {
 // calling goroutine.
 func (t *Test) Fatalf(format string, a ...interface{}) {
 	t.logf(fatal+" "+format, a...)
-	t.failCommon(t.ctx.Context())
+	t.failCommon(ctx)
 	runtime.Goexit()
 }
 
