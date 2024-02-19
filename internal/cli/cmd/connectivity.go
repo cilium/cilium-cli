@@ -219,6 +219,7 @@ func newCmdConnectivityPerf(hooks Hooks) *cobra.Command {
 	}
 
 	cmd.Flags().DurationVar(&params.PerfDuration, "duration", 10*time.Second, "Duration for the Performance test to run")
+	cmd.Flags().IntVar(&params.PerfMessageSendSize, "message-send-size", 1024, "Size, of the buffer, in byte, in the send call for the porformance test")
 	cmd.Flags().IntVar(&params.PerfSamples, "samples", 1, "Number of Performance samples to capture (how many times to run each test)")
 	cmd.Flags().BoolVar(&params.PerfHostNet, "host-net", false, "Test host network")
 	cmd.Flags().BoolVar(&params.PerfPodNet, "pod-net", true, "Test pod network")

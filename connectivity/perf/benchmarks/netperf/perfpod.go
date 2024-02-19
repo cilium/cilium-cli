@@ -16,19 +16,21 @@ import (
 )
 
 const (
-	messageSize     = 1024
-	netperfToolName = "netperf"
+	netperfToolName    = "netperf"
+	messageSizeDefault = 1024
 )
 
 // Network Performance
-func Netperf(n string) check.Scenario {
+func Netperf(n string, s int) check.Scenario {
 	return &netPerf{
-		name: n,
+		name:        n,
+		messageSize: s,
 	}
 }
 
 type netPerf struct {
-	name string
+	name        string
+	messageSize int
 }
 
 func (s *netPerf) Name() string {
@@ -41,6 +43,7 @@ func (s *netPerf) Name() string {
 func (s *netPerf) Run(ctx context.Context, t *check.Test) {
 	samples := t.Context().Params().PerfSamples
 	duration := t.Context().Params().PerfDuration
+	messageSendSize := t.Context().Params().PerfMessageSendSize
 
 	tests := []string{
 		"TCP_RR",
@@ -76,12 +79,13 @@ func (s *netPerf) Run(ctx context.Context, t *check.Test) {
 					action.CollectFlows = false
 					action.Run(func(a *check.Action) {
 						k := common.PerfTests{
-							Test:     test,
-							Tool:     netperfToolName,
-							SameNode: sameNode,
-							Sample:   sample,
-							Duration: duration,
-							Scenario: scenarioName,
+							Test:            test,
+							Tool:            netperfToolName,
+							SameNode:        sameNode,
+							Sample:          sample,
+							Duration:        duration,
+							Scenario:        scenarioName,
+							MessageSendSize: messageSendSize,
 						}
 						perfResult := netperf(ctx, server.Pod.Status.PodIP, k, a)
 						t.Context().PerfResults = append(t.Context().PerfResults, common.PerfSummary{PerfTest: k, Result: perfResult})
@@ -92,8 +96,8 @@ func (s *netPerf) Run(ctx context.Context, t *check.Test) {
 	}
 }
 
-func buildExecCommand(test string, sip string, duration time.Duration, args []string) []string {
-	exec := []string{"/usr/local/bin/netperf", "-H", sip, "-l", duration.String(), "-t", test, "--", "-R", "1", "-m", fmt.Sprintf("%d", messageSize)}
+func buildExecCommand(test string, sip string, duration time.Duration, messageSendSize int, args []string) []string {
+	exec := []string{"/usr/local/bin/netperf", "-H", sip, "-l", duration.String(), "-t", test, "--", "-R", "1", "-m", fmt.Sprintf("%d", messageSendSize)}
 	exec = append(exec, args...)
 
 	return exec
@@ -117,7 +121,7 @@ func parseFloat(a *check.Action, value string) float64 {
 
 func netperf(ctx context.Context, sip string, perfTest common.PerfTests, a *check.Action) common.PerfResult {
 	args := []string{"-o", "MIN_LATENCY,MEAN_LATENCY,MAX_LATENCY,P50_LATENCY,P90_LATENCY,P99_LATENCY,TRANSACTION_RATE,THROUGHPUT,THROUGHPUT_UNITS"}
-	exec := buildExecCommand(perfTest.Test, sip, perfTest.Duration, args)
+	exec := buildExecCommand(perfTest.Test, sip, perfTest.Duration, perfTest.MessageSendSize, args)
 
 	a.ExecInPod(ctx, exec)
 	output := a.CmdOutput()
