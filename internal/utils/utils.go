@@ -5,7 +5,6 @@ package utils
 
 import (
 	"fmt"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -25,8 +24,6 @@ func CheckVersion(version string) error {
 func ParseCiliumVersion(version string) (semver.Version, error) {
 	return semver.ParseTolerant(version)
 }
-
-const CLIModeVariableName = "CILIUM_CLI_MODE"
 
 var imageRegexp = regexp.MustCompile(`\A(.*?)(?:(:.*?)(@sha256:[0-9a-f]{64})?)?\z`)
 
@@ -74,11 +71,6 @@ func BuildImagePath(userImage, userVersion, defaultImage, defaultVersion string)
 	}
 
 	return image
-}
-
-// IsInHelmMode returns true if cilium-cli is in "helm" mode. Otherwise, it returns false.
-func IsInHelmMode() bool {
-	return os.Getenv(CLIModeVariableName) != "classic"
 }
 
 func MustParseBool(v string) bool {

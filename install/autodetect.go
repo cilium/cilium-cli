@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cilium/cilium-cli/internal/utils"
 	"github.com/cilium/cilium-cli/k8s"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,14 +40,6 @@ func (p Parameters) checkDisabled(name string) bool {
 		}
 	}
 	return false
-}
-
-func (k *K8sUninstaller) autodetect(ctx context.Context) {
-	k.flavor = k.client.AutodetectFlavor(ctx)
-
-	if k.flavor.Kind != k8s.KindUnknown {
-		k.Log("🔮 Auto-detected Kubernetes kind: %s", k.flavor.Kind)
-	}
 }
 
 func (k *K8sInstaller) detectDatapathMode() error {
@@ -175,16 +166,9 @@ func (k *K8sInstaller) autodetectAndValidate(ctx context.Context, helmValues map
 		k.Log("ℹ️  Custom IPAM mode: %s", k.params.IPAM)
 	}
 
-	if !utils.IsInHelmMode() {
-		if strings.Contains(k.params.ClusterName, ".") {
-			k.Log("❌ Cluster name %q cannot contain dots", k.params.ClusterName)
-			return fmt.Errorf("invalid cluster name, dots are not allowed")
-		}
-
-		if !clusterNameValidation.MatchString(k.params.ClusterName) {
-			k.Log("❌ Cluster name %q is not valid, must match regular expression: %s", k.params.ClusterName, clusterNameValidation)
-			return fmt.Errorf("invalid cluster name")
-		}
+	if !clusterNameValidation.MatchString(k.params.ClusterName) {
+		k.Log("❌ Cluster name %q is not valid, must match regular expression: %s", k.params.ClusterName, clusterNameValidation)
+		return fmt.Errorf("invalid cluster name")
 	}
 
 	switch k.params.Encryption {

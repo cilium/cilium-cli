@@ -37,7 +37,6 @@ import (
 	"helm.sh/helm/v3/pkg/releaseutil"
 	"helm.sh/helm/v3/pkg/strvals"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
 var settings = cli.New()
@@ -390,32 +389,6 @@ func ParseVals(helmStrValues []string) (map[string]interface{}, error) {
 	return helmValues, nil
 }
 
-// PrintHelmTemplateCommand will log a message so that users can replicate
-// the same behavior as the CLI. The log message will be slightly different
-// depending on if 'helmChartDirectory' is set or not.
-// If 'apiVersions' is given, said values will be added to the log message.
-func PrintHelmTemplateCommand(
-	logger utils.Logger,
-	helmValues map[string]any,
-	helmChartDirectory string,
-	namespace string,
-	ciliumVer semver2.Version,
-	apiVersions []string,
-) {
-	valsStr := valuesToString("", helmValues)
-	apiVersionsStr := ""
-	if len(apiVersions) > 0 {
-		for _, av := range apiVersions {
-			apiVersionsStr = fmt.Sprintf("%s --api-versions %s", apiVersionsStr, av)
-		}
-	}
-	if helmChartDirectory != "" {
-		logger.Log("ℹ️  helm template --namespace %s cilium %q --version %s --set %s%s", namespace, helmChartDirectory, ciliumVer, valsStr, apiVersionsStr)
-	} else {
-		logger.Log("ℹ️  helm template --namespace %s cilium cilium/cilium --version %s --set %s%s", namespace, ciliumVer, valsStr, apiVersionsStr)
-	}
-}
-
 // ListVersions returns a list of available Helm chart versions (with "v" prefix) sorted by semver in ascending order.
 func ListVersions() ([]string, error) {
 	var versions []string
@@ -477,25 +450,6 @@ func resolveChartVersion(versionFlag string, repository string) (semver2.Version
 		return semver2.Version{}, nil, err
 	}
 	return version, helmChart, nil
-}
-
-// GetCurrentRelease gets the currently deployed release
-func GetCurrentRelease(
-	k8sClient genericclioptions.RESTClientGetter,
-	namespace, name string,
-) (*release.Release, error) {
-	// Use the default Helm driver (Kubernetes secret).
-	helmDriver := ""
-	actionConfig := action.Configuration{}
-	logger := func(_ string, _ ...interface{}) {}
-	if err := actionConfig.Init(k8sClient, namespace, helmDriver, logger); err != nil {
-		return nil, err
-	}
-	currentRelease, err := actionConfig.Releases.Last(name)
-	if err != nil {
-		return nil, err
-	}
-	return currentRelease, nil
 }
 
 // UpgradeParameters contains parameters for helm upgrade operation.

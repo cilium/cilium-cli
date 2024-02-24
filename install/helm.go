@@ -6,9 +6,7 @@
 package install
 
 import (
-	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
@@ -18,42 +16,7 @@ import (
 
 	"github.com/cilium/cilium/pkg/versioncheck"
 	"github.com/spf13/pflag"
-	"helm.sh/helm/v3/pkg/chartutil"
 )
-
-func (k *K8sInstaller) generateManifests(ctx context.Context) error {
-	vals, err := k.getHelmValues()
-	if err != nil {
-		return err
-	}
-
-	apiVersions := k.getAPIVersions(ctx)
-
-	helm.PrintHelmTemplateCommand(k, vals, k.params.HelmChartDirectory, k.params.Namespace, k.chartVersion, apiVersions)
-
-	yamlValue, err := chartutil.Values(vals).YAML()
-	if err != nil {
-		return err
-	}
-
-	if k.params.HelmGenValuesFile != "" {
-		return os.WriteFile(k.params.HelmGenValuesFile, []byte(yamlValue), 0o600)
-	}
-
-	k8sVersionStr, err := k.getKubernetesVersion()
-	if err != nil {
-		return err
-	}
-
-	manifests, err := helm.GenManifests(ctx, k.params.HelmChartDirectory, k8sVersionStr, k.chartVersion, k.params.Namespace, vals, apiVersions)
-	if err != nil {
-		return err
-	}
-
-	k.manifests = manifests
-	k.helmYAMLValues = yamlValue
-	return nil
-}
 
 func (k *K8sInstaller) getHelmValues() (map[string]interface{}, error) {
 	helmMapOpts := map[string]string{}
@@ -311,39 +274,4 @@ func (k *K8sInstaller) getHelmValues() (map[string]interface{}, error) {
 	}
 
 	return helm.MergeVals(k.params.HelmOpts, helmMapOpts, nil, extraConfigMap)
-}
-
-func (k *K8sInstaller) getAPIVersions(ctx context.Context) []string {
-	// Pull APIVersions and filter for known needed CRDs, if not provided by the user.
-	// _Each value_ in apiVersions passed to helm.MergeVals will be logged in the `helm template` command, so
-	// pulling all values from the API server will add a ton of '--api-versions <group/version>' arguments to
-	// the printed command if filtering is not performed.
-	// Filtering reduces this output to a reasonable size for users, and works for now since there is a limited
-	// set of CRDs needed for helm template verification.
-	apiVersions := k.params.APIVersions
-	if len(apiVersions) == 0 {
-		gvs, err := k.client.ListAPIResources(ctx)
-		if err != nil {
-			k.Log("⚠️ Unable to list kubernetes api resources, try --api-versions if needed: %s", err)
-		}
-		for _, gv := range gvs {
-			switch gv {
-			case "monitoring.coreos.com/v1":
-				apiVersions = append(apiVersions, gv)
-			}
-		}
-	}
-	return apiVersions
-}
-
-func (k *K8sInstaller) getKubernetesVersion() (string, error) {
-	k8sVersionStr := k.params.K8sVersion
-	if k8sVersionStr != "" {
-		return k8sVersionStr, nil
-	}
-	k8sVersion, err := k.client.GetServerVersion()
-	if err != nil {
-		return "", fmt.Errorf("error getting Kubernetes version, try --k8s-version: %s", err)
-	}
-	return k8sVersion.String(), nil
 }

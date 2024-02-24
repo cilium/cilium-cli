@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -1008,32 +1007,15 @@ func (c *Client) GetCiliumVersion(ctx context.Context, p *corev1.Pod) (*semver.V
 	return &podVersion, nil
 }
 
-func (c *Client) GetRunningCiliumVersion(ctx context.Context, namespace string) (string, error) {
-	if utils.IsInHelmMode() {
-		release, err := helm.Get(c.HelmActionConfig, helm.GetParameters{
-			Namespace: namespace,
-			Name:      defaults.HelmReleaseName,
-		})
-		if err != nil {
-			return "", err
-		}
-		return release.Chart.Metadata.Version, nil
-	}
-	pods, err := c.ListPods(ctx, namespace, metav1.ListOptions{LabelSelector: defaults.AgentPodSelector})
+func (c *Client) GetRunningCiliumVersion(_ context.Context, namespace string) (string, error) {
+	release, err := helm.Get(c.HelmActionConfig, helm.GetParameters{
+		Namespace: namespace,
+		Name:      defaults.HelmReleaseName,
+	})
 	if err != nil {
-		return "", fmt.Errorf("unable to list cilium pods: %w", err)
+		return "", err
 	}
-	if len(pods.Items) > 0 && len(pods.Items[0].Spec.Containers) > 0 {
-		for _, container := range pods.Items[0].Spec.Containers {
-			version, err := getCiliumVersionFromImage(container.Image)
-			if err != nil {
-				continue
-			}
-			return version, nil
-		}
-		return "", errors.New("unable to obtain cilium version: no cilium container found")
-	}
-	return "", errors.New("unable to obtain cilium version: no cilium pods found")
+	return release.Chart.Metadata.Version, nil
 }
 
 func (c *Client) ListCiliumLoadBalancerIPPools(ctx context.Context, opts metav1.ListOptions) (*ciliumv2alpha1.CiliumLoadBalancerIPPoolList, error) {

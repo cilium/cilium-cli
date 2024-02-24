@@ -5,12 +5,10 @@ package utils
 
 import (
 	"fmt"
-	"os"
 	"reflect"
 	"testing"
 
 	"github.com/blang/semver/v4"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestCheckVersion(t *testing.T) {
@@ -188,17 +186,4 @@ func TestBuildImagePath(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestIsInHelmMode(t *testing.T) {
-	orig := os.Getenv(CLIModeVariableName)
-	defer func() {
-		assert.NoError(t, os.Setenv(CLIModeVariableName, orig))
-	}()
-	assert.NoError(t, os.Setenv(CLIModeVariableName, "helm"))
-	assert.True(t, IsInHelmMode())
-	assert.NoError(t, os.Setenv(CLIModeVariableName, "classic"))
-	assert.False(t, IsInHelmMode())
-	assert.NoError(t, os.Setenv(CLIModeVariableName, "random"))
-	assert.True(t, IsInHelmMode())
 }
