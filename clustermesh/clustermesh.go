@@ -145,9 +145,9 @@ func (k *K8sClusterMesh) generateService() (*corev1.Service, error) {
 			svc.Spec.Type = corev1.ServiceTypeLoadBalancer
 			svc.ObjectMeta.Annotations["service.beta.kubernetes.io/azure-load-balancer-internal"] = "true"
 		case k8s.KindEKS:
-			k.Log("🔮 Auto-exposing service within AWS VPC (service.beta.kubernetes.io/aws-load-balancer-internal: 0.0.0.0/0")
+			k.Log("🔮 Auto-exposing service within AWS VPC (service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing")
 			svc.Spec.Type = corev1.ServiceTypeLoadBalancer
-			svc.ObjectMeta.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "0.0.0.0/0"
+			svc.ObjectMeta.Annotations["service.beta.kubernetes.io/aws-load-balancer-scheme"] = "internet-facing"
 		default:
 			return nil, fmt.Errorf("cannot auto-detect service type, please specify using '--service-type' option")
 		}
@@ -1972,12 +1972,12 @@ func generateEnableHelmValues(params Parameters, flavor k8s.Flavor) (map[string]
 				},
 			}
 		case k8s.KindEKS:
-			log("🔮 Auto-exposing service within AWS VPC (service.beta.kubernetes.io/aws-load-balancer-internal: 0.0.0.0/0")
+			log("🔮 Auto-exposing service within AWS VPC (service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing")
 			helmVals["clustermesh"].(map[string]interface{})["apiserver"] = map[string]interface{}{
 				"service": map[string]interface{}{
 					"type": corev1.ServiceTypeLoadBalancer,
 					"annotations": map[string]interface{}{
-						"service.beta.kubernetes.io/aws-load-balancer-internal": "0.0.0.0/0",
+						"service.beta.kubernetes.io/aws-load-balancer-scheme": "internet-facing",
 					},
 				},
 			}
