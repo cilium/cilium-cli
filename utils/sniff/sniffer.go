@@ -81,21 +81,40 @@ func Sniff(ctx context.Context, name string, target *check.Pod,
 		close(sniffer.exited)
 	}()
 
+	isListening := func() (bool, error) {
+		line, err := sniffer.stdout.ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return false, fmt.Errorf("Failed to read kubectl exec's stdout: %w", err)
+		}
+		if strings.Contains(line, fmt.Sprintf("listening on %s", iface)) {
+			return true, nil
+		}
+		return false, nil
+	}
+
 	// Wait until tcpdump is ready to capture pkts
 	wctx, wcancel := context.WithTimeout(ctx, 5*time.Second)
 	defer wcancel()
 	for {
 		select {
 		case <-wctx.Done():
-			return nil, fmt.Errorf("Failed to wait for tcpdump to be ready")
+			return nil, fmt.Errorf("timed out waiting for tcpdump to start listening")
 		case err := <-sniffer.exited:
-			return nil, fmt.Errorf("Failed to execute tcpdump: %w", err)
-		case <-time.After(100 * time.Millisecond):
-			line, err := sniffer.stdout.ReadString('\n')
-			if err != nil && !errors.Is(err, io.EOF) {
-				return nil, fmt.Errorf("Failed to read kubectl exec's stdout: %w", err)
+			if err != nil {
+				return nil, fmt.Errorf("failed to execute tcpdump: %w", err)
 			}
-			if strings.Contains(line, fmt.Sprintf("listening on %s", iface)) {
+			done, err := isListening()
+			if err != nil {
+				return nil, err
+			} else if done {
+				return sniffer, nil
+			}
+			return nil, fmt.Errorf("tcpdump exited successfully but without listening: %q", sniffer.stdout.String())
+		case <-time.After(100 * time.Millisecond):
+			done, err := isListening()
+			if err != nil {
+				return nil, err
+			} else if done {
 				return sniffer, nil
 			}
 		}
