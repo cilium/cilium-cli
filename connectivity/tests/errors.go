@@ -26,7 +26,12 @@ import (
 func NoErrorsInLogs(ciliumVersion semver.Version) check.Scenario {
 	// Exceptions for level=error should only be added as a last resort, if the
 	// error cannot be fixed in Cilium or in the test.
-	errorLogExceptions := []string{"Error in delegate stream, restarting", failedToListCRDs, removeInexistentID}
+	errorLogExceptions := []string{
+		"Error in delegate stream, restarting",
+		failedToListCRDs,
+		removeInexistentID,
+		linkNotFound,
+	}
 	if ciliumVersion.LT(semver.MustParse("1.14.0")) {
 		errorLogExceptions = append(errorLogExceptions, previouslyUsedCIDR)
 	}
@@ -36,7 +41,7 @@ func NoErrorsInLogs(ciliumVersion semver.Version) check.Scenario {
 		deadLockHeader:      nil,
 		segmentationFault:   nil,
 		NACKreceived:        nil,
-		RunInitFailed:       nil,
+		RunInitFailed:       {linkNotFound},
 		sizeMismatch:        {"globals/cilium_policy"},
 		emptyBPFInitArg:     nil,
 		RemovingMapMsg:      {"globals/cilium_policy"},
@@ -245,4 +250,5 @@ const (
 	emptyIPNodeIDAlloc  = "Attempt to allocate a node ID for an empty node IP address"
 	failedToListCRDs    = "the server could not find the requested resource" // cf. https://github.com/cilium/cilium/issues/16425
 	previouslyUsedCIDR  = "Unable to find identity of previously used CIDR"  // from https://github.com/cilium/cilium/issues/26881
+	linkNotFound        = "Link not found"                                   // https://github.com/cilium/cilium-cli/issues/1894
 )
