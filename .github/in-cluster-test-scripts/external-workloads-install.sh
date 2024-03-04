@@ -21,6 +21,9 @@ cilium hubble enable
 # NB: necessary to work against occassional flakes due to https://github.com/cilium/cilium-cli/issues/918
 cilium status --wait
 
+# Enable hubble port-forwarding to get hubble flow validation for tests
+cilium hubble port-forward&
+
 # Enable cluster mesh
 # Explicitly specify LoadBalancer service type since the default type is NodePort in helm mode.
 # Ref: https://github.com/cilium/cilium-cli/pull/1527#discussion_r1177244379

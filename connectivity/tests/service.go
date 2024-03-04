@@ -57,7 +57,8 @@ func (s *podToService) Run(ctx context.Context, t *check.Test) {
 				a.ExecInPod(ctx, ct.CurlCommand(svc, features.IPFamilyAny))
 
 				a.ValidateFlows(ctx, pod, a.GetEgressRequirements(check.FlowParameters{
-					DNSRequired: true,
+					Protocol:    check.TCP,
+					DNSProtocol: check.ANY,
 					AltDstPort:  svc.Port(),
 				}))
 
@@ -110,7 +111,8 @@ func (s *podToIngress) Run(ctx context.Context, t *check.Test) {
 				a.ExecInPod(ctx, ct.CurlCommand(svc, features.IPFamilyAny))
 
 				a.ValidateFlows(ctx, pod, a.GetEgressRequirements(check.FlowParameters{
-					DNSRequired: true,
+					Protocol:    check.TCP,
+					DNSProtocol: check.ANY,
 					AltDstPort:  svc.Port(),
 				}))
 			})
@@ -256,6 +258,7 @@ func curlNodePort(ctx context.Context, s check.Scenario, t *check.Test,
 
 				if validateFlows {
 					a.ValidateFlows(ctx, pod, a.GetEgressRequirements(check.FlowParameters{
+						Protocol: check.TCP,
 						// The fact that curl is hitting the NodePort instead of the
 						// backend Pod's port is specified here. This will cause the matcher
 						// to accept both the NodePort and the ClusterIP (container) port.

@@ -25,6 +25,7 @@ type Parameters struct {
 	TestNamespace         string
 	SingleNode            bool
 	PrintFlows            bool
+	Numeric               bool
 	ForceDeploy           bool
 	Hubble                bool
 	HubbleServer          string
@@ -278,7 +279,9 @@ func (r *FlowRequirementResults) Merge(from *FlowRequirementResults) {
 type L4Protocol int
 
 const (
-	TCP L4Protocol = iota
+	NONE L4Protocol = iota
+	ANY
+	TCP
 	UDP
 	ICMP
 )
@@ -286,10 +289,12 @@ const (
 // FlowParameters defines parameters for test result flow matching
 type FlowParameters struct {
 	// Protocol is the network protocol being tested
+	// Use NONE to skip the payload flow validation, if only DNS is required
 	Protocol L4Protocol
 
-	// DNSRequired is true if DNS flows must be seen before the test protocol
-	DNSRequired bool
+	// DNSProtocol is NONE if DNS flows are not required before the test protocol
+	// Valid values are ANY, UDP, TCP
+	DNSProtocol L4Protocol
 
 	// RSTAllowed is true if TCP connection may end with either RST or FIN
 	RSTAllowed bool

@@ -375,7 +375,13 @@ func (a *Action) printFlows(peer TestPeer) {
 	}
 
 	a.Logf("📄 Flow logs for peer %s:", peer.Name())
-	printer := hubprinter.New(hubprinter.Compact(), hubprinter.WithIPTranslation())
+	var printer *hubprinter.Printer
+	if a.test.ctx.Numeric() {
+		printer = hubprinter.New(hubprinter.Compact())
+	} else {
+		printer = hubprinter.New(hubprinter.Compact(), hubprinter.WithIPTranslation())
+	}
+
 	defer printer.Close()
 
 	r := a.flowResults[peer]
@@ -528,10 +534,13 @@ func (a *Action) GetEgressRequirements(p FlowParameters) (reqs []filters.FlowSet
 	}
 
 	var egress filters.FlowSetRequirement
+	haveEgress := false
 	var http filters.FlowSetRequirement
 	haveHTTP := false
 
 	switch p.Protocol {
+	case NONE:
+		// No payload protocol requirement
 	case ICMP:
 		icmpRequest := filters.Or(filters.ICMP(8), filters.ICMPv6(128))
 		icmpResponse := filters.Or(filters.ICMP(0), filters.ICMPv6(129))
@@ -571,6 +580,7 @@ func (a *Action) GetEgressRequirements(p FlowParameters) (reqs []filters.FlowSet
 				}
 			}
 		}
+		haveEgress = true
 	case TCP:
 		tcpRequest := filters.TCP(0, a.dst.Port())
 		tcpResponse := filters.TCP(a.dst.Port(), 0)
@@ -631,20 +641,31 @@ func (a *Action) GetEgressRequirements(p FlowParameters) (reqs []filters.FlowSet
 				}
 			}
 		}
+		haveEgress = true
 	case UDP:
 		a.Fail("UDP egress flow matching not implemented yet")
 	default:
 		a.Failf("Invalid egress flow matching protocol %d", p.Protocol)
 	}
 
-	if p.DNSRequired || a.expEgress.DNSProxy {
+	if p.DNSProtocol != NONE || a.expEgress.DNSProxy {
 		// Override to allow for any DNS server
 		ipRequest := filters.IP(srcIP, "")
 		ipResponse := filters.IP("", srcIP)
 
-		dnsRequest := filters.Or(filters.UDP(0, 53), filters.TCP(0, 53))
-		dnsResponse := filters.Or(filters.UDP(53, 0), filters.TCP(53, 0))
-
+		var dnsRequest, dnsResponse filters.FlowFilterImplementation
+		switch p.DNSProtocol {
+		// NONE covers the case when a.expEgress.DNSProxy is true
+		case ANY, NONE:
+			dnsRequest = filters.Or(filters.UDP(0, 53), filters.TCP(0, 53))
+			dnsResponse = filters.Or(filters.UDP(53, 0), filters.TCP(53, 0))
+		case TCP:
+			dnsRequest = filters.TCP(0, 53)
+			dnsResponse = filters.TCP(53, 0)
+		case UDP:
+			dnsRequest = filters.UDP(0, 53)
+			dnsResponse = filters.UDP(53, 0)
+		}
 		dns := filters.FlowSetRequirement{First: filters.FlowRequirement{Filter: filters.And(ipRequest, dnsRequest), Msg: "DNS request"}}
 		if a.expEgress.DNSProxy {
 			qname := a.dst.Address(a.ipFam) + "."
@@ -658,7 +679,9 @@ func (a *Action) GetEgressRequirements(p FlowParameters) (reqs []filters.FlowSet
 
 		reqs = append(reqs, dns)
 	}
-	reqs = append(reqs, egress)
+	if haveEgress {
+		reqs = append(reqs, egress)
+	}
 	if haveHTTP {
 		reqs = append(reqs, http)
 	}
