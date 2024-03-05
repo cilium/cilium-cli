@@ -49,6 +49,7 @@ type Parameters struct {
 	PerfHostNet           bool
 	PerfPodNet            bool
 	PerfSamples           int
+	PerfMessageSendSize   int
 	CurlImage             string
 	PerformanceImage      string
 	JSONMockImage         string

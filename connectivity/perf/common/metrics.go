@@ -93,12 +93,13 @@ type PerfResult struct {
 
 // PerfTests stores metadata information about performed test
 type PerfTests struct {
-	Tool     string
-	Test     string
-	SameNode bool
-	Scenario string
-	Sample   int
-	Duration time.Duration
+	Tool            string
+	Test            string
+	SameNode        bool
+	Scenario        string
+	Sample          int
+	Duration        time.Duration
+	MessageSendSize int
 }
 
 // PerfSummary stores combined metadata information and results of test

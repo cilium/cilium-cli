@@ -56,18 +56,19 @@ type ConnectivityTest struct {
 	// Clients for source and destination clusters.
 	clients *deploymentClients
 
-	ciliumPods        map[string]Pod
-	echoPods          map[string]Pod
-	echoExternalPods  map[string]Pod
-	clientPods        map[string]Pod
-	clientCPPods      map[string]Pod
-	perfClientPods    []Pod
-	perfServerPod     []Pod
-	PerfResults       []common.PerfSummary
-	echoServices      map[string]Service
-	ingressService    map[string]Service
-	k8sService        Service
-	externalWorkloads map[string]ExternalWorkload
+	ciliumPods          map[string]Pod
+	echoPods            map[string]Pod
+	echoExternalPods    map[string]Pod
+	clientPods          map[string]Pod
+	clientCPPods        map[string]Pod
+	perfClientPods      []Pod
+	perfServerPod       []Pod
+	PerfResults         []common.PerfSummary
+	PerfMessageSendSize int
+	echoServices        map[string]Service
+	ingressService      map[string]Service
+	k8sService          Service
+	externalWorkloads   map[string]ExternalWorkload
 
 	hostNetNSPodsByNode      map[string]Pod
 	secondaryNetworkNodeIPv4 map[string]string // node name => secondary ip
@@ -203,6 +204,7 @@ func NewConnectivityTest(client *k8s.Client, p Parameters, version string) (*Con
 		perfClientPods:           []Pod{},
 		perfServerPod:            []Pod{},
 		PerfResults:              []common.PerfSummary{},
+		PerfMessageSendSize:      1024,
 		echoServices:             make(map[string]Service),
 		ingressService:           make(map[string]Service),
 		externalWorkloads:        make(map[string]ExternalWorkload),
