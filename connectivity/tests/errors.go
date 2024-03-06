@@ -30,9 +30,10 @@ func NoErrorsInLogs(ciliumVersion semver.Version) check.Scenario {
 		failedToListCRDs,
 		removeInexistentID,
 		fqdnIPTimeout,
+		klogLeaderElectionFail,
 	}
 	if ciliumVersion.LT(semver.MustParse("1.14.0")) {
-		errorLogExceptions = append(errorLogExceptions, previouslyUsedCIDR, klogLeaderElectionFail)
+		errorLogExceptions = append(errorLogExceptions, previouslyUsedCIDR)
 	}
 	// The list is adopted from cilium/cilium/test/helper/utils.go
 	var errorMsgsWithExceptions = map[string][]string{
