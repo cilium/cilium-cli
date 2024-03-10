@@ -847,7 +847,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 					Port:           containerPort,
 					NamedPort:      "http-8080",
 					HostPort:       8080,
-					Image:          ct.params.JSONMockImage,
+					Image:          "echoserver",
 					Labels:         map[string]string{"external": "echo"},
 					Annotations:    ct.params.DeploymentAnnotations.Match(echoExternalNodeDeploymentName),
 					NodeSelector:   map[string]string{"cilium.io/no-schedule": "true"},

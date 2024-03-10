@@ -824,6 +824,18 @@ func Run(ctx context.Context, ct *check.ConnectivityTest, extra Hooks) error {
 			)
 	}
 
+	//if ct.Params().IncludeUnsafeTests {
+	ct.NewTest("bpf-masquerade").
+		WithFeatureRequirements(
+			features.RequireEnabled(features.EnableMasquerade),
+			features.RequireEnabled(features.HostPort),
+			features.RequireEnabled(features.NodeWithoutCilium)).
+		WithScenarios(tests.BPFMasquerade()).
+		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			return check.ResultOK, check.ResultOK
+		})
+	//}
+
 	if versioncheck.MustCompile(">=1.14.0")(ct.CiliumVersion) {
 		ct.NewTest("egress-gateway-excluded-cidrs").
 			WithCiliumEgressGatewayPolicy(check.CiliumEgressGatewayPolicyParams{
