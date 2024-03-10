@@ -99,4 +99,11 @@ check:
 	docker run --rm -v `pwd`:/app -w /app docker.io/golangci/golangci-lint:$(GOLANGCILINT_WANT_VERSION) golangci-lint run
 endif
 
-.PHONY: $(TARGET) release local-release install clean test bench check clean-tags tags
+echoserver:
+	GOOS=linux $(GO_BUILD) -o echoserver ./echoserver
+	docker build  -f Dockerfile.echo -t quay.io/cilium/echoserver:$(VERSION) .
+
+kind-image-echoserver: echoserver
+	kind load docker-image quay.io/cilium/echoserver:$(VERSION)
+
+.PHONY: $(TARGET) release local-release install clean test bench check clean-tags tags echoserver

@@ -1,0 +1,5 @@
+FROM alpine:latest
+
+ADD ./echoserver /echoserver
+
+CMD /echoserver
