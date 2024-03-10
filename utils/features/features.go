@@ -59,7 +59,12 @@ const (
 	IngressController Feature = "ingress-controller"
 
 	EgressGateway Feature = "enable-ipv4-egress-gateway"
-	GatewayAPI    Feature = "enable-gateway-api"
+
+	BPFMasquerade Feature = "bpf-masquerade"
+
+	EnableMasquerade Feature = "enable-masquerade"
+
+	GatewayAPI Feature = "enable-gateway-api"
 
 	EnableEnvoyConfig Feature = "enable-envoy-config"
 
@@ -255,6 +260,14 @@ func (fs Set) ExtractFromConfigMap(cm *v1.ConfigMap) {
 
 	fs[EgressGateway] = Status{
 		Enabled: cm.Data["enable-ipv4-egress-gateway"] == "true",
+	}
+
+	fs[BPFMasquerade] = Status{
+		Enabled: cm.Data["enable-bpf-masquerade"] == "true",
+	}
+
+	fs[EnableMasquerade] = Status{
+		Enabled: cm.Data["enable-ipv4-masquerade"] == "true" || cm.Data["enable-ipv6-masquerade"] == "true",
 	}
 
 	fs[CIDRMatchNodes] = Status{
