@@ -115,6 +115,11 @@ type Options struct {
 	TetragonNamespace string
 	// Retry limit for copying files from pods
 	CopyRetryLimit int
+	// CiliumTestEnabled is used to perform a sysdump that will include relevant data from cilium-cli connectivity
+	// test fixtures in the test namespace (generally: cilium-test).
+	CiliumTestEnabled bool
+	// CiliumTestNamespace is the namespace in which cilium connectivity test fixtures resources are created.
+	CiliumTestNamespace string
 }
 
 // Task defines a task for the sysdump collector to execute.
@@ -219,6 +224,10 @@ func NewCollector(k KubernetesClient, o Options, startTime time.Time, cliVersion
 		}
 	} else {
 		c.log("ℹ️  Cilium SPIRE namespace: %s", c.Options.CiliumSPIRENamespace)
+	}
+
+	if c.Options.CiliumTestNamespace != "" && c.Options.CiliumTestEnabled {
+
 	}
 
 	// Grab the Kubernetes nodes for the target cluster.
@@ -1380,6 +1389,30 @@ func (c *Collector) Run() error {
 				return nil
 			},
 		},
+	}
+
+	testTasks := []Task{
+		{
+			CreatesSubtasks: true,
+			Description:     "Collect connectivity test echo server logs",
+			Quick:           false,
+			Task: func(ctx context.Context) error {
+				pods, err := c.Client.ListPods(ctx, c.Options.CiliumTestNamespace, metav1.ListOptions{
+					LabelSelector: "kind=echo",
+				})
+				if err != nil {
+					return fmt.Errorf("failed listing test pods in namespace %s: %w", c.Options.CiliumTestNamespace, err)
+				}
+
+				if err := c.SubmitLogsTasks(AllPods(pods), c.Options.LogsSinceTime, c.Options.LogsLimitBytes); err != nil {
+					return fmt.Errorf("failed to submit logs tasks for cilium tests: %w", err)
+				}
+				return nil
+			},
+		},
+	}
+	if c.Options.CiliumTestEnabled {
+		tasks = append(tasks, testTasks...)
 	}
 
 	tasks = append(tasks, helmTasks...)

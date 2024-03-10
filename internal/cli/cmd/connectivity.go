@@ -44,6 +44,7 @@ var params = check.Parameters{
 		LargeSysdumpAbortTimeout: sysdump.DefaultLargeSysdumpAbortTimeout,
 		LargeSysdumpThreshold:    sysdump.DefaultLargeSysdumpThreshold,
 		Writer:                   os.Stdout,
+		CiliumTestEnabled:        true,
 	},
 }
 
@@ -52,6 +53,7 @@ var tests []string
 func RunE(hooks Hooks) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, _ []string) error {
 		params.CiliumNamespace = namespace
+		params.SysdumpOptions.CiliumTestNamespace = params.TestNamespace
 
 		for _, test := range tests {
 			if strings.HasPrefix(test, "!") {
