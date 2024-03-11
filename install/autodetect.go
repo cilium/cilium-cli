@@ -217,9 +217,10 @@ func (k *K8sInstaller) autodetectKubeProxy(ctx context.Context) error {
 		k.Log("ℹ️  Cilium will fully replace all functionalities of kube-proxy")
 		// Use HelmOpts to set auto kube-proxy installation
 		k.params.HelmOpts.Values = append(k.params.HelmOpts.Values,
-			"kubeProxyReplacement=strict",
 			fmt.Sprintf("k8sServiceHost=%s", apiServerHost),
 			fmt.Sprintf("k8sServicePort=%s", apiServerPort))
+		k.params.HelmOpts.StringValues = append(k.params.HelmOpts.StringValues,
+			"kubeProxyReplacement=true")
 	}
 
 	return nil
@@ -231,8 +232,8 @@ func (k *K8sInstaller) autoEnableBPFMasq() error {
 		return err
 	}
 
-	// Auto-enable BPF masquerading if KPR=strict and IPv6=disabled
-	foundKPRStrict := false
+	// Auto-enable BPF masquerading if KPR=true and IPv6=disabled
+	foundKPRTrue := false
 	foundMasq := false
 	enabledIPv6 := false
 	for _, param := range vals {
@@ -241,8 +242,8 @@ func (k *K8sInstaller) autoEnableBPFMasq() error {
 			continue
 		}
 
-		if !foundKPRStrict && param == "kubeProxyReplacement=strict" {
-			foundKPRStrict = true
+		if !foundKPRTrue && param == "kubeProxyReplacement=true" {
+			foundKPRTrue = true
 			continue
 		}
 		if strings.HasPrefix(param, "bpf.masquerade") {
@@ -255,7 +256,7 @@ func (k *K8sInstaller) autoEnableBPFMasq() error {
 		}
 	}
 
-	if foundKPRStrict && !foundMasq && !enabledIPv6 {
+	if foundKPRTrue && !foundMasq && !enabledIPv6 {
 		k.params.HelmOpts.Values = append(k.params.HelmOpts.Values,
 			"bpf.masquerade=true")
 	}
