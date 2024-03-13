@@ -26,7 +26,7 @@ import (
 func NoErrorsInLogs(ciliumVersion semver.Version) check.Scenario {
 	// Exceptions for level=error should only be added as a last resort, if the
 	// error cannot be fixed in Cilium or in the test.
-	errorLogExceptions := []string{"Error in delegate stream, restarting", failedToListCRDs, removeInexistentID}
+	errorLogExceptions := []string{"Error in delegate stream, restarting", failedToListCRDs, removeInexistentID, opCantBeFulfilled}
 	if ciliumVersion.LT(semver.MustParse("1.14.0")) {
 		errorLogExceptions = append(errorLogExceptions, previouslyUsedCIDR, klogLeaderElectionFail)
 	}
@@ -246,4 +246,5 @@ const (
 	failedToListCRDs       = "the server could not find the requested resource"                          // cf. https://github.com/cilium/cilium/issues/16425
 	previouslyUsedCIDR     = "Unable to find identity of previously used CIDR"                           // from https://github.com/cilium/cilium/issues/26881
 	klogLeaderElectionFail = "error retrieving resource lock kube-system/cilium-operator-resource-lock:" // from: https://github.com/cilium/cilium/issues/31050
+	opCantBeFulfilled      = "Operation cannot be fulfilled on leases.coordination.k8s.io"               // from: https://github.com/cilium/cilium/issues/31374
 )
