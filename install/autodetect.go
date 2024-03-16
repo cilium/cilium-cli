@@ -11,7 +11,6 @@ import (
 
 	"github.com/cilium/cilium-cli/k8s"
 
-	"github.com/cilium/cilium/pkg/versioncheck"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -139,11 +138,11 @@ func (k *K8sInstaller) autodetectAndValidate(ctx context.Context, helmValues map
 		return err
 	}
 
-	k.autodetectKubeProxy(ctx, helmValues)
+	k.autodetectKubeProxy(ctx)
 	return nil
 }
 
-func (k *K8sInstaller) autodetectKubeProxy(ctx context.Context, helmValues map[string]interface{}) error {
+func (k *K8sInstaller) autodetectKubeProxy(ctx context.Context) error {
 	if k.flavor.Kind == k8s.KindK3s {
 		return nil
 	}
@@ -198,25 +197,11 @@ func (k *K8sInstaller) autodetectKubeProxy(ctx context.Context, helmValues map[s
 	if apiServerHost != "" && apiServerPort != "" {
 		k.Log("🔮 Auto-detected kube-proxy has not been installed")
 		k.Log("ℹ️  Cilium will fully replace all functionalities of kube-proxy")
-
-		setIfUnset := func(key, value string) {
-			_, found, _ := unstructured.NestedFieldNoCopy(helmValues, key)
-			if !found {
-				k.params.HelmOpts.Values = append(k.params.HelmOpts.Values,
-					fmt.Sprintf("%s=%s", key, value))
-			}
-		}
-
 		// Use HelmOpts to set auto kube-proxy installation
-		setIfUnset("kubeProxyReplacement", func() string {
-			if !versioncheck.MustCompile(">=1.14.0")(k.chartVersion) {
-				return "true"
-			}
-			return "strict"
-		}())
-
-		setIfUnset("k8sServiceHost", apiServerHost)
-		setIfUnset("k8sServicePort", apiServerPort)
+		k.params.HelmOpts.Values = append(k.params.HelmOpts.Values,
+			"kubeProxyReplacement=strict",
+			fmt.Sprintf("k8sServiceHost=%s", apiServerHost),
+			fmt.Sprintf("k8sServicePort=%s", apiServerPort))
 	}
 
 	return nil
