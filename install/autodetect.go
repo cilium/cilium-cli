@@ -41,13 +41,25 @@ func (p Parameters) checkDisabled(name string) bool {
 	return false
 }
 
-func (k *K8sInstaller) detectDatapathMode(helmValues map[string]interface{}) error {
+func (k *K8sInstaller) detectDatapathMode() error {
 	if k.params.DatapathMode != "" {
 		k.Log("ℹ️  Custom datapath mode: %s", k.params.DatapathMode)
 		return nil
 	}
 
-	routingMode, _, _ := unstructured.NestedString(helmValues, "routingMode")
+	vals, err := k.getHelmValues()
+	if err != nil {
+		return err
+	}
+
+	routingMode := ""
+	for _, val := range vals {
+		val, ok := val.(string)
+		if ok && strings.HasPrefix(val, "routingMode") {
+			routingMode = strings.Split(val, "=")[1]
+		}
+
+	}
 	if routingMode == "native" {
 		k.params.DatapathMode = DatapathNative
 		return nil
@@ -95,7 +107,14 @@ func (k *K8sInstaller) autodetect(ctx context.Context) {
 }
 
 func getClusterName(helmValues map[string]interface{}) string {
-	clusterName, _, _ := unstructured.NestedString(helmValues, "cluster", "name")
+	cluster, ok := helmValues["cluster"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	clusterName, ok := cluster["name"].(string)
+	if !ok {
+		return ""
+	}
 	return clusterName
 }
 
@@ -135,7 +154,7 @@ func (k *K8sInstaller) autodetectAndValidate(ctx context.Context, helmValues map
 		k.Log("ℹ️  Using cluster name %q", k.params.ClusterName)
 	}
 
-	if err := k.detectDatapathMode(helmValues); err != nil {
+	if err := k.detectDatapathMode(); err != nil {
 		return err
 	}
 
