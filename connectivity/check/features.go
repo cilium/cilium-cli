@@ -147,10 +147,10 @@ func (ct *ConnectivityTest) extractFeaturesFromCiliumStatus(ctx context.Context,
 	}
 
 	// Kube-Proxy Replacement
-	mode = "false"
+	mode = "Disabled"
 	if kpr := st.KubeProxyReplacement; kpr != nil {
-		mode = strings.ToLower(kpr.Mode)
-		if f := kpr.Features; f != nil {
+		mode = kpr.Mode
+		if f := kpr.Features; kpr.Mode != "Disabled" && f != nil {
 			if f.ExternalIPs != nil {
 				result[features.KPRExternalIPs] = features.Status{Enabled: f.ExternalIPs.Enabled}
 			}
@@ -172,7 +172,7 @@ func (ct *ConnectivityTest) extractFeaturesFromCiliumStatus(ctx context.Context,
 		}
 	}
 	result[features.KPRMode] = features.Status{
-		Enabled: mode != "false" && mode != "disabled",
+		Enabled: mode != "Disabled",
 		Mode:    mode,
 	}
 
