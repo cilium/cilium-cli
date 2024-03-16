@@ -23,6 +23,7 @@ import (
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v3/pkg/chartutil"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/cli/values"
 	"helm.sh/helm/v3/pkg/getter"
@@ -131,13 +132,17 @@ func ciliumCacheDir() (string, error) {
 	return res, nil
 }
 
-// MergeVals merges all values from flag options ('helmFlagOpts') and
+// MergeVals merges all values from flag options ('helmFlagOpts'),
 // auto-generated helm options based on environment ('helmMapOpts'),
+// helm values from a previous installation ('helmValues'),
+// extra options that are not defined as helm flags ('extraConfigMapOpts')
 // and returns a single map with all of these options merged.
-// 'helmMapOpts' can be nil.
+// Both 'helmMapOpts', 'helmValues', 'extraConfigMapOpts', can be nil.
 func MergeVals(
 	helmFlagOpts values.Options,
 	helmMapOpts map[string]string,
+	helmValues,
+	extraConfigMapOpts chartutil.Values,
 ) (map[string]interface{}, error) {
 
 	// Create helm values from helmMapOpts
@@ -148,7 +153,9 @@ func MergeVals(
 
 	helmOptsStr := strings.Join(helmOpts, ",")
 
-	helmValues := map[string]interface{}{}
+	if helmValues == nil {
+		helmValues = map[string]interface{}{}
+	}
 	err := strvals.ParseInto(helmOptsStr, helmValues)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing helm options %q: %w", helmOptsStr, err)
@@ -162,7 +169,19 @@ func MergeVals(
 	}
 
 	// User-defined helm options will overwrite the default cilium-cli helm options
-	return mergeMaps(helmValues, userVals), nil
+	userVals = mergeMaps(helmValues, userVals)
+
+	// Merge the user-defined helm options into the `--config` map. This
+	// effectively means that any --set=extraConfig.<key> will overwrite
+	// the values of --config <key>
+	extraConfig := map[string]interface{}{}
+	if len(extraConfigMapOpts) != 0 {
+		extraConfig["extraConfig"] = extraConfigMapOpts
+	}
+
+	vals := mergeMaps(extraConfig, userVals)
+
+	return vals, nil
 }
 
 // ParseVals takes a slice of Helm values of the form
