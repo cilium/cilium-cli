@@ -141,7 +141,7 @@ jobs:
           --nodes-without-cilium="${NODES_WITHOUT_CILIUM}" \
           --set encryption.enabled=true \
           --set encryption.type=ipsec \
-          --set kubeProxyReplacement=false
+          --set kubeProxyReplacement=disabled
 
       - name: Enable Relay
         run: |
