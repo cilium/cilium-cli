@@ -238,9 +238,9 @@ func curlNodePort(ctx context.Context, s check.Scenario, t *check.Test,
 				}
 			}
 
-			//  Skip IPv6 requests when running on <1.14.0 Cilium with CNPs
+			//  Skip IPv6 requests when running on <1.13.13 Cilium with CNPs
 			if features.GetIPFamily(addr.Address) == features.IPFamilyV6 &&
-				versioncheck.MustCompile("<1.14.0")(t.Context().CiliumVersion) &&
+				versioncheck.MustCompile("<1.13.13")(t.Context().CiliumVersion) &&
 				(len(t.CiliumNetworkPolicies()) > 0 || len(t.KubernetesNetworkPolicies()) > 0) {
 				continue
 			}
