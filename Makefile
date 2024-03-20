@@ -100,3 +100,5 @@ check:
 endif
 
 .PHONY: $(TARGET) release local-release install clean test bench check clean-tags tags
+
+-include Makefile.override
