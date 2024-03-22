@@ -5,6 +5,7 @@ package rate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -21,7 +22,10 @@ import (
 	"github.com/cilium/cilium/pkg/time"
 )
 
-var log = logging.DefaultLogger.WithField(logfields.LogSubsys, "rate")
+var (
+	log              = logging.DefaultLogger.WithField(logfields.LogSubsys, "rate")
+	ErrWaitCancelled = errors.New("request cancelled while waiting for rate limiting slot")
+)
 
 const (
 	defaultMeanOver                = 10
@@ -393,6 +397,30 @@ func (l *APILimiter) Parameters() APILimiterParameters {
 	return l.params
 }
 
+// SetRateLimit sets the rate limit of the limiter. If limiter is unset, a new
+// Limiter is created using the rate burst set in the parameters.
+func (l *APILimiter) SetRateLimit(limit rate.Limit) {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	if l.limiter != nil {
+		l.limiter.SetLimit(limit)
+	} else {
+		l.limiter = rate.NewLimiter(limit, l.params.RateBurst)
+	}
+}
+
+// SetRateBurst sets the rate burst of the limiter. If limiter is unset, a new
+// Limiter is created using the rate limit set in the parameters.
+func (l *APILimiter) SetRateBurst(burst int) {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	if l.limiter != nil {
+		l.limiter.SetBurst(burst)
+	} else {
+		l.limiter = rate.NewLimiter(l.params.RateLimit, burst)
+	}
+}
+
 func (l *APILimiter) delayedAdjustment(current, min, max float64) (n float64) {
 	n = current * l.adjustmentFactor
 	n = current + ((n - current) * l.params.DelayedAdjustmentFactor)
@@ -632,7 +660,7 @@ func (l *APILimiter) wait(ctx context.Context) (req *limitedRequest, err error) 
 		}
 		l.mutex.Unlock()
 		req.outcome = outcomeReqCancelled
-		err = fmt.Errorf("request cancelled while waiting for rate limiting slot: %w", ctx.Err())
+		err = fmt.Errorf("%w: %w", ErrWaitCancelled, ctx.Err())
 		return
 	default:
 	}
@@ -735,7 +763,7 @@ func (l *APILimiter) wait(ctx context.Context) (req *limitedRequest, err error) 
 			}
 
 			req.outcome = outcomeReqCancelled
-			err = fmt.Errorf("request cancelled while waiting for rate limiting slot: %w", ctx.Err())
+			err = fmt.Errorf("%w: %w", ErrWaitCancelled, ctx.Err())
 			return
 		}
 	}
