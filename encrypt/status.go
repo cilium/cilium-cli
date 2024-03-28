@@ -14,9 +14,11 @@ import (
 
 	"github.com/cilium/cilium/api/v1/models"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/cilium/cilium-cli/defaults"
 	"github.com/cilium/cilium-cli/status"
+	"github.com/cilium/cilium-cli/utils/features"
 )
 
 // GetEncryptStatus gets encryption status from all/specific cilium agent pods.
@@ -29,12 +31,17 @@ func (s *Encrypt) GetEncryptStatus(ctx context.Context) error {
 		return err
 	}
 
-	res, err := s.fetchEncryptStatusConcurrently(ctx, pods)
+	statusMap, err := s.fetchEncryptStatusConcurrently(ctx, pods)
 	if err != nil {
 		return err
 	}
 
-	return s.writeStatus(res)
+	result, err := s.enrichWithIPsecDetails(ctx, statusMap)
+	if err != nil {
+		return err
+	}
+
+	return s.writeStatus(result)
 }
 
 func (s *Encrypt) fetchEncryptStatusConcurrently(ctx context.Context, pods []corev1.Pod) (map[string]models.EncryptionStatus, error) {
@@ -150,7 +157,65 @@ func nodeStatusFromText(str string) (models.EncryptionStatus, error) {
 	return res, nil
 }
 
-func (s *Encrypt) writeStatus(res map[string]models.EncryptionStatus) error {
+func (s *Encrypt) enrichWithIPsecDetails(ctx context.Context, statusMap map[string]models.EncryptionStatus) (map[string]encryptionStatus, error) {
+	ipsecEnabled := false
+	result := make(map[string]encryptionStatus, len(statusMap))
+	for k, s := range statusMap {
+		if s.Ipsec != nil {
+			ipsecEnabled = true
+		}
+		result[k] = encryptionStatus{EncryptionStatus: s}
+	}
+
+	if !ipsecEnabled {
+		return result, nil
+	}
+
+	cm, err := s.client.GetConfigMap(ctx, s.params.CiliumNamespace, defaults.ConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("unable get ConfigMap %q: %w", defaults.ConfigMapName, err)
+	}
+	fs := features.Set{}
+	fs.ExtractFromConfigMap(cm)
+
+	key, err := s.readIPsecKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+	perNodeIPsecKey := strings.Contains(key, "+")
+	expectedKeyCount := expectedIPsecKeyCount(len(statusMap), fs, perNodeIPsecKey)
+
+	for k, s := range result {
+		if s.Ipsec == nil {
+			continue
+		}
+		s.IPsecExpectedKeyCount = expectedKeyCount
+		s.IPsecPerNodeKey = perNodeIPsecKey
+		s.IPsecKeyRotationInProgress = int64(expectedKeyCount) != s.Ipsec.KeysInUse
+		result[k] = s
+	}
+	return result, nil
+}
+
+func expectedIPsecKeyCount(ciliumPods int, fs features.Set, perNodeKey bool) int {
+	if !perNodeKey {
+		return 1
+	}
+	// IPsec key states for `local_cilium_internal_ip` and `remote_node_ip`
+	xfrmStates := 2
+	if fs[features.UseCiliumInternalIPForIPsec].Enabled {
+		// plus state for `remote_cilium_internal_ip`
+		xfrmStates++
+	}
+	if fs[features.IPv6].Enabled {
+		// multiply by 2 because of dual state: IPv4 & IPv6
+		xfrmStates *= 2
+	}
+	// subtract 1 to count remote nodes only
+	return (ciliumPods - 1) * xfrmStates
+}
+
+func (s *Encrypt) writeStatus(res map[string]encryptionStatus) error {
 	if s.params.PerNodeDetails {
 		for nodeName, n := range res {
 			if err := printStatus(nodeName, n, s.params.Output); err != nil {
@@ -166,7 +231,7 @@ func (s *Encrypt) writeStatus(res map[string]models.EncryptionStatus) error {
 	return cs.printStatus(s.params.Output)
 }
 
-func clusterNodeStatus(res map[string]models.EncryptionStatus) (clusterStatus, error) {
+func clusterNodeStatus(res map[string]encryptionStatus) (clusterStatus, error) {
 	cs := clusterStatus{
 		TotalNodeCount:          len(res),
 		IPsecKeysInUseNodeCount: make(map[int64]int64),
@@ -184,6 +249,9 @@ func clusterNodeStatus(res map[string]models.EncryptionStatus) (clusterStatus, e
 		}
 		if v.Mode == "IPsec" {
 			cs.EncIPsecNodeCount++
+			cs.IPsecExpectedKeyCount = v.IPsecExpectedKeyCount
+			cs.IPsecPerNodeKey = v.IPsecPerNodeKey
+			cs.IPsecKeyRotationInProgress = int64(v.IPsecExpectedKeyCount) != v.Ipsec.KeysInUse
 		}
 		cs.IPsecKeysInUseNodeCount[v.Ipsec.KeysInUse]++
 		maxSeqNum, err := maxSequenceNumber(v.Ipsec.MaxSeqNumber, cs.IPsecMaxSeqNum)
@@ -226,6 +294,9 @@ func (c clusterStatus) printStatus(format string) error {
 			builder.WriteString(fmt.Sprintf("IPsec keys in use: %s\n", strings.Join(keyStrs, ", ")))
 		}
 		builder.WriteString(fmt.Sprintf("IPsec highest Seq. Number: %s across all nodes\n", c.IPsecMaxSeqNum))
+		builder.WriteString(fmt.Sprintf("IPsec expected key count: %d\n", c.IPsecExpectedKeyCount))
+		builder.WriteString(fmt.Sprintf("IPsec key rotation in progress: %t\n", c.IPsecKeyRotationInProgress))
+		builder.WriteString(fmt.Sprintf("IPsec per-node key: %t\n", c.IPsecPerNodeKey))
 		builder.WriteString(fmt.Sprintf("IPsec errors: %d across all nodes\n", c.IPsecErrCount))
 		for k, v := range c.XfrmErrors {
 			builder.WriteString(fmt.Sprintf("\t%s: %d on %d/%d nodes\n", k, v, c.XfrmErrorNodeCount[k], c.TotalNodeCount))
@@ -238,7 +309,7 @@ func (c clusterStatus) printStatus(format string) error {
 	return err
 }
 
-func printStatus(nodeName string, n models.EncryptionStatus, format string) error {
+func printStatus(nodeName string, n encryptionStatus, format string) error {
 	if format == status.OutputJSON {
 		return printJSONStatus(n)
 	}
@@ -253,6 +324,9 @@ func printStatus(nodeName string, n models.EncryptionStatus, format string) erro
 		if n.Ipsec.MaxSeqNumber != "" {
 			builder.WriteString(fmt.Sprintf("IPsec highest Seq. Number: %s\n", n.Ipsec.MaxSeqNumber))
 		}
+		builder.WriteString(fmt.Sprintf("IPsec expected key count: %d\n", n.IPsecExpectedKeyCount))
+		builder.WriteString(fmt.Sprintf("IPsec key rotation in progress: %t\n", n.IPsecKeyRotationInProgress))
+		builder.WriteString(fmt.Sprintf("IPsec per-node key: %t\n", n.IPsecPerNodeKey))
 		builder.WriteString(fmt.Sprintf("IPsec errors: %d\n", n.Ipsec.ErrorCount))
 		for k, v := range n.Ipsec.XfrmErrors {
 			builder.WriteString(fmt.Sprintf("\t%s: %d\n", k, v))

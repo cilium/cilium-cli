@@ -8,6 +8,8 @@ import (
 
 	"github.com/cilium/cilium/api/v1/models"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cilium/cilium-cli/utils/features"
 )
 
 func Test_nodeStatusFromOutput(t *testing.T) {
@@ -263,17 +265,21 @@ Errors: 3
 func Test_clusterNodeStatus(t *testing.T) {
 	testCases := []struct {
 		name                  string
-		nodeStatusMap         map[string]models.EncryptionStatus
+		nodeStatusMap         map[string]encryptionStatus
 		expectedClusterStatus clusterStatus
 	}{
 		{
 			name: "Nodes with no encryption",
-			nodeStatusMap: map[string]models.EncryptionStatus{
+			nodeStatusMap: map[string]encryptionStatus{
 				"node1": {
-					Mode: "Disabled",
+					EncryptionStatus: models.EncryptionStatus{
+						Mode: "Disabled",
+					},
 				},
 				"node2": {
-					Mode: "Disabled",
+					EncryptionStatus: models.EncryptionStatus{
+						Mode: "Disabled",
+					},
 				},
 			},
 			expectedClusterStatus: clusterStatus{
@@ -286,25 +292,32 @@ func Test_clusterNodeStatus(t *testing.T) {
 		},
 		{
 			name: "Nodes with IPsec encryption without errors",
-			nodeStatusMap: map[string]models.EncryptionStatus{
+			nodeStatusMap: map[string]encryptionStatus{
 				"node1": {
-					Mode: "IPsec",
-					Ipsec: &models.IPsecStatus{
-						KeysInUse:    1,
-						MaxSeqNumber: "0x66c/0xffffffff",
+					EncryptionStatus: models.EncryptionStatus{
+						Mode: "IPsec",
+						Ipsec: &models.IPsecStatus{
+							KeysInUse:    1,
+							MaxSeqNumber: "0x66c/0xffffffff",
+						},
 					},
+					IPsecExpectedKeyCount: 1,
 				},
 				"node2": {
-					Mode: "IPsec",
-					Ipsec: &models.IPsecStatus{
-						KeysInUse:    1,
-						MaxSeqNumber: "0x77c/0xffffffff",
+					EncryptionStatus: models.EncryptionStatus{
+						Mode: "IPsec",
+						Ipsec: &models.IPsecStatus{
+							KeysInUse:    1,
+							MaxSeqNumber: "0x77c/0xffffffff",
+						},
 					},
+					IPsecExpectedKeyCount: 1,
 				},
 			},
 			expectedClusterStatus: clusterStatus{
 				TotalNodeCount:          2,
 				EncIPsecNodeCount:       2,
+				IPsecExpectedKeyCount:   1,
 				IPsecKeysInUseNodeCount: map[int64]int64{1: 2},
 				IPsecMaxSeqNum:          "0x77c/0xffffffff",
 				XfrmErrors:              make(map[string]int64),
@@ -313,37 +326,45 @@ func Test_clusterNodeStatus(t *testing.T) {
 		},
 		{
 			name: "Nodes with IPsec encryption with errors",
-			nodeStatusMap: map[string]models.EncryptionStatus{
+			nodeStatusMap: map[string]encryptionStatus{
 				"node1": {
-					Mode: "IPsec",
-					Ipsec: &models.IPsecStatus{
-						KeysInUse:    1,
-						ErrorCount:   2,
-						MaxSeqNumber: "0x66c/0xffffffff",
-						XfrmErrors: map[string]int64{
-							"XfrmInNoState": 2,
+					EncryptionStatus: models.EncryptionStatus{
+						Mode: "IPsec",
+						Ipsec: &models.IPsecStatus{
+							KeysInUse:    1,
+							ErrorCount:   2,
+							MaxSeqNumber: "0x66c/0xffffffff",
+							XfrmErrors: map[string]int64{
+								"XfrmInNoState": 2,
+							},
 						},
 					},
+					IPsecExpectedKeyCount: 1,
 				},
 				"node2": {
-					Mode: "IPsec",
-					Ipsec: &models.IPsecStatus{
-						KeysInUse:    2,
-						ErrorCount:   3,
-						MaxSeqNumber: "0x77c/0xffffffff",
-						XfrmErrors: map[string]int64{
-							"XfrmInHdrError": 1,
-							"XfrmInNoState":  2,
+					EncryptionStatus: models.EncryptionStatus{
+						Mode: "IPsec",
+						Ipsec: &models.IPsecStatus{
+							KeysInUse:    2,
+							ErrorCount:   3,
+							MaxSeqNumber: "0x77c/0xffffffff",
+							XfrmErrors: map[string]int64{
+								"XfrmInHdrError": 1,
+								"XfrmInNoState":  2,
+							},
 						},
 					},
+					IPsecExpectedKeyCount: 1,
 				},
 			},
 			expectedClusterStatus: clusterStatus{
-				TotalNodeCount:          2,
-				EncIPsecNodeCount:       2,
-				IPsecKeysInUseNodeCount: map[int64]int64{1: 1, 2: 1},
-				IPsecMaxSeqNum:          "0x77c/0xffffffff",
-				IPsecErrCount:           5,
+				TotalNodeCount:             2,
+				EncIPsecNodeCount:          2,
+				IPsecExpectedKeyCount:      1,
+				IPsecKeyRotationInProgress: true,
+				IPsecKeysInUseNodeCount:    map[int64]int64{1: 1, 2: 1},
+				IPsecMaxSeqNum:             "0x77c/0xffffffff",
+				IPsecErrCount:              5,
 				XfrmErrors: map[string]int64{
 					"XfrmInHdrError": 1,
 					"XfrmInNoState":  4,
@@ -356,41 +377,54 @@ func Test_clusterNodeStatus(t *testing.T) {
 		},
 		{
 			name: "Nodes with Disabled and IPsec encryption with errors",
-			nodeStatusMap: map[string]models.EncryptionStatus{
+			nodeStatusMap: map[string]encryptionStatus{
 				"node1": {
-					Mode: "IPsec",
-					Ipsec: &models.IPsecStatus{
-						KeysInUse:    1,
-						ErrorCount:   2,
-						MaxSeqNumber: "0x66c/0xffffffff",
-						XfrmErrors: map[string]int64{
-							"XfrmInNoState": 2,
+					EncryptionStatus: models.EncryptionStatus{
+						Mode: "IPsec",
+						Ipsec: &models.IPsecStatus{
+							KeysInUse:    1,
+							ErrorCount:   2,
+							MaxSeqNumber: "0x66c/0xffffffff",
+							XfrmErrors: map[string]int64{
+								"XfrmInNoState": 2,
+							},
 						},
 					},
+					IPsecExpectedKeyCount: 9,
+					IPsecPerNodeKey:       true,
 				},
 				"node2": {
-					Mode: "IPsec",
-					Ipsec: &models.IPsecStatus{
-						KeysInUse:    2,
-						ErrorCount:   3,
-						MaxSeqNumber: "0x77c/0xffffffff",
-						XfrmErrors: map[string]int64{
-							"XfrmInHdrError": 1,
-							"XfrmInNoState":  2,
+					EncryptionStatus: models.EncryptionStatus{
+						Mode: "IPsec",
+						Ipsec: &models.IPsecStatus{
+							KeysInUse:    2,
+							ErrorCount:   3,
+							MaxSeqNumber: "0x77c/0xffffffff",
+							XfrmErrors: map[string]int64{
+								"XfrmInHdrError": 1,
+								"XfrmInNoState":  2,
+							},
 						},
 					},
+					IPsecExpectedKeyCount: 1,
+					IPsecPerNodeKey:       true,
 				},
 				"node3": {
-					Mode: "Disabled",
+					EncryptionStatus: models.EncryptionStatus{
+						Mode: "Disabled",
+					},
 				},
 			},
 			expectedClusterStatus: clusterStatus{
-				TotalNodeCount:          3,
-				EncDisabledNodeCount:    1,
-				EncIPsecNodeCount:       2,
-				IPsecKeysInUseNodeCount: map[int64]int64{1: 1, 2: 1},
-				IPsecMaxSeqNum:          "0x77c/0xffffffff",
-				IPsecErrCount:           5,
+				TotalNodeCount:             3,
+				EncDisabledNodeCount:       1,
+				EncIPsecNodeCount:          2,
+				IPsecExpectedKeyCount:      1,
+				IPsecPerNodeKey:            true,
+				IPsecKeyRotationInProgress: true,
+				IPsecKeysInUseNodeCount:    map[int64]int64{1: 1, 2: 1},
+				IPsecMaxSeqNum:             "0x77c/0xffffffff",
+				IPsecErrCount:              5,
 				XfrmErrors: map[string]int64{
 					"XfrmInHdrError": 1,
 					"XfrmInNoState":  4,
@@ -446,5 +480,73 @@ func Test_maxSequenceNumber(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Equal(t, tt.expectedMaxSeqNum, actualMaxSequenceNumber)
+	}
+}
+
+func Test_expectedIPsecKeyCount(t *testing.T) {
+	testCases := []struct {
+		ciliumPods int
+		fs         features.Set
+		perNodeKey bool
+		expected   int
+	}{
+		{
+			ciliumPods: 1,
+			fs:         features.Set{},
+			perNodeKey: false,
+			expected:   1,
+		},
+		{
+			ciliumPods: 100,
+			fs:         features.Set{},
+			perNodeKey: false,
+			expected:   1,
+		},
+		{
+			ciliumPods: 10,
+			fs:         features.Set{},
+			perNodeKey: true,
+			expected:   18,
+		},
+		{
+			ciliumPods: 10,
+			fs: features.Set{
+				features.IPv6: features.Status{Enabled: true},
+			},
+			perNodeKey: true,
+			expected:   36,
+		},
+		{
+			ciliumPods: 10,
+			fs: features.Set{
+				features.UseCiliumInternalIPForIPsec: features.Status{Enabled: true},
+			},
+			perNodeKey: true,
+			expected:   27,
+		},
+		{
+			ciliumPods: 10,
+			fs: features.Set{
+				features.IPv6:                        features.Status{Enabled: true},
+				features.UseCiliumInternalIPForIPsec: features.Status{Enabled: true},
+			},
+			perNodeKey: true,
+			expected:   54,
+		},
+		{
+			ciliumPods: 20,
+			fs: features.Set{
+				features.UseCiliumInternalIPForIPsec: features.Status{Enabled: true},
+			},
+			perNodeKey: true,
+			expected:   57,
+		},
+	}
+
+	for _, tt := range testCases {
+		// function to test
+		actual := expectedIPsecKeyCount(tt.ciliumPods, tt.fs, tt.perNodeKey)
+
+		require.Equal(t, tt.expected, actual)
 	}
 }

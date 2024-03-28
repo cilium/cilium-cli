@@ -134,14 +134,16 @@ func TestFeatureSet_extractFromConfigMap(t *testing.T) {
 	cm := corev1.ConfigMap{}
 	fs.ExtractFromConfigMap(&cm)
 	cm.Data = map[string]string{
-		"enable-ipv4":                "true",
-		"enable-ipv6":                "true",
-		"mesh-auth-mutual-enabled":   "true",
-		"enable-ipv4-egress-gateway": "true",
+		"enable-ipv4":                      "true",
+		"enable-ipv6":                      "true",
+		"mesh-auth-mutual-enabled":         "true",
+		"enable-ipv4-egress-gateway":       "true",
+		"use-cilium-internal-ip-for-ipsec": "true",
 	}
 	fs.ExtractFromConfigMap(&cm)
 	assert.True(t, fs[IPv4].Enabled)
 	assert.True(t, fs[IPv6].Enabled)
 	assert.True(t, fs[AuthSpiffe].Enabled)
 	assert.True(t, fs[EgressGateway].Enabled)
+	assert.True(t, fs[UseCiliumInternalIPForIPsec].Enabled)
 }
