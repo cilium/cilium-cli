@@ -204,6 +204,13 @@ jobs:
           cilium sysdump --output-filename cilium-sysdump-out
         shell: bash {0} # Disable default fail-fast behaviour so that all commands run independently
 
+      - name: Refresh azure credentials before cleanup
+        uses: azure/login@8c334a195cbb38e46038007b304988d888bf676a # v2.0.0
+        with:
+          client-id: ${{ secrets.AZURE_PR_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_PR_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_PR_SUBSCRIPTION_ID }}
+
       - name: Clean up AKS
         if: ${{ always() }}
         run: |
