@@ -40,6 +40,7 @@ type k8sStatusMockClient struct {
 	deployment         map[string]*appsv1.Deployment
 	podList            map[string]*corev1.PodList
 	status             map[string]*models.StatusResponse
+	statusInText       map[string]string
 	ciliumEndpointList map[string]*ciliumv2.CiliumEndpointList
 }
 
@@ -53,6 +54,7 @@ func (c *k8sStatusMockClient) reset() {
 	c.daemonSet = map[string]*appsv1.DaemonSet{}
 	c.podList = map[string]*corev1.PodList{}
 	c.status = map[string]*models.StatusResponse{}
+	c.statusInText = map[string]string{}
 	c.ciliumEndpointList = map[string]*ciliumv2.CiliumEndpointList{}
 }
 
@@ -109,6 +111,7 @@ func (c *k8sStatusMockClient) setDaemonSet(namespace, name, filter string, desir
 				{Name: "c3", Status: &models.ControllerStatusStatus{LastFailureTimestamp: strfmt.DateTime(time.Now().Add(-3 * time.Minute))}},
 			},
 		}
+		c.statusInText[podName] = "cilium status in text"
 	}
 
 	for i := int32(0); i < unavailable; i++ {
@@ -125,6 +128,7 @@ func (c *k8sStatusMockClient) setDaemonSet(namespace, name, filter string, desir
 				{Name: "c3", Status: &models.ControllerStatusStatus{LastFailureTimestamp: strfmt.DateTime(time.Now().Add(-3 * time.Minute))}},
 			},
 		}
+		c.statusInText[podName] = "cilium status in text"
 	}
 }
 
@@ -156,6 +160,13 @@ func (c *k8sStatusMockClient) CiliumStatus(_ context.Context, _, pod string) (*m
 	return s, nil
 }
 
+func (c *k8sStatusMockClient) CiliumStatusInText(_ context.Context, _, pod string) (string, error) {
+	sInText, ok := c.statusInText[pod]
+	if !ok {
+		return "", fmt.Errorf("pod %s not found", pod)
+	}
+	return sInText, nil
+}
 func (c *k8sStatusMockClient) CiliumDbgEndpoints(_ context.Context, _, _ string) ([]*models.Endpoint, error) {
 	return nil, nil
 }
@@ -184,6 +195,7 @@ func (b *StatusSuite) TestStatus(c *check.C) {
 	c.Assert(status.PhaseCount[defaults.AgentDaemonSetName][string(corev1.PodRunning)], check.Equals, 10)
 	c.Assert(status.PhaseCount[defaults.AgentDaemonSetName][string(corev1.PodFailed)], check.Equals, 0)
 	c.Assert(len(status.CiliumStatus), check.Equals, 10)
+	c.Assert(len(status.CiliumStatusInText), check.Equals, 10)
 
 	client.reset()
 	client.setDaemonSet("kube-system", defaults.AgentDaemonSetName, defaults.AgentPodSelector, 10, 5, 5, 5, 10, 2, 2)
@@ -197,6 +209,7 @@ func (b *StatusSuite) TestStatus(c *check.C) {
 	c.Assert(status.PhaseCount[defaults.AgentDaemonSetName][string(corev1.PodRunning)], check.Equals, 5)
 	c.Assert(status.PhaseCount[defaults.AgentDaemonSetName][string(corev1.PodFailed)], check.Equals, 5)
 	c.Assert(len(status.CiliumStatus), check.Equals, 5)
+	c.Assert(len(status.CiliumStatusInText), check.Equals, 5)
 
 	client.reset()
 	client.setDaemonSet("kube-system", defaults.AgentDaemonSetName, defaults.AgentPodSelector, 10, 5, 5, 5, 10, 3, 3)
@@ -211,7 +224,9 @@ func (b *StatusSuite) TestStatus(c *check.C) {
 	c.Assert(status.PhaseCount[defaults.AgentDaemonSetName][string(corev1.PodRunning)], check.Equals, 5)
 	c.Assert(status.PhaseCount[defaults.AgentDaemonSetName][string(corev1.PodFailed)], check.Equals, 5)
 	c.Assert(len(status.CiliumStatus), check.Equals, 5)
+	c.Assert(len(status.CiliumStatusInText), check.Equals, 5)
 	c.Assert(status.CiliumStatus["cilium-2"], check.IsNil)
+	c.Assert(status.CiliumStatusInText["cilium-2"], check.Equals, "")
 
 	client.reset()
 	// observed generation behind

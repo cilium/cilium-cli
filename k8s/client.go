@@ -420,6 +420,13 @@ func (c *Client) CiliumStatus(ctx context.Context, namespace, pod string) (*mode
 
 	return &statusResponse, nil
 }
+func (c *Client) CiliumStatusInText(ctx context.Context, namespace, pod string) (string, error) {
+	result, err := c.ExecInPod(ctx, namespace, pod, defaults.AgentContainerName, []string{"cilium", "status", "--verbose"})
+	if err != nil {
+		return "", err
+	}
+	return result.String(), nil
+}
 
 func (c *Client) CiliumDbgEndpoints(ctx context.Context, namespace, pod string) ([]*models.Endpoint, error) {
 	stdout, err := c.ExecInPod(ctx, namespace, pod, defaults.AgentContainerName, []string{"cilium", "endpoint", "list", "-o", "json"})
