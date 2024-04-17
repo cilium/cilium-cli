@@ -29,6 +29,7 @@ const (
 const (
 	OutputJSON    = "json"
 	OutputSummary = "summary"
+	OutputText    = "text"
 )
 
 // MapCount is a map to count number of occurrences of a string
@@ -67,6 +68,7 @@ type PodStateCount struct {
 type PodStateMap map[string]PodStateCount
 
 type CiliumStatusMap map[string]*models.StatusResponse
+type CiliumStatusInTextMap map[string]string
 type CiliumEndpointsMap map[string][]*models.Endpoint
 
 type ErrorCount struct {
@@ -98,6 +100,9 @@ type Status struct {
 	PodsCount PodsCount `json:"pods_count,omitempty"`
 
 	CiliumStatus CiliumStatusMap `json:"cilium_status,omitempty"`
+	// CiliumStatusInText is the output when Cilium agent run cilium status --verbose.
+	// by each Cilium agent.
+	CiliumStatusInText CiliumStatusInTextMap `json:"cilium_status_in_text,omitempty"`
 
 	// CiliumEndpoints contains the information about the endpoints managed
 	// by each Cilium agent.
@@ -120,14 +125,15 @@ type Status struct {
 
 func newStatus() *Status {
 	return &Status{
-		ImageCount:      MapMapCount{},
-		PhaseCount:      MapMapCount{},
-		PodState:        PodStateMap{},
-		PodsCount:       PodsCount{},
-		CiliumStatus:    CiliumStatusMap{},
-		CiliumEndpoints: CiliumEndpointsMap{},
-		Errors:          ErrorCountMapMap{},
-		mutex:           &sync.Mutex{},
+		ImageCount:         MapMapCount{},
+		PhaseCount:         MapMapCount{},
+		PodState:           PodStateMap{},
+		PodsCount:          PodsCount{},
+		CiliumStatus:       CiliumStatusMap{},
+		CiliumStatusInText: CiliumStatusInTextMap{},
+		CiliumEndpoints:    CiliumEndpointsMap{},
+		Errors:             ErrorCountMapMap{},
+		mutex:              &sync.Mutex{},
 	}
 }
 
