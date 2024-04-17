@@ -50,6 +50,7 @@ func newCmdStatus() *cobra.Command {
 				}
 			case status.OutputText:
 				for key, value := range s.CiliumStatusInText {
+					// Randomly pick one of the agent to print out the status.
 					fmt.Printf("cilium status --verbose status from %s\n", key)
 					fmt.Println(value)
 					break
