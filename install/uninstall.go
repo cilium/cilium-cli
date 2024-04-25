@@ -19,7 +19,7 @@ import (
 
 type UninstallParameters struct {
 	Namespace            string
-	TestNamespace        string
+	TestNamespacePrefix  string
 	Writer               io.Writer
 	Wait                 bool
 	HelmValuesSecretName string
@@ -46,29 +46,46 @@ func (k *K8sUninstaller) Log(format string, a ...interface{}) {
 	fmt.Fprintf(k.params.Writer, format+"\n", a...)
 }
 
-// DeleteTestNamespace deletes all pods in the test namespace and then deletes the namespace itself.
-func (k *K8sUninstaller) DeleteTestNamespace(ctx context.Context) {
-	k.Log("🔥 Deleting pods in %s namespace...", k.params.TestNamespace)
-	k.client.DeletePodCollection(ctx, k.params.TestNamespace, metav1.DeleteOptions{}, metav1.ListOptions{})
+// deleteTestNamespace deletes all pods in the test namespace and then deletes the namespace itself.
+func (k *K8sUninstaller) deleteTestNamespace(ctx context.Context, namespace string) {
+	k.Log("🔥 Deleting pods in %s namespace...", namespace)
+	k.client.DeletePodCollection(ctx, namespace, metav1.DeleteOptions{}, metav1.ListOptions{})
 
-	k.Log("🔥 Deleting %s namespace...", k.params.TestNamespace)
-	k.client.DeleteNamespace(ctx, k.params.TestNamespace, metav1.DeleteOptions{})
+	k.Log("🔥 Deleting %s namespace...", namespace)
+	k.client.DeleteNamespace(ctx, namespace, metav1.DeleteOptions{})
 
 	// If test Pods are not deleted prior to uninstalling Cilium then the CNI deletes
 	// may be queued by cilium-cni. This can cause error to be logged when re-installing
 	// Cilium later.
 	// Thus we wait for all cilium-test Pods to fully terminate before proceeding.
 	if k.params.Wait {
-		k.Log("⌛ Waiting for %s namespace to be terminated...", k.params.TestNamespace)
+		k.Log("⌛ Waiting for %s namespace to be terminated...", namespace)
 		for {
 			// Wait for the test namespace to be terminated. Subsequent connectivity checks would fail
 			// if the test namespace is in Terminating state.
-			_, err := k.client.GetNamespace(ctx, k.params.TestNamespace, metav1.GetOptions{})
+			_, err := k.client.GetNamespace(ctx, namespace, metav1.GetOptions{})
 			if err == nil {
 				time.Sleep(defaults.WaitRetryInterval)
 			} else {
 				break
 			}
+		}
+	}
+}
+
+// DeleteTestNamespacesByPrefix delete test namespaces by prefix.
+func (k *K8sUninstaller) DeleteTestNamespacesByPrefix(ctx context.Context) {
+	if k.params.TestNamespacePrefix == "" {
+		return
+	}
+	namespaces, err := k.client.ListNamespaces(ctx, metav1.ListOptions{})
+	if err != nil {
+		k.Log("❌ Failed to list namespaces: %s", err)
+		return
+	}
+	for _, ns := range namespaces.Items {
+		if strings.HasPrefix(ns.Name, k.params.TestNamespacePrefix) {
+			k.deleteTestNamespace(ctx, ns.Name)
 		}
 	}
 }

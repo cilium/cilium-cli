@@ -30,7 +30,7 @@ func addCommonInstallFlags(cmd *cobra.Command, params *install.Parameters) {
 
 // addCommonUninstallFlags adds uninstall command flags that are shared between classic and helm mode.
 func addCommonUninstallFlags(cmd *cobra.Command, params *install.UninstallParameters) {
-	cmd.Flags().StringVar(&params.TestNamespace, "test-namespace", defaults.ConnectivityCheckNamespace, "Namespace to uninstall Cilium tests from")
+	cmd.Flags().StringVar(&params.TestNamespacePrefix, "test-namespace", defaults.ConnectivityCheckNamespace, "Prefix of namespaces to uninstall Cilium tests from")
 	cmd.Flags().BoolVar(&params.Wait, "wait", false, "Wait for uninstallation to have completed")
 }
 
@@ -105,7 +105,7 @@ func newCmdUninstallWithHelm() *cobra.Command {
 			ctx := context.Background()
 
 			uninstaller := install.NewK8sUninstaller(k8sClient, params)
-			uninstaller.DeleteTestNamespace(ctx)
+			uninstaller.DeleteTestNamespacesByPrefix(ctx)
 			var hubbleParams = hubble.Parameters{
 				Writer:          os.Stdout,
 				Wait:            true,

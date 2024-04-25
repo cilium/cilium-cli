@@ -67,6 +67,7 @@ type k8sInstallerImplementation interface {
 	AutodetectFlavor(ctx context.Context) k8s.Flavor
 	ContextName() (name string)
 	GetNamespace(ctx context.Context, namespace string, options metav1.GetOptions) (*corev1.Namespace, error)
+	ListNamespaces(ctx context.Context, options metav1.ListOptions) (*corev1.NamespaceList, error)
 	DeleteNamespace(ctx context.Context, namespace string, opts metav1.DeleteOptions) error
 	DeletePodCollection(ctx context.Context, namespace string, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error
 }
