@@ -4,11 +4,35 @@
 package tests
 
 import (
+	"fmt"
+	"net"
 	"strconv"
+	"strings"
 
 	"github.com/cilium/cilium-cli/connectivity/check"
 	"github.com/cilium/cilium-cli/utils/features"
 )
+
+func FormattedAsIPv4(s string) bool {
+	// Test with ParseIP whether this is a valid IP address. Then check that the
+	// string does not contain `:`. If that's the case, it must be a string
+	// formatted as an IPv4 address.
+	return net.ParseIP(s) != nil && !strings.Contains(s, ":")
+}
+
+func FormattedAsIPv6(s string) bool {
+	// Test with ParseIP whether this is a valid IP address. Then check that the
+	// string contains `:`. If that's the case, it must be a string formatted as
+	// and IPv6 address.
+	return net.ParseIP(s) != nil && strings.Contains(s, ":")
+}
+
+func EnsureIPv6InBackets(s string) string {
+	if s[0] != '[' && FormattedAsIPv6(s) {
+		return fmt.Sprintf("[%s]", s)
+	}
+	return s
+}
 
 type labelsContainer interface {
 	HasLabel(key, value string) bool

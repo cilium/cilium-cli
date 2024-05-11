@@ -12,4 +12,4 @@ spec:
         - ipBlock:
             cidr: {{.ExternalCIDR}}
             except:
-              - {{.ExternalOtherIP}}/32
+              - {{.ExternalOtherIP}}/{{if isIPv6 .ExternalOtherIP}}128{{else}}32{{end}}
