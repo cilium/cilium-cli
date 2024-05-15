@@ -363,16 +363,17 @@ func (ct *ConnectivityTest) Run(ctx context.Context) error {
 	// Newline denoting start of test output.
 	ct.Logf("🏃 Running %d tests ...", len(ct.tests))
 
+	var wg sync.WaitGroup
 	// Execute all tests in the order they were registered by the test suite.
 	for i, t := range ct.tests {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 
-		done := make(chan bool)
+		wg.Add(1)
 
-		go func() {
-			defer func() { done <- true }()
+		go func(t *Test) {
+			defer func() { wg.Done() }()
 
 			if err := t.Run(ctx, i+1); err != nil {
 				// We know for sure we're inside a separate goroutine, so Fatal()
@@ -390,12 +391,11 @@ func (ct *ConnectivityTest) Run(ctx context.Context) error {
 				ct.Infof("Pausing for %s after test %s", duration, t)
 				time.Sleep(duration)
 			}
-		}()
+		}(t)
 
-		// Waiting for the goroutine to finish before starting another Test.
-		<-done
 	}
 
+	wg.Wait()
 	if err := ct.writeJunit(); err != nil {
 		ct.Failf("writing to junit file %s failed: %s", ct.Params().JunitFile, err)
 	}
