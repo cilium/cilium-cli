@@ -27,7 +27,7 @@ func FormattedAsIPv6(s string) bool {
 	return net.ParseIP(s) != nil && strings.Contains(s, ":")
 }
 
-func EnsureIPv6InBackets(s string) string {
+func EnsureIPv6InBrackets(s string) string {
 	if s[0] != '[' && FormattedAsIPv6(s) {
 		return fmt.Sprintf("[%s]", s)
 	}

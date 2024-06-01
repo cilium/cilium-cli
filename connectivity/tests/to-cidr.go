@@ -37,7 +37,7 @@ func (s *podToCIDR) Run(ctx context.Context, t *check.Test) {
 	for _, ip := range []string{ct.Params().ExternalIP, ct.Params().ExternalOtherIP} {
 		ep := check.HTTPEndpoint(
 			fmt.Sprintf("external-%s", strings.ReplaceAll(strings.ReplaceAll(ip, ".", ""), ":", "")),
-			"https://"+EnsureIPv6InBackets(ip),
+			"https://"+EnsureIPv6InBrackets(ip),
 		)
 
 		var i int
