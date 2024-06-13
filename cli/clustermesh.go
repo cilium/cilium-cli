@@ -270,7 +270,7 @@ func newCmdClusterMeshDisableWithHelm() *cobra.Command {
 			params.HelmReleaseName = helmReleaseName
 			ctx := context.Background()
 			if err := clustermesh.DisableWithHelm(ctx, k8sClient, params); err != nil {
-				fatalf("Unable to disable ClusterMesh: %s", err)
+				fatalf("Unable to disable ClusterMesh: %s, please ensure that you have specified the --namespace and --helm-release-name if you are working with a cluster with customized Cilium installation.", err)
 			}
 			return nil
 		},
@@ -293,7 +293,7 @@ func newCmdClusterMeshConnectWithHelm() *cobra.Command {
 			params.HelmReleaseName = helmReleaseName
 			cm := clustermesh.NewK8sClusterMesh(k8sClient, params)
 			if err := cm.ConnectWithHelm(context.Background()); err != nil {
-				fatalf("Unable to connect cluster: %s", err)
+				fatalf("Unable to connect cluster: %s, please ensure that you have specified the --namespace and --helm-release-name if you are working with a cluster with customized Cilium installation.", err)
 			}
 			return nil
 		},
@@ -317,7 +317,7 @@ func newCmdClusterMeshDisconnectWithHelm() *cobra.Command {
 			params.HelmReleaseName = helmReleaseName
 			cm := clustermesh.NewK8sClusterMesh(k8sClient, params)
 			if err := cm.DisconnectWithHelm(context.Background()); err != nil {
-				fatalf("Unable to disconnect clusters: %s", err)
+				fatalf("Unable to disconnect clusters: %s, please ensure that you have specified the --namespace and --helm-release-name if you are working with a cluster with customized Cilium installation.", err)
 			}
 		},
 	}
