@@ -78,7 +78,7 @@ cilium install --context kind-cluster1 --set cluster.id=1 --set cluster.name=clu
 			}
 			cmd.SilenceUsage = true
 			if err := installer.InstallWithHelm(context.Background(), k8sClient); err != nil {
-				fatalf("Unable to install Cilium: %s", err)
+				fatalf("Unable to install Cilium: %s, please ensure that you have specified the --namespace and --helm-release-name if you are working with a cluster with customized Cilium installation.", err)
 			}
 			return nil
 		},
@@ -185,7 +185,7 @@ cilium upgrade --set cluster.id=1 --set cluster.name=cluster1
 			}
 			cmd.SilenceUsage = true
 			if err := installer.UpgradeWithHelm(context.Background(), k8sClient); err != nil {
-				fatalf("Unable to upgrade Cilium: %s", err)
+				fatalf("Unable to upgrade Cilium: %s, please ensure that you have specified the --namespace and --helm-release-name if you are working with a cluster with customized Cilium installation.", err)
 			}
 			return nil
 		},

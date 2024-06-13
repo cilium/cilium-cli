@@ -243,7 +243,7 @@ func newCmdClusterMeshEnableWithHelm() *cobra.Command {
 			params.HelmReleaseName = helmReleaseName
 			ctx := context.Background()
 			if err := clustermesh.EnableWithHelm(ctx, k8sClient, params); err != nil {
-				fatalf("Unable to enable ClusterMesh: %s", err)
+				fatalf("Unable to enable ClusterMesh: %s, please ensure that you have specified the --namespace and --helm-release-name if you are working with a cluster with customized Cilium installation.", err)
 			}
 			return nil
 		},

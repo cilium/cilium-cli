@@ -99,7 +99,7 @@ func newCmdHubbleEnableWithHelm() *cobra.Command {
 			params.HelmReleaseName = helmReleaseName
 			ctx := context.Background()
 			if err := hubble.EnableWithHelm(ctx, k8sClient, params); err != nil {
-				fatalf("Unable to enable Hubble: %s", err)
+				fatalf("Unable to enable Hubble: %s, please ensure that you have specified the --namespace and --helm-release-name if you are working with a cluster with customized Cilium installation.", err)
 			}
 			return nil
 		},
@@ -123,7 +123,7 @@ func newCmdHubbleDisableWithHelm() *cobra.Command {
 			params.HelmReleaseName = helmReleaseName
 			ctx := context.Background()
 			if err := hubble.DisableWithHelm(ctx, k8sClient, params); err != nil {
-				fatalf("Unable to disable Hubble:  %s", err)
+				fatalf("Unable to disable Hubble:  %s, please ensure that you have specified the --namespace and --helm-release-name if you are working with a cluster with customized Cilium installation.", err)
 			}
 			return nil
 		},
