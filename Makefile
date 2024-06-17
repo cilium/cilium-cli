@@ -23,8 +23,8 @@ GO_IMAGE_VERSION = 1.22.4-alpine3.19
 GO_IMAGE_SHA = sha256:65b5d2d0a312fd9ef65551ad7f9cb5db1f209b7517ef6d5625cfd29248bc6c85
 
 # renovate: datasource=docker depName=golangci/golangci-lint
-GOLANGCILINT_WANT_VERSION = v1.59.0
-GOLANGCILINT_IMAGE_SHA = sha256:8ad7dc3d98d77dec753f07408c7683ab854752a3eb8dc6a5e5f0728f9a89ae2c
+GOLANGCILINT_WANT_VERSION = v1.59.1
+GOLANGCILINT_IMAGE_SHA = sha256:b5f8712114561f1e2fbe74d04ed07ddfd992768705033a6251f3c7b848eac38e
 GOLANGCILINT_VERSION = $(shell golangci-lint version --format short 2>/dev/null)
 
 $(TARGET):
