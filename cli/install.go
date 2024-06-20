@@ -78,7 +78,7 @@ cilium install --context kind-cluster1 --set cluster.id=1 --set cluster.name=clu
 			}
 			cmd.SilenceUsage = true
 			if err := installer.InstallWithHelm(context.Background(), k8sClient); err != nil {
-				fatalf("Unable to install Cilium: %s, please ensure that you have specified the --namespace and --helm-release-name if you are working with a cluster with customized Cilium installation.", err)
+				fatalf("failed to install Cilium: %s, please ensure that you have specified the --namespace and --helm-release-name if you are working with a cluster with customized Cilium installation.", err)
 			}
 			return nil
 		},
@@ -129,7 +129,7 @@ func newCmdUninstallWithHelm() *cobra.Command {
 						if k8sErrors.IsNotFound(err) {
 							break
 						}
-						fatalf("Unable to list pods waiting for hubble-relay to stop: %s", err)
+						fatalf("failed to list pods waiting for hubble-relay to stop: %s", err)
 					}
 					if len(ps.Items) == 0 {
 						break
@@ -144,7 +144,7 @@ func newCmdUninstallWithHelm() *cobra.Command {
 
 			fmt.Printf("⌛ Uninstalling Cilium\n")
 			if err := uninstaller.UninstallWithHelm(ctx, k8sClient.HelmActionConfig); err != nil {
-				fatalf("Unable to uninstall Cilium:  %s", err)
+				fatalf("failed to uninstall Cilium:  %s", err)
 			}
 			return nil
 		},
@@ -185,7 +185,7 @@ cilium upgrade --set cluster.id=1 --set cluster.name=cluster1
 			}
 			cmd.SilenceUsage = true
 			if err := installer.UpgradeWithHelm(context.Background(), k8sClient); err != nil {
-				fatalf("Unable to upgrade Cilium: %s, please ensure that you have specified the --namespace and --helm-release-name if you are working with a cluster with customized Cilium installation.", err)
+				fatalf("failed to upgrade Cilium: %s, please ensure that you have specified the --namespace and --helm-release-name if you are working with a cluster with customized Cilium installation.", err)
 			}
 			return nil
 		},
