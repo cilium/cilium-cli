@@ -93,6 +93,7 @@ type K8sClusterMesh struct {
 
 type Parameters struct {
 	Namespace            string
+	ServiceAnnotations   []string
 	ServiceType          string
 	DestinationContext   string
 	Wait                 bool
@@ -1425,6 +1426,23 @@ func log(format string, a ...interface{}) {
 	fmt.Fprintf(os.Stdout, format+"\n", a...)
 }
 
+func parseAnnotations(annotations []string) map[string]interface{} {
+	annotationsMap := make(map[string]interface{})
+	for _, annotation := range annotations {
+		splitAnnotation := strings.SplitN(annotation, "=", 2)
+		annotationsMap[splitAnnotation[0]] = splitAnnotation[1]
+	}
+	return annotationsMap
+}
+
+func mergeAnnotationsMap(sourceAnnotationsMap map[string]interface{}, targetAnnotationsMap map[string]interface{}) {
+	if targetAnnotationsMap != nil {
+		for k, v := range targetAnnotationsMap {
+			sourceAnnotationsMap[k] = v
+		}
+	}
+}
+
 func generateEnableHelmValues(params Parameters, flavor k8s.Flavor) (map[string]interface{}, error) {
 	helmVals := map[string]interface{}{
 		"clustermesh": map[string]interface{}{
@@ -1434,39 +1452,48 @@ func generateEnableHelmValues(params Parameters, flavor k8s.Flavor) (map[string]
 			"enabled": params.EnableExternalWorkloads,
 		},
 	}
+	serviceAnnotations := parseAnnotations(params.ServiceAnnotations)
 
 	if params.ServiceType == "" {
 		switch flavor.Kind {
 		case k8s.KindGKE:
 			log("🔮 Auto-exposing service within GCP VPC (cloud.google.com/load-balancer-type=Internal)")
+			// merging maps for annotations
+			annotations := map[string]interface{}{
+				"cloud.google.com/load-balancer-type": "Internal",
+				// Allows cross-region access
+				"networking.gke.io/internal-load-balancer-allow-global-access": "true",
+			}
+			mergeAnnotationsMap(annotations, serviceAnnotations)
 			helmVals["clustermesh"].(map[string]interface{})["apiserver"] = map[string]interface{}{
 				"service": map[string]interface{}{
-					"type": corev1.ServiceTypeLoadBalancer,
-					"annotations": map[string]interface{}{
-						"cloud.google.com/load-balancer-type": "Internal",
-						// Allows cross-region access
-						"networking.gke.io/internal-load-balancer-allow-global-access": "true",
-					},
+					"type":        corev1.ServiceTypeLoadBalancer,
+					"annotations": annotations,
 				},
 			}
 		case k8s.KindAKS:
 			log("🔮 Auto-exposing service within Azure VPC (service.beta.kubernetes.io/azure-load-balancer-internal)")
+			annotations := map[string]interface{}{
+				"service.beta.kubernetes.io/azure-load-balancer-internal": "true",
+			}
+			mergeAnnotationsMap(annotations, serviceAnnotations)
 			helmVals["clustermesh"].(map[string]interface{})["apiserver"] = map[string]interface{}{
 				"service": map[string]interface{}{
-					"type": corev1.ServiceTypeLoadBalancer,
-					"annotations": map[string]interface{}{
-						"service.beta.kubernetes.io/azure-load-balancer-internal": "true",
-					},
+					"type":        corev1.ServiceTypeLoadBalancer,
+					"annotations": annotations,
 				},
 			}
 		case k8s.KindEKS:
 			log("🔮 Auto-exposing service within AWS VPC (service.beta.kubernetes.io/aws-load-balancer-internal: 0.0.0.0/0")
+			annotations := map[string]interface{}{
+				"service.beta.kubernetes.io/aws-load-balancer-internal": "0.0.0.0/0",
+			}
+			mergeAnnotationsMap(annotations, serviceAnnotations)
+			log("Merged annotations: %v", annotations)
 			helmVals["clustermesh"].(map[string]interface{})["apiserver"] = map[string]interface{}{
 				"service": map[string]interface{}{
-					"type": corev1.ServiceTypeLoadBalancer,
-					"annotations": map[string]interface{}{
-						"service.beta.kubernetes.io/aws-load-balancer-internal": "0.0.0.0/0",
-					},
+					"type":        corev1.ServiceTypeLoadBalancer,
+					"annotations": annotations,
 				},
 			}
 		default:
@@ -1478,7 +1505,8 @@ func generateEnableHelmValues(params Parameters, flavor k8s.Flavor) (map[string]
 		}
 		helmVals["clustermesh"].(map[string]interface{})["apiserver"] = map[string]interface{}{
 			"service": map[string]interface{}{
-				"type": params.ServiceType,
+				"type":        params.ServiceType,
+				"annotations": serviceAnnotations,
 			},
 		}
 	}
