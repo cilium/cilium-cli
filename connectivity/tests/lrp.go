@@ -12,6 +12,7 @@ import (
 	"time"
 
 	v2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/cilium/cilium-cli/connectivity/check"
 	"github.com/cilium/cilium-cli/defaults"
@@ -186,5 +187,71 @@ func WaitForLocalRedirectBPFEntries(ctx context.Context, t *check.Test, frontend
 			continue
 		}
 		return
+	}
+}
+
+// LRPWithNodeDNS runs test scenarios for local redirect policy
+// with the node local DNS setup.
+//
+// It sends HTTP requests to the ExternalTarget to check the DNS
+// requests are resolved by node-local DNS cache pods.
+// The network policy allows the clients to access node-local-dns
+// and the ExternalTarget.
+func LRPWithNodeDNS(opts ...RetryOption) check.Scenario {
+	cond := &retryCondition{}
+	for _, op := range opts {
+		op(cond)
+	}
+	return lrpWithNodeDNS{rc: cond}
+}
+
+type lrpWithNodeDNS struct {
+	rc *retryCondition
+}
+
+func (s lrpWithNodeDNS) Name() string {
+	return "local-redirect-policy-with-node-dns"
+}
+
+func (s lrpWithNodeDNS) Run(ctx context.Context, t *check.Test) {
+	ct := t.Context()
+
+	kubeDNSService, err := ct.K8sClient().GetService(ctx, "kube-system", "kube-dns", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal("Cannot get kube-dns service")
+	}
+
+	frontend := net.JoinHostPort(kubeDNSService.Spec.ClusterIP, "53")
+
+	nodeDNSPods, err := ct.K8sClient().ListPods(ctx, "kube-system", metav1.ListOptions{LabelSelector: "k8s-app=node-local-dns"})
+	if err != nil {
+		t.Fatal("Cannot get node-dns pods")
+	}
+
+	backendsMap := make(map[string][]string)
+	for _, nodeDNSPod := range nodeDNSPods.Items {
+		node := nodeDNSPod.Spec.NodeName
+		podIP := nodeDNSPod.Status.PodIP
+		if _, ok := backendsMap[node]; !ok {
+			backendsMap[node] = []string{podIP}
+			continue
+		}
+		backendsMap[node] = append(backendsMap[node], podIP)
+	}
+
+	// Wait until the local redirect entries are plumbed in the BPF LB map
+	// on the cilium agent nodes hosting LRP backend pods.
+	WaitForLocalRedirectBPFEntries(ctx, t, frontend, backendsMap)
+
+	extTarget := t.Context().Params().ExternalTarget
+	http := check.HTTPEndpoint(extTarget+"-http", "http://"+extTarget)
+	i := 0
+	for _, client := range ct.ClientPods() {
+		client := client
+
+		httpOpts := s.rc.CurlOptions(http, features.IPFamilyAny, client, ct.Params())
+		t.NewAction(s, fmt.Sprintf("lrp-node-dns-http-to-%s-%d", extTarget, i), &client, http, features.IPFamilyAny).Run(func(a *check.Action) {
+			a.ExecInPod(ctx, ct.CurlCommand(http, features.IPFamilyAny, httpOpts...))
+		})
 	}
 }
