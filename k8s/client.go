@@ -187,6 +187,10 @@ func (c *Client) DeleteServiceAccount(ctx context.Context, namespace, name strin
 	return c.Clientset.CoreV1().ServiceAccounts(namespace).Delete(ctx, name, opts)
 }
 
+func (c *Client) GetServiceAccount(ctx context.Context, namespace, name string, opts metav1.GetOptions) (*corev1.ServiceAccount, error) {
+	return c.Clientset.CoreV1().ServiceAccounts(namespace).Get(ctx, name, opts)
+}
+
 func (c *Client) GetClusterRole(ctx context.Context, name string, opts metav1.GetOptions) (*rbacv1.ClusterRole, error) {
 	return c.Clientset.RbacV1().ClusterRoles().Get(ctx, name, opts)
 }
@@ -445,6 +449,10 @@ func (c *Client) DeleteConfigMap(ctx context.Context, namespace, name string, op
 
 func (c *Client) CreateDaemonSet(ctx context.Context, namespace string, ds *appsv1.DaemonSet, opts metav1.CreateOptions) (*appsv1.DaemonSet, error) {
 	return c.Clientset.AppsV1().DaemonSets(namespace).Create(ctx, ds, opts)
+}
+
+func (c *Client) DeleteDaemonSet(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error {
+	return c.Clientset.AppsV1().DaemonSets(namespace).Delete(ctx, name, opts)
 }
 
 func (c *Client) PatchDaemonSet(ctx context.Context, namespace, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions) (*appsv1.DaemonSet, error) {
