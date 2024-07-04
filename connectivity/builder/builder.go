@@ -248,6 +248,7 @@ func sequentialTests(ct *check.ConnectivityTest) error {
 	tests := []testBuilder{
 		hostFirewallIngress{},
 		hostFirewallEgress{},
+		localRedirectPolicyWithNodeDNS{},
 	}
 	return injectTests(tests, ct)
 }
@@ -268,6 +269,7 @@ func renderTemplates(param check.Parameters) (map[string]string, error) {
 		"clientEgressToFQDNsPolicyYAML":            clientEgressToFQDNsPolicyYAML,
 		"clientEgressL7TLSPolicyYAML":              clientEgressL7TLSPolicyYAML,
 		"clientEgressL7HTTPMatchheaderSecretYAML":  clientEgressL7HTTPMatchheaderSecretYAML,
+		"clientEgressNodeLocalDNSYAML":             clientEgressNodeLocalDNSYAML,
 		"echoIngressFromCIDRYAML":                  echoIngressFromCIDRYAML,
 		"denyCIDRPolicyYAML":                       denyCIDRPolicyYAML,
 	}

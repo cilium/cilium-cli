@@ -547,6 +547,9 @@ type CiliumLocalRedirectPolicyParams struct {
 	// Policy is the local redirect policy yaml.
 	Policy string
 
+	// NameSpace is the name space of the local redirect policy.
+	NameSpace string
+
 	// Name is the name of the local redirect policy.
 	Name string
 
@@ -563,10 +566,17 @@ func (t *Test) WithCiliumLocalRedirectPolicy(params CiliumLocalRedirectPolicyPar
 		t.Fatalf("Parsing local redirect policy YAML: %s", err)
 	}
 
+	ns := t.ctx.params.TestNamespace
+	if len(params.NameSpace) > 0 {
+		ns = params.NameSpace
+	}
+
 	for i := range pl {
-		pl[i].Namespace = t.ctx.params.TestNamespace
+		pl[i].Namespace = ns
 		pl[i].Name = params.Name
-		pl[i].Spec.RedirectFrontend.AddressMatcher.IP = params.FrontendIP
+		if pl[i].Spec.RedirectFrontend.AddressMatcher != nil {
+			pl[i].Spec.RedirectFrontend.AddressMatcher.IP = params.FrontendIP
+		}
 		pl[i].Spec.SkipRedirectFromBackend = params.SkipRedirectFromBackend
 	}
 
