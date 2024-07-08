@@ -56,7 +56,7 @@ func newCmdClusterMeshStatus() *cobra.Command {
 
 			cm := clustermesh.NewK8sClusterMesh(k8sClient, params)
 			if _, err := cm.Status(context.Background()); err != nil {
-				fatalf("failed to determine status:  %s", err)
+				fatalf("Failed to determine status:  %s", err)
 			}
 			return nil
 		},
@@ -126,7 +126,7 @@ func newCmdExternalWorkloadCreate() *cobra.Command {
 			}
 			cm := clustermesh.NewK8sClusterMesh(k8sClient, params)
 			if err := cm.CreateExternalWorkload(context.Background(), args); err != nil {
-				fatalf("failed to add external workloads: %s", err)
+				fatalf("Failed to add external workloads: %s", err)
 			}
 			return nil
 		},
@@ -151,7 +151,7 @@ func newCmdExternalWorkloadDelete() *cobra.Command {
 		RunE: func(_ *cobra.Command, args []string) error {
 			cm := clustermesh.NewK8sClusterMesh(k8sClient, params)
 			if err := cm.DeleteExternalWorkload(context.Background(), args); err != nil {
-				fatalf("failed to remove external workloads: %s", err)
+				fatalf("Failed to remove external workloads: %s", err)
 			}
 			return nil
 		},
@@ -179,7 +179,7 @@ func newCmdExternalWorkloadInstall() *cobra.Command {
 			if len(args) > 0 {
 				file, err := os.Create(args[0])
 				if err != nil {
-					fatalf("failed to open file %s: %s", args[0], err)
+					fatalf("Failed to open file %s: %s", args[0], err)
 				}
 				defer func() {
 					file.Chmod(0775)
@@ -190,7 +190,7 @@ func newCmdExternalWorkloadInstall() *cobra.Command {
 				writer = os.Stdout
 			}
 			if err := cm.WriteExternalWorkloadInstallScript(context.Background(), writer); err != nil {
-				fatalf("failed to create external workload install script: %s", err)
+				fatalf("Failed to create external workload install script: %s", err)
 			}
 			return nil
 		},
@@ -218,7 +218,7 @@ func newCmdExternalWorkloadStatus() *cobra.Command {
 
 			cm := clustermesh.NewK8sClusterMesh(k8sClient, params)
 			if err := cm.ExternalWorkloadStatus(context.Background(), args); err != nil {
-				fatalf("failed to determine status: %s", err)
+				fatalf("Failed to determine status: %s", err)
 			}
 			return nil
 		},
@@ -243,7 +243,7 @@ func newCmdClusterMeshEnableWithHelm() *cobra.Command {
 			params.HelmReleaseName = helmReleaseName
 			ctx := context.Background()
 			if err := clustermesh.EnableWithHelm(ctx, k8sClient, params); err != nil {
-				fatalf("failed to enable ClusterMesh: %s, please ensure that you have specified the --namespace and --helm-release-name if you are working with a cluster with customized Cilium installation.", err)
+				fatalf("Failed to enable ClusterMesh: %s, please ensure that you have specified the --namespace and --helm-release-name if you are working with a cluster with customized Cilium installation.", err)
 			}
 			return nil
 		},
@@ -270,7 +270,7 @@ func newCmdClusterMeshDisableWithHelm() *cobra.Command {
 			params.HelmReleaseName = helmReleaseName
 			ctx := context.Background()
 			if err := clustermesh.DisableWithHelm(ctx, k8sClient, params); err != nil {
-				fatalf("failed to disable ClusterMesh: %s, please ensure that you have specified the --namespace and --helm-release-name if you are working with a cluster with customized Cilium installation.", err)
+				fatalf("Failed to disable ClusterMesh: %s, please ensure that you have specified the --namespace and --helm-release-name if you are working with a cluster with customized Cilium installation.", err)
 			}
 			return nil
 		},
@@ -293,7 +293,7 @@ func newCmdClusterMeshConnectWithHelm() *cobra.Command {
 			params.HelmReleaseName = helmReleaseName
 			cm := clustermesh.NewK8sClusterMesh(k8sClient, params)
 			if err := cm.ConnectWithHelm(context.Background()); err != nil {
-				fatalf("failed to connect cluster: %s, please ensure that you have specified the --namespace and --helm-release-name if you are working with a cluster with customized Cilium installation.", err)
+				fatalf("Failed to connect cluster: %s, please ensure that you have specified the --namespace and --helm-release-name if you are working with a cluster with customized Cilium installation.", err)
 			}
 			return nil
 		},
@@ -317,7 +317,7 @@ func newCmdClusterMeshDisconnectWithHelm() *cobra.Command {
 			params.HelmReleaseName = helmReleaseName
 			cm := clustermesh.NewK8sClusterMesh(k8sClient, params)
 			if err := cm.DisconnectWithHelm(context.Background()); err != nil {
-				fatalf("failed to disconnect clusters: %s, please ensure that you have specified the --namespace and --helm-release-name if you are working with a cluster with customized Cilium installation.", err)
+				fatalf("Failed to disconnect clusters: %s, please ensure that you have specified the --namespace and --helm-release-name if you are working with a cluster with customized Cilium installation.", err)
 			}
 		},
 	}
