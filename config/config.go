@@ -99,16 +99,16 @@ func (k *K8sConfig) View(ctx context.Context) (string, error) {
 
 func (k *K8sConfig) restartPodsUponConfigChange(ctx context.Context, params Parameters) error {
 	if !params.Restart {
-		fmt.Println("⚠️  Restart Cilium pods for configmap changes to take effect")
+		fmt.Println("⚠️ Restart Cilium pods for configmap changes to take effect")
 		return nil
 	}
 
 	if err := k.client.DeletePodCollection(ctx, params.Namespace,
 		metav1.DeleteOptions{}, metav1.ListOptions{LabelSelector: defaults.AgentPodSelector}); err != nil {
-		return fmt.Errorf("⚠️  unable to restart Cilium pods: %w", err)
+		return fmt.Errorf("⚠️ Unable to restart Cilium pods: %w", err)
 	}
 
-	fmt.Println("♻️  Restarted Cilium pods")
+	fmt.Println("♻️ Restarted Cilium pods")
 
 	return nil
 }
