@@ -13,9 +13,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cilium/cilium/pkg/option"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/cilium/cilium/pkg/option"
 
 	"github.com/cilium/cilium-cli/api"
 	"github.com/cilium/cilium-cli/connectivity"
