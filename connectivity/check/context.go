@@ -894,7 +894,7 @@ func (ct *ConnectivityTest) initClients(ctx context.Context) error {
 	if ct.params.MultiCluster != "" {
 		multiClusterClientLock.Lock()
 		defer multiClusterClientLock.Unlock()
-		dst, err := k8s.NewClient(ct.params.MultiCluster, "", ct.params.CiliumNamespace)
+		dst, err := k8s.NewClient(ct.params.MultiCluster, "", ct.params.CiliumNamespace, "", []string{})
 		if err != nil {
 			return fmt.Errorf("unable to create Kubernetes client for remote cluster %q: %w", ct.params.MultiCluster, err)
 		}
