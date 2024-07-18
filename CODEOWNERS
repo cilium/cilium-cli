@@ -8,6 +8,7 @@
 # @cilium/sig-encryption         Encryption management
 # @cilium/sig-bgp                BGP integration
 # @cilium/sig-clustermesh        Clustermesh and external workloads
+# @cilium/sig-scalability        Scalability & performance of Cilium
 # @cilium/sig-hubble             Hubble integration
 # @cilium/sig-k8s                K8s integration, K8s CNI plugin
 # @cilium/vendor                 Vendoring, dependency management
@@ -52,6 +53,7 @@
 /connectivity/builder/no_ipsec_xfrm_errors.go @cilium/sig-encryption
 /connectivity/builder/node_to_node_encryption.go @cilium/sig-encryption
 /connectivity/builder/pod_to_pod_encryption.go @cilium/sig-encryption
+/connectivity/perf/** @cilium/sig-scalability
 /connectivity/tests/bgp.go @cilium/sig-bgp
 /connectivity/tests/clustermesh-endpointslice-sync.go @cilium/sig-clustermesh
 /connectivity/tests/egressgateway.go @cilium/egress-gateway
@@ -62,7 +64,6 @@
 /connectivity/tests/health.go @cilium/sig-agent
 /connectivity/tests/host.go @cilium/sig-agent
 /connectivity/tests/ipsec_xfrm.go @cilium/ipsec
-/connectivity/tests/perfpod.go @cilium/sig-datapath
 /connectivity/tests/pod.go @cilium/sig-agent
 /connectivity/tests/service.go @cilium/sig-lb
 /connectivity/tests/testloop.sh @jrajahalme
