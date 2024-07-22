@@ -14,15 +14,16 @@ import (
 	"time"
 
 	"github.com/blang/semver/v4"
-	"github.com/cilium/cilium/api/v1/observer"
-	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
-	"github.com/cilium/cilium/pkg/lock"
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/cilium/cilium/api/v1/observer"
+	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
+	"github.com/cilium/cilium/pkg/lock"
 
 	"github.com/cilium/cilium-cli/connectivity/perf/common"
 	"github.com/cilium/cilium-cli/defaults"
@@ -538,8 +539,8 @@ func (ct *ConnectivityTest) report() error {
 			}
 		}
 		ct.Logf("%s", strings.Repeat("-", 85))
-		if ct.Params().PerfReportDir != "" {
-			common.ExportPerfSummaries(ct.PerfResults, ct.Params().PerfReportDir)
+		if ct.Params().PerfParameters.ReportDir != "" {
+			common.ExportPerfSummaries(ct.PerfResults, ct.Params().PerfParameters.ReportDir)
 		}
 	}
 
