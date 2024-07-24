@@ -13,9 +13,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cilium/cilium/pkg/option"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/cilium/cilium/pkg/option"
 
 	"github.com/cilium/cilium-cli/api"
 	"github.com/cilium/cilium-cli/connectivity"
@@ -205,13 +206,19 @@ func newCmdConnectivityPerf(hooks api.Hooks) *cobra.Command {
 		RunE: RunE(hooks),
 	}
 
-	cmd.Flags().DurationVar(&params.PerfDuration, "duration", 10*time.Second, "Duration for the Performance test to run")
-	cmd.Flags().IntVar(&params.PerfSamples, "samples", 1, "Number of Performance samples to capture (how many times to run each test)")
-	cmd.Flags().BoolVar(&params.PerfHostNet, "host-net", false, "Test host network")
-	cmd.Flags().BoolVar(&params.PerfPodNet, "pod-net", true, "Test pod network")
+	cmd.Flags().DurationVar(&params.PerfParameters.Duration, "duration", 10*time.Second, "Duration for the Performance test to run")
+	cmd.Flags().IntVar(&params.PerfParameters.MessageSize, "msg-size", 1024, "Size of message to use in UDP test")
+	cmd.Flags().BoolVar(&params.PerfParameters.CRR, "crr", false, "Run CRR test")
+	cmd.Flags().BoolVar(&params.PerfParameters.RR, "rr", true, "Run RR test")
+	cmd.Flags().BoolVar(&params.PerfParameters.UDP, "udp", false, "Run UDP tests")
+	cmd.Flags().BoolVar(&params.PerfParameters.Throughput, "throughput", true, "Run throughput test")
+	cmd.Flags().BoolVar(&params.PerfParameters.Mixed, "mixed", false, "Run pod-to-host and host-to-pod tests (only works if both host-net=true and pod-net=true)")
+	cmd.Flags().IntVar(&params.PerfParameters.Samples, "samples", 1, "Number of Performance samples to capture (how many times to run each test)")
+	cmd.Flags().BoolVar(&params.PerfParameters.HostNet, "host-net", true, "Test host network")
+	cmd.Flags().BoolVar(&params.PerfParameters.PodNet, "pod-net", true, "Test pod network")
 
-	cmd.Flags().StringVar(&params.PerformanceImage, "performance-image", defaults.ConnectivityPerformanceImage, "Image path to use for performance")
-	cmd.Flags().StringVar(&params.PerfReportDir, "report-dir", "", "Directory to save perf results in json format")
+	cmd.Flags().StringVar(&params.PerfParameters.Image, "performance-image", defaults.ConnectivityPerformanceImage, "Image path to use for performance")
+	cmd.Flags().StringVar(&params.PerfParameters.ReportDir, "report-dir", "", "Directory to save perf results in json format")
 	registerCommonFlags(cmd.Flags())
 
 	return cmd
