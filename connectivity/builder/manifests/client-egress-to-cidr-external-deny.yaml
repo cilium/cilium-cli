@@ -13,4 +13,4 @@ spec:
   - toCIDRSet:
     - cidr: {{.ExternalCIDR}}
       except:
-        - {{.ExternalIP}}/32
+        - {{.ExternalIP}}/{{if isIPv6 .ExternalIP}}128{{else}}32{{end}}
