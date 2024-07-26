@@ -107,6 +107,8 @@ type Parameters struct {
 	ConfigOverwrites     []string
 	Retries              int
 	Output               string
+	ImpersonateAs        string
+	ImpersonateGroups    []string
 
 	// EnableExternalWorkloads indicates whether externalWorkloads.enabled Helm value
 	// should be set to true. For Helm mode only.
@@ -490,7 +492,7 @@ func (k *K8sClusterMesh) extractAccessInformation(ctx context.Context, client k8
 
 // getClientsForConnect returns a k8s.Client for the local and remote cluster, respectively
 func (k *K8sClusterMesh) getClientsForConnect() (*k8s.Client, *k8s.Client, error) {
-	remoteClient, err := k8s.NewClient(k.params.DestinationContext, "", k.params.Namespace)
+	remoteClient, err := k8s.NewClient(k.params.DestinationContext, "", k.params.Namespace, k.params.ImpersonateAs, k.params.ImpersonateGroups)
 	if err != nil {
 		return nil, nil, fmt.Errorf(
 			"unable to create Kubernetes client to access remote cluster %q: %w",

@@ -15,9 +15,11 @@ import (
 )
 
 var (
-	contextName     string
-	namespace       string
-	helmReleaseName string
+	contextName      string
+	namespace        string
+	impersonateAs    string
+	impersonateGroup []string
+	helmReleaseName  string
 
 	k8sClient *k8s.Client
 )
@@ -40,7 +42,7 @@ func NewCiliumCommand(hooks api.Hooks) *cobra.Command {
 				return nil
 			}
 
-			c, err := k8s.NewClient(contextName, "", namespace)
+			c, err := k8s.NewClient(contextName, "", namespace, impersonateAs, impersonateGroup)
 			if err != nil {
 				return fmt.Errorf("unable to create Kubernetes client: %w", err)
 			}
@@ -79,6 +81,8 @@ cilium connectivity test`,
 
 	cmd.PersistentFlags().StringVar(&contextName, "context", "", "Kubernetes configuration context")
 	cmd.PersistentFlags().StringVarP(&namespace, "namespace", "n", "kube-system", "Namespace Cilium is running in")
+	cmd.PersistentFlags().StringVar(&impersonateAs, "as", "", "Username to impersonate for the operation. User could be a regular user or a service account in a namespace.")
+	cmd.PersistentFlags().StringArrayVar(&impersonateGroup, "as-group", []string{}, "Group to impersonate for the operation, this flag can be repeated to specify multiple groups.")
 	cmd.PersistentFlags().StringVar(&helmReleaseName, "helm-release-name", "cilium", "Helm release name")
 
 	cmd.AddCommand(
