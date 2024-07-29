@@ -22,7 +22,7 @@ Cilium CLI must follow these general rules regarding mutating cluster resources:
 - Cilium CLI must not mutate resources that are not managed by the Cilium Helm
   chart. Cilium CLI must use Cilium Helm values to configure Cilium installations.
 - The only exception to the rule above is the connectivity test command, which
-  may mutate resources within Kubernates namespaces with the name prefix specified
+  may mutate resources within Kubernetes namespaces with the name prefix specified
   by --test-namespace flag. The connectivity test must not mutate resources that
   affect network connectivity outside the test namespaces.
 - TODO: I'd like to deprecate the use of --include-unsafe-tests flag for adding
