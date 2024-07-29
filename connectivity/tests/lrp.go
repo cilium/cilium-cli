@@ -12,6 +12,7 @@ import (
 	"time"
 
 	v2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
+	"github.com/cilium/cilium/pkg/versioncheck"
 
 	"github.com/cilium/cilium-cli/connectivity/check"
 	"github.com/cilium/cilium-cli/defaults"
@@ -52,6 +53,9 @@ func (s lrp) Run(ctx context.Context, t *check.Test) {
 		policies = append(policies, policy)
 		frontend := check.NewLRPFrontend(spec.RedirectFrontend)
 		frontendStr := net.JoinHostPort(frontend.Address(features.IPFamilyV4), fmt.Sprint(frontend.Port()))
+		if versioncheck.MustCompile(">=1.17.0")(ct.CiliumVersion) {
+			frontendStr += fmt.Sprintf("/%s", frontend.Protocol())
+		}
 		lrpBackendsMap := make(map[string][]string)
 		// Check for LRP backend pods deployed on nodes in the cluster.
 		for _, pod := range t.Context().LrpBackendPods() {
