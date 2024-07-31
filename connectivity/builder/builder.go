@@ -268,6 +268,26 @@ func finalTests(ct *check.ConnectivityTest) error {
 	return injectTests([]testBuilder{checkLogErrors{}}, ct)
 }
 
+// RenderTemplates renders extra templates as well as default templates
+// and returns the rendered templates.
+// This function provide the rendered templates for additional connectivity
+// tests registered by the hooks.
+func RenderTemplates(param check.Parameters, extraTemplates map[string]string) (map[string]string, error) {
+	renderedTemplates, err := renderTemplates(param)
+	if err != nil {
+		return nil, err
+	}
+
+	for key, temp := range extraTemplates {
+		val, err := template.Render(temp, param)
+		if err != nil {
+			return nil, err
+		}
+		renderedTemplates[key] = val
+	}
+	return renderedTemplates, nil
+}
+
 func renderTemplates(param check.Parameters) (map[string]string, error) {
 	templates := map[string]string{
 		"clientEgressToCIDRExternalPolicyYAML":             clientEgressToCIDRExternalPolicyYAML,
