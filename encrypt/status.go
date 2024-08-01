@@ -212,7 +212,12 @@ func expectedIPsecKeyCount(ciliumPods int, fs features.Set, perNodeKey bool) int
 }
 
 func printPerNodeStatus(nodeMap map[string]models.EncryptionStatus, ikProps ipsecKeyProps, format string) error {
+	var err error
 	for node, st := range nodeMap {
+		if err != nil {
+			break
+		}
+
 		if format == status.OutputJSON {
 			var ns any = st
 			if st.Mode == "IPsec" {
@@ -223,7 +228,8 @@ func printPerNodeStatus(nodeMap map[string]models.EncryptionStatus, ikProps ipse
 					IPsecKeyRotationInProgress: int64(ikProps.expectedCount) != st.Ipsec.KeysInUse,
 				}
 			}
-			return printJSONStatus(ns)
+			err = printJSONStatus(ns)
+			continue
 		}
 
 		builder := strings.Builder{}
@@ -244,10 +250,9 @@ func printPerNodeStatus(nodeMap map[string]models.EncryptionStatus, ikProps ipse
 				builder.WriteString(fmt.Sprintf("\t%s: %d\n", k, v))
 			}
 		}
-		_, err := fmt.Println(builder.String())
-		return err
+		_, err = fmt.Println(builder.String())
 	}
-	return nil
+	return err
 }
 
 func getClusterStatus(nodeMap map[string]models.EncryptionStatus, ikProps ipsecKeyProps) (clusterStatus, error) {
