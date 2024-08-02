@@ -77,6 +77,9 @@ var (
 
 	//go:embed manifests/echo-ingress-from-cidr.yaml
 	echoIngressFromCIDRYAML string
+
+	//go:embed manifests/host-firewall-egress-to-fqdns.yaml
+	hostFirewallEgressToFQDNsPolicyYAML string
 )
 
 var (
@@ -259,6 +262,7 @@ func sequentialTests(ct *check.ConnectivityTest) error {
 	tests := []testBuilder{
 		hostFirewallIngress{},
 		hostFirewallEgress{},
+		hostFirewallEgressToFqdns{},
 	}
 	return injectTests(tests, ct)
 }
@@ -286,6 +290,7 @@ func renderTemplates(param check.Parameters) (map[string]string, error) {
 		"clientEgressNodeLocalDNSYAML":                     clientEgressNodeLocalDNSYAML,
 		"echoIngressFromCIDRYAML":                          echoIngressFromCIDRYAML,
 		"denyCIDRPolicyYAML":                               denyCIDRPolicyYAML,
+		"hostFirewallEgressToFQDNsPolicyYAML":              hostFirewallEgressToFQDNsPolicyYAML,
 	}
 	if param.K8sLocalHostTest {
 		templates["clientEgressToCIDRCPHostPolicyYAML"] = clientEgressToCIDRCPHostPolicyYAML

@@ -193,3 +193,74 @@ func (s *hostToPod) Run(ctx context.Context, t *check.Test) {
 		}
 	}
 }
+
+// HostToWorld sends multiple HTTP requests to ExternalTarget
+// from each node inside the cluster.
+func HostToWorld() check.Scenario {
+	return &hostToWorld{}
+}
+
+// hostToWorld implements a Scenario.
+type hostToWorld struct{}
+
+func (s *hostToWorld) Name() string {
+	return "host-to-world"
+}
+
+func (s *hostToWorld) Run(ctx context.Context, t *check.Test) {
+	extTarget := t.Context().Params().ExternalTarget
+	http := check.HTTPEndpoint(extTarget+"-http", "http://"+extTarget)
+
+	var i int
+	ct := t.Context()
+
+	for _, src := range ct.HostNetNSPodsByNode() {
+		if src.Outside {
+			continue
+		}
+
+		src := src // copy to avoid memory aliasing when using reference
+
+		// With http, over port 80.
+		t.NewAction(s, fmt.Sprintf("http-to-%s-%d", extTarget, i), &src, http, features.IPFamilyAny).Run(func(a *check.Action) {
+			a.ExecInPod(ctx, ct.CurlCommand(http, features.IPFamilyAny))
+		})
+
+		i++
+	}
+}
+
+// HostToWorld2 sends multiple HTTP requests to cilium.io
+// from each node inside the cluster.
+func HostToWorld2() check.Scenario {
+	return &hostToWorld2{}
+}
+
+// hostToWorld2 implements a Scenario.
+type hostToWorld2 struct{}
+
+func (s *hostToWorld2) Name() string {
+	return "host-to-world-2"
+}
+
+func (s *hostToWorld2) Run(ctx context.Context, t *check.Test) {
+	http := check.HTTPEndpoint("cilium-io-http", "http://cilium.io.")
+
+	var i int
+	ct := t.Context()
+
+	for _, src := range ct.HostNetNSPodsByNode() {
+		if src.Outside {
+			continue
+		}
+
+		src := src // copy to avoid memory aliasing when using reference
+
+		// With http, over port 80.
+		t.NewAction(s, fmt.Sprintf("http-to-cilium-io-%d", i), &src, http, features.IPFamilyAny).Run(func(a *check.Action) {
+			a.ExecInPod(ctx, ct.CurlCommand(http, features.IPFamilyAny))
+		})
+
+		i++
+	}
+}
