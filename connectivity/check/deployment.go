@@ -1042,6 +1042,34 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 		}
 	}
 
+	if ct.Features[features.Multicast].Enabled {
+		_, err = ct.clients.src.GetDeployment(ctx, ct.params.TestNamespace, netshootSocatClientDeploymentName, metav1.GetOptions{})
+		if err != nil {
+			ct.Logf("✨ [%s] Deploying %s deployment...", ct.clients.src.ClusterName(), netshootSocatClientDeploymentName)
+			ds := NewSocatClientDeployment(ct.params)
+			_, err = ct.clients.src.CreateServiceAccount(ctx, ct.params.TestNamespace, k8s.NewServiceAccount(netshootSocatClientDeploymentName), metav1.CreateOptions{})
+			if err != nil {
+				return fmt.Errorf("unable to create service account %s: %w", netshootSocatClientDeploymentName, err)
+			}
+			_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, ds, metav1.CreateOptions{})
+			if err != nil {
+				return fmt.Errorf("unable to create deployment %s: %w", netshootSocatClientDeploymentName, err)
+			}
+		}
+	}
+
+	if ct.Features[features.Multicast].Enabled {
+		_, err = ct.clients.src.GetDaemonSet(ctx, ct.params.TestNamespace, netshootSocatServerDaemonsetName, metav1.GetOptions{})
+		if err != nil {
+			ct.Logf("✨ [%s] Deploying %s daemonset...", ct.clients.src.ClusterName(), netshootSocatServerDaemonsetName)
+			ds := NewSocatServerDaemonSet(ct.params)
+			_, err = ct.clients.src.CreateDaemonSet(ctx, ct.params.TestNamespace, ds, metav1.CreateOptions{})
+			if err != nil {
+				return fmt.Errorf("unable to create daemonset %s: %w", netshootSocatServerDaemonsetName, err)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -1200,6 +1228,8 @@ func (ct *ConnectivityTest) deploymentList() (srcList []string, dstList []string
 		srcList = append(srcList, lrpBackendDeploymentName)
 	}
 
+	// Q: How about multicast deployments?
+
 	return srcList, dstList
 }
 
@@ -1210,6 +1240,8 @@ func (ct *ConnectivityTest) deleteDeployments(ctx context.Context, client *k8s.C
 	_ = client.DeleteDeployment(ctx, ct.params.TestNamespace, clientDeploymentName, metav1.DeleteOptions{})
 	_ = client.DeleteDeployment(ctx, ct.params.TestNamespace, client2DeploymentName, metav1.DeleteOptions{})
 	_ = client.DeleteDeployment(ctx, ct.params.TestNamespace, client3DeploymentName, metav1.DeleteOptions{})
+	_ = client.DeleteDeployment(ctx, ct.params.TestNamespace, netshootSocatClientDeploymentName, metav1.DeleteOptions{})
+	_ = client.DeleteDeployment(ctx, ct.params.TestNamespace, netshootSocatServerDaemonsetName, metav1.DeleteOptions{}) // Q:Daemonset in here is OK?
 	_ = client.DeleteServiceAccount(ctx, ct.params.TestNamespace, echoSameNodeDeploymentName, metav1.DeleteOptions{})
 	_ = client.DeleteServiceAccount(ctx, ct.params.TestNamespace, echoOtherNodeDeploymentName, metav1.DeleteOptions{})
 	_ = client.DeleteServiceAccount(ctx, ct.params.TestNamespace, clientDeploymentName, metav1.DeleteOptions{})
@@ -1411,6 +1443,38 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 		}
 		for _, pod := range frrPods.Items {
 			ct.frrPods = append(ct.frrPods, Pod{
+				K8sClient: ct.client,
+				Pod:       pod.DeepCopy(),
+			})
+		}
+	}
+
+	if ct.Features[features.Multicast].Enabled {
+		// socat client pods
+		if err := WaitForDeployment(ctx, ct, ct.clients.src, ct.Params().TestNamespace, netshootSocatClientDeploymentName); err != nil {
+			return err
+		}
+		socatCilentPods, err := ct.clients.src.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "name=" + netshootSocatClientDeploymentName})
+		if err != nil {
+			return fmt.Errorf("unable to list socat client pods: %w", err)
+		}
+		for _, pod := range socatCilentPods.Items {
+			ct.socatClientPods = append(ct.socatClientPods, Pod{
+				K8sClient: ct.client,
+				Pod:       pod.DeepCopy(),
+			})
+		}
+
+		// socat server pods
+		if err := WaitForDaemonSet(ctx, ct, ct.clients.src, ct.Params().TestNamespace, netshootSocatServerDaemonsetName); err != nil {
+			return err
+		}
+		socatServerPods, err := ct.clients.src.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "name=" + netshootSocatServerDaemonsetName})
+		if err != nil {
+			return fmt.Errorf("unable to list socat server pods: %w", err)
+		}
+		for _, pod := range socatServerPods.Items {
+			ct.socatServerPods = append(ct.socatServerPods, Pod{
 				K8sClient: ct.client,
 				Pod:       pod.DeepCopy(),
 			})
