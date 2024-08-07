@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -1652,25 +1653,35 @@ func (k *K8sClusterMesh) ConnectWithHelm(ctx context.Context) error {
 		ReuseValues: true,
 	}
 
+	var wg sync.WaitGroup
+	wg.Add(2)
 	// Enable clustermesh using a Helm Upgrade command against our target cluster
 	k.Log("ℹ️ Configuring Cilium in cluster '%s' to connect to cluster '%s'",
 		localClient.ClusterName(), remoteClient.ClusterName())
-	_, err = helm.Upgrade(ctx, localClient.HelmActionConfig, upgradeParams)
-	if err != nil {
-		return err
-	}
+	go HelmUpgrade(ctx, &wg, &err, localClient, upgradeParams)
 
 	// Enable clustermesh using a Helm Upgrade command against the remote cluster
 	k.Log("ℹ️ Configuring Cilium in cluster '%s' to connect to cluster '%s'",
 		remoteClient.ClusterName(), localClient.ClusterName())
 	upgradeParams.Values = remoteHelmValues
-	_, err = helm.Upgrade(ctx, remoteClient.HelmActionConfig, upgradeParams)
+	go HelmUpgrade(ctx, &wg, &err, remoteClient, upgradeParams)
+
 	if err != nil {
 		return err
 	}
 
+	wg.Wait()
+
 	k.Log("✅ Connected cluster %s and %s!", localClient.ClusterName(), remoteClient.ClusterName())
 	return nil
+}
+
+func HelmUpgrade(ctx context.Context, wg *sync.WaitGroup, err *error, client *k8s.Client, upgradeParams helm.UpgradeParameters) {
+	defer wg.Done()
+	_, e := helm.Upgrade(ctx, client.HelmActionConfig, upgradeParams)
+	if e != nil {
+		*err = errors.New(e.Error())
+	}
 }
 
 func (k *K8sClusterMesh) DisconnectWithHelm(ctx context.Context) error {
