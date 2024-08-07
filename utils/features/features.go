@@ -35,6 +35,8 @@ const (
 
 	BPFLBExternalClusterIP Feature = "bpf-lb-external-clusterip"
 
+	BPFLBSocketHostnsOnly Feature = "bpf-lb-sock-hostns-only"
+
 	HostPort Feature = "host-port"
 
 	NodeWithoutCilium Feature = "node-without-cilium"
@@ -314,6 +316,10 @@ func (fs Set) ExtractFromConfigMap(cm *v1.ConfigMap) {
 
 	fs[BPFLBExternalClusterIP] = Status{
 		Enabled: cm.Data[string(BPFLBExternalClusterIP)] == "true",
+	}
+
+	fs[BPFLBSocketHostnsOnly] = Status{
+		Enabled: cm.Data[string(BPFLBSocketHostnsOnly)] == "true",
 	}
 
 	fs[BGPControlPlane] = Status{

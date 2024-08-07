@@ -169,6 +169,9 @@ func (ct *ConnectivityTest) extractFeaturesFromCiliumStatus(ctx context.Context,
 			if f.SocketLB != nil {
 				result[features.KPRSocketLB] = features.Status{Enabled: f.SocketLB.Enabled}
 			}
+			if f.BpfSocketLBHostnsOnly {
+				result[features.BPFLBSocketHostnsOnly] = features.Status{Enabled: f.BpfSocketLBHostnsOnly}
+			}
 		}
 	}
 	result[features.KPRMode] = features.Status{
