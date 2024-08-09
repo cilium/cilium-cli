@@ -14,7 +14,7 @@ replace (
 
 require (
 	github.com/blang/semver/v4 v4.0.0
-	github.com/cilium/charts v0.0.0-20240724150047-2a1e5b85b669
+	github.com/cilium/charts v0.0.0-20240807132910-d1c4d173dc4e
 	github.com/cilium/cilium v1.16.0
 	github.com/cilium/workerpool v1.2.0
 	github.com/cloudflare/cfssl v1.6.5
@@ -212,8 +212,8 @@ require (
 	golang.org/x/net v0.26.0 // indirect
 	golang.org/x/oauth2 v0.21.0 // indirect
 	golang.org/x/sync v0.7.0 // indirect
-	golang.org/x/sys v0.22.0 // indirect
-	golang.org/x/term v0.22.0
+	golang.org/x/sys v0.23.0 // indirect
+	golang.org/x/term v0.23.0
 	golang.org/x/text v0.16.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
