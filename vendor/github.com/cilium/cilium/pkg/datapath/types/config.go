@@ -49,6 +49,7 @@ type LoadTimeConfiguration interface {
 	IPv6Address() netip.Addr
 	GetNodeMAC() mac.MAC
 	GetIfIndex() int
+	GetEndpointNetNsCookie() uint64
 }
 
 // CompileTimeConfiguration provides datapath implementations a clean interface
@@ -118,7 +119,7 @@ type ConfigWriter interface {
 // packet sent from a local endpoint to an IP address belonging to the CIDR
 // should not be SNAT'd.
 func RemoteSNATDstAddrExclusionCIDRv4() *cidr.CIDR {
-	if c := option.Config.GetIPv4NativeRoutingCIDR(); c != nil {
+	if c := option.Config.IPv4NativeRoutingCIDR; c != nil {
 		// ipv4-native-routing-cidr is set, so use it
 		return c
 	}
@@ -130,7 +131,7 @@ func RemoteSNATDstAddrExclusionCIDRv4() *cidr.CIDR {
 // packet sent from a local endpoint to an IP address belonging to the CIDR
 // should not be SNAT'd.
 func RemoteSNATDstAddrExclusionCIDRv6() *cidr.CIDR {
-	if c := option.Config.GetIPv6NativeRoutingCIDR(); c != nil {
+	if c := option.Config.IPv6NativeRoutingCIDR; c != nil {
 		// ipv6-native-routing-cidr is set, so use it
 		return c
 	}

@@ -18,6 +18,7 @@ import (
 	"github.com/cilium/cilium/pkg/crypto/certificatemanager"
 	"github.com/cilium/cilium/pkg/eventqueue"
 	"github.com/cilium/cilium/pkg/identity"
+	"github.com/cilium/cilium/pkg/identity/identitymanager"
 	ipcachetypes "github.com/cilium/cilium/pkg/ipcache/types"
 	k8sConst "github.com/cilium/cilium/pkg/k8s/apis/cilium.io"
 	"github.com/cilium/cilium/pkg/labels"
@@ -179,8 +180,9 @@ func NewPolicyRepository(
 	initialIDs identity.IdentityMap,
 	certManager certificatemanager.CertificateManager,
 	secretManager certificatemanager.SecretManager,
+	idmgr *identitymanager.IdentityManager,
 ) *Repository {
-	repo := NewStoppedPolicyRepository(initialIDs, certManager, secretManager)
+	repo := NewStoppedPolicyRepository(initialIDs, certManager, secretManager, idmgr)
 	repo.Start()
 	return repo
 }
@@ -194,6 +196,7 @@ func NewStoppedPolicyRepository(
 	initialIDs identity.IdentityMap,
 	certManager certificatemanager.CertificateManager,
 	secretManager certificatemanager.SecretManager,
+	idmgr *identitymanager.IdentityManager,
 ) *Repository {
 	selectorCache := NewSelectorCache(initialIDs)
 	repo := &Repository{
@@ -204,7 +207,7 @@ func NewStoppedPolicyRepository(
 		secretManager:   secretManager,
 	}
 	repo.revision.Store(1)
-	repo.policyCache = NewPolicyCache(repo, true)
+	repo.policyCache = NewPolicyCache(repo, idmgr)
 	return repo
 }
 
@@ -831,13 +834,13 @@ func (p *Repository) computePolicyEnforcementAndRules(securityIdentity *identity
 
 	// If there only ingress default-allow rules, then insert a wildcard rule
 	if !hasIngressDefaultDeny && ingress {
-		log.WithField(logfields.Identity, securityIdentity).Info("Only default-allow policies, synthesizing ingress wildcard-allow rule")
+		log.WithField(logfields.Identity, securityIdentity).Debug("Only default-allow policies, synthesizing ingress wildcard-allow rule")
 		matchingRules = append(matchingRules, wildcardRule(securityIdentity.LabelArray, true /*ingress*/))
 	}
 
 	// Same for egress -- synthesize a wildcard rule
 	if !hasEgressDefaultDeny && egress {
-		log.WithField(logfields.Identity, securityIdentity).Info("Only default-allow policies, synthesizing egress wildcard-allow rule")
+		log.WithField(logfields.Identity, securityIdentity).Debug("Only default-allow policies, synthesizing egress wildcard-allow rule")
 		matchingRules = append(matchingRules, wildcardRule(securityIdentity.LabelArray, false /*egress*/))
 	}
 
