@@ -5,7 +5,6 @@ package option
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -42,7 +41,6 @@ import (
 	"github.com/cilium/cilium/pkg/defaults"
 	"github.com/cilium/cilium/pkg/ip"
 	ipamOption "github.com/cilium/cilium/pkg/ipam/option"
-	"github.com/cilium/cilium/pkg/lock"
 	"github.com/cilium/cilium/pkg/logging"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/mac"
@@ -692,6 +690,25 @@ const (
 	// IPv6MCastDevice is the name of the option to select IPv6 multicast device
 	IPv6MCastDevice = "ipv6-mcast-device"
 
+	// BPFEventsDefaultRateLimit specifies limit of messages per second that can be written to
+	// BPF events map. This limit is defined for all types of events except dbg and pcap.
+	// The number of messages is averaged, meaning that if no messages were written
+	// to the map over 5 seconds, it's possible to write more events than the value of rate limit
+	// in the 6th second.
+	//
+	// If BPFEventsDefaultRateLimit > 0, non-zero value for BPFEventsDefaultBurstLimit must also be provided
+	// lest the configuration is considered invalid.
+	// If both rate and burst limit are 0 or not specified, no limit is imposed.
+	BPFEventsDefaultRateLimit = "bpf-events-default-rate-limit"
+
+	// BPFEventsDefaultBurstLimit specifies the maximum number of messages that can be written
+	// to BPF events map in 1 second. This limit is defined for all types of events except dbg and pcap.
+	//
+	// If BPFEventsDefaultBurstLimit > 0, non-zero value for BPFEventsDefaultRateLimit must also be provided
+	// lest the configuration is considered invalid.
+	// If both burst and rate limit are 0 or not specified, no limit is imposed.
+	BPFEventsDefaultBurstLimit = "bpf-events-default-burst-limit"
+
 	// FQDNRejectResponseCode is the name for the option for dns-proxy reject response code
 	FQDNRejectResponseCode = "tofqdns-dns-reject-response-code"
 
@@ -926,6 +943,14 @@ const (
 	// IdentityAllocationModeCRD enables use of Kubernetes CRDs for
 	// identity allocation
 	IdentityAllocationModeCRD = "crd"
+
+	// IdentityAllocationModeDoubleWriteReadKVstore writes identities to the KVStore and as CRDs at the same time.
+	// Identities are then read from the KVStore.
+	IdentityAllocationModeDoubleWriteReadKVstore = "doublewrite-readkvstore"
+
+	// IdentityAllocationModeDoubleWriteReadCRD writes identities to the KVStore and as CRDs at the same time.
+	// Identities are then read from the CRDs.
+	IdentityAllocationModeDoubleWriteReadCRD = "doublewrite-readcrd"
 
 	// EnableLocalNodeRoute controls installation of the route which points
 	// the allocation prefix of the local node.
@@ -1402,20 +1427,19 @@ type DaemonConfig struct {
 	// after.
 	shaSum [32]byte
 
-	CreationTime        time.Time
-	BpfDir              string   // BPF template files directory
-	LibDir              string   // Cilium library files directory
-	RunDir              string   // Cilium runtime directory
-	ExternalEnvoyProxy  bool     // Whether Envoy is deployed as external DaemonSet or not
-	DirectRoutingDevice string   // Direct routing device (used by BPF NodePort and BPF Host Routing)
-	LBDevInheritIPAddr  string   // Device which IP addr used by bpf_host devices
-	EnableXDPPrefilter  bool     // Enable XDP-based prefiltering
-	XDPMode             string   // XDP mode, values: { xdpdrv | xdpgeneric | none }
-	EnableTCX           bool     // Enable attaching endpoint programs using tcx if the kernel supports it
-	HostV4Addr          net.IP   // Host v4 address of the snooping device
-	HostV6Addr          net.IP   // Host v6 address of the snooping device
-	EncryptInterface    []string // Set of network facing interface to encrypt over
-	EncryptNode         bool     // Set to true for encrypting node IP traffic
+	CreationTime       time.Time
+	BpfDir             string   // BPF template files directory
+	LibDir             string   // Cilium library files directory
+	RunDir             string   // Cilium runtime directory
+	ExternalEnvoyProxy bool     // Whether Envoy is deployed as external DaemonSet or not
+	LBDevInheritIPAddr string   // Device which IP addr used by bpf_host devices
+	EnableXDPPrefilter bool     // Enable XDP-based prefiltering
+	XDPMode            string   // XDP mode, values: { xdpdrv | xdpgeneric | none }
+	EnableTCX          bool     // Enable attaching endpoint programs using tcx if the kernel supports it
+	HostV4Addr         net.IP   // Host v4 address of the snooping device
+	HostV6Addr         net.IP   // Host v6 address of the snooping device
+	EncryptInterface   []string // Set of network facing interface to encrypt over
+	EncryptNode        bool     // Set to true for encrypting node IP traffic
 
 	// If set to true the daemon will detect new and deleted datapath devices
 	// at runtime and reconfigure the datapath to load programs onto the new
@@ -1441,9 +1465,6 @@ type DaemonConfig struct {
 
 	// Options changeable at runtime
 	Opts *IntOptions
-
-	// Mutex for serializing configuration updates to the daemon.
-	ConfigPatchMutex *lock.RWMutex
 
 	// Monitor contains the configuration for the node monitor.
 	Monitor *models.MonitorStatus
@@ -1532,6 +1553,24 @@ type DaemonConfig struct {
 	// aggregation ensures reports are generated for when monitor-aggragation
 	// is enabled. Network byte-order.
 	MonitorAggregationFlags uint16
+
+	// BPFEventsDefaultRateLimit specifies limit of messages per second that can be written to
+	// BPF events map. This limit is defined for all types of events except dbg and pcap.
+	// The number of messages is averaged, meaning that if no messages were written
+	// to the map over 5 seconds, it's possible to write more events than the value of rate limit
+	// in the 6th second.
+	//
+	// If BPFEventsDefaultRateLimit > 0, non-zero value for BPFEventsDefaultBurstLimit must also be provided
+	// lest the configuration is considered invalid.
+	BPFEventsDefaultRateLimit uint32
+
+	// BPFEventsDefaultBurstLimit specifies the maximum number of messages that can be written
+	// to BPF events map in 1 second. This limit is defined for all types of events except dbg and pcap.
+	//
+	// If BPFEventsDefaultBurstLimit > 0, non-zero value for BPFEventsDefaultRateLimit must also be provided
+	// lest the configuration is considered invalid.
+	// If both burst and rate limit are 0 or not specified, no limit is imposed.
+	BPFEventsDefaultBurstLimit uint32
 
 	// BPFMapsDynamicSizeRatio is ratio of total system memory to use for
 	// dynamic sizing of the CT, NAT, Neighbor and SockRevNAT BPF maps.
@@ -2437,7 +2476,6 @@ var (
 	Config = &DaemonConfig{
 		CreationTime:                    time.Now(),
 		Opts:                            NewIntOptions(&DaemonOptionLibrary),
-		ConfigPatchMutex:                new(lock.RWMutex),
 		Monitor:                         &models.MonitorStatus{Cpus: int64(runtime.NumCPU()), Npages: 64, Pagesize: int64(os.Getpagesize()), Lost: 0, Unknown: 0},
 		IPv6ClusterAllocCIDR:            defaults.IPv6ClusterAllocCIDR,
 		IPv6ClusterAllocCIDRBase:        defaults.IPv6ClusterAllocCIDRBase,
@@ -2487,36 +2525,6 @@ var (
 		EnableEnvoyConfig:             defaults.EnableEnvoyConfig,
 	}
 )
-
-// GetIPv4NativeRoutingCIDR returns the native routing CIDR if configured
-func (c *DaemonConfig) GetIPv4NativeRoutingCIDR() (cidr *cidr.CIDR) {
-	c.ConfigPatchMutex.RLock()
-	cidr = c.IPv4NativeRoutingCIDR
-	c.ConfigPatchMutex.RUnlock()
-	return
-}
-
-// SetIPv4NativeRoutingCIDR sets the native routing CIDR
-func (c *DaemonConfig) SetIPv4NativeRoutingCIDR(cidr *cidr.CIDR) {
-	c.ConfigPatchMutex.Lock()
-	c.IPv4NativeRoutingCIDR = cidr
-	c.ConfigPatchMutex.Unlock()
-}
-
-// GetIPv6NativeRoutingCIDR returns the native routing CIDR if configured
-func (c *DaemonConfig) GetIPv6NativeRoutingCIDR() (cidr *cidr.CIDR) {
-	c.ConfigPatchMutex.RLock()
-	cidr = c.IPv6NativeRoutingCIDR
-	c.ConfigPatchMutex.RUnlock()
-	return
-}
-
-// SetIPv6NativeRoutingCIDR sets the native routing CIDR
-func (c *DaemonConfig) SetIPv6NativeRoutingCIDR(cidr *cidr.CIDR) {
-	c.ConfigPatchMutex.Lock()
-	c.IPv6NativeRoutingCIDR = cidr
-	c.ConfigPatchMutex.Unlock()
-}
 
 // IsExcludedLocalAddress returns true if the specified IP matches one of the
 // excluded local IP ranges
@@ -2992,7 +3000,6 @@ func (c *DaemonConfig) Populate(vp *viper.Viper) {
 	c.DatapathMode = vp.GetString(DatapathMode)
 	c.Debug = vp.GetBool(DebugArg)
 	c.DebugVerbose = vp.GetStringSlice(DebugVerbose)
-	c.DirectRoutingDevice = vp.GetString(DirectRoutingDevice)
 	c.EnableIPv4 = vp.GetBool(EnableIPv4Name)
 	c.EnableIPv6 = vp.GetBool(EnableIPv6Name)
 	c.EnableIPv6NDP = vp.GetBool(EnableIPv6NDPName)
@@ -3375,6 +3382,18 @@ func (c *DaemonConfig) Populate(vp *viper.Viper) {
 		c.LogOpt = m
 	}
 
+	bpfEventsDefaultRateLimit := vp.GetUint32(BPFEventsDefaultRateLimit)
+	bpfEventsDefaultBurstLimit := vp.GetUint32(BPFEventsDefaultBurstLimit)
+	switch {
+	case bpfEventsDefaultRateLimit > 0 && bpfEventsDefaultBurstLimit == 0:
+		log.Fatalf("invalid BPF events default config: burst limit must also be specified when rate limit is provided")
+	case bpfEventsDefaultRateLimit == 0 && bpfEventsDefaultBurstLimit > 0:
+		log.Fatalf("invalid BPF events default config: rate limit must also be specified when burst limit is provided")
+	default:
+		c.BPFEventsDefaultRateLimit = vp.GetUint32(BPFEventsDefaultRateLimit)
+		c.BPFEventsDefaultBurstLimit = vp.GetUint32(BPFEventsDefaultBurstLimit)
+	}
+
 	c.bpfMapEventConfigs = make(BPFEventBufferConfigs)
 	parseBPFMapEventConfigs(c.bpfMapEventConfigs, defaults.BPFEventBufferConfigs)
 	if m, err := command.GetStringMapStringE(vp, BPFMapEventBuffers); err != nil {
@@ -3406,10 +3425,10 @@ func (c *DaemonConfig) Populate(vp *viper.Viper) {
 	// This is here for tests. Some call Populate without the normal init
 	case "":
 		c.IdentityAllocationMode = IdentityAllocationModeKVstore
-	case IdentityAllocationModeKVstore, IdentityAllocationModeCRD:
+	case IdentityAllocationModeKVstore, IdentityAllocationModeCRD, IdentityAllocationModeDoubleWriteReadKVstore, IdentityAllocationModeDoubleWriteReadCRD:
 		// c.IdentityAllocationMode is set above
 	default:
-		log.Fatalf("Invalid identity allocation mode %q. It must be one of %s or %s", c.IdentityAllocationMode, IdentityAllocationModeKVstore, IdentityAllocationModeCRD)
+		log.Fatalf("Invalid identity allocation mode %q. It must be one of %s, %s or %s / %s", c.IdentityAllocationMode, IdentityAllocationModeKVstore, IdentityAllocationModeCRD, IdentityAllocationModeDoubleWriteReadKVstore, IdentityAllocationModeDoubleWriteReadCRD)
 	}
 	if c.KVStore == "" {
 		if c.IdentityAllocationMode != IdentityAllocationModeCRD {
@@ -3712,7 +3731,7 @@ func (c *DaemonConfig) checkMapSizeLimits() error {
 }
 
 func (c *DaemonConfig) checkIPv4NativeRoutingCIDR() error {
-	if c.GetIPv4NativeRoutingCIDR() != nil {
+	if c.IPv4NativeRoutingCIDR != nil {
 		return nil
 	}
 	if !c.EnableIPv4 || !c.EnableIPv4Masquerade {
@@ -3739,7 +3758,7 @@ func (c *DaemonConfig) checkIPv4NativeRoutingCIDR() error {
 }
 
 func (c *DaemonConfig) checkIPv6NativeRoutingCIDR() error {
-	if c.GetIPv6NativeRoutingCIDR() != nil {
+	if c.IPv6NativeRoutingCIDR != nil {
 		return nil
 	}
 	if !c.EnableIPv6 || !c.EnableIPv6Masquerade {
@@ -4007,6 +4026,7 @@ var backupFileNames []string = []string{
 // name 'daemon-config.json'. If this file already exists, it is renamed to
 // 'daemon-config-1.json', if 'daemon-config-1.json' also exists,
 // 'daemon-config-1.json' is renamed to 'daemon-config-2.json'
+// Caller is responsible for blocking concurrent changes.
 func (c *DaemonConfig) StoreInFile(dir string) error {
 	backupFiles(dir, backupFileNames)
 	f, err := os.Create(backupFileNames[0])
@@ -4017,12 +4037,8 @@ func (c *DaemonConfig) StoreInFile(dir string) error {
 	e := json.NewEncoder(f)
 	e.SetIndent("", " ")
 
-	// Exclude concurrent modification of fields protected by c.ConfigPatchMutex
-	// we store the file
-	c.ConfigPatchMutex.RLock()
 	err = e.Encode(c)
 	c.shaSum = c.checksum()
-	c.ConfigPatchMutex.RUnlock()
 
 	return err
 }
@@ -4039,15 +4055,10 @@ func (c *DaemonConfig) checksum() [32]byte {
 	return sha256.Sum256(cBytes)
 }
 
-// ValidateUnchanged takes a context that is unused so that it can be used as a doFunc in a
-// controller
-func (c *DaemonConfig) ValidateUnchanged(context.Context) error {
-	// Exclude concurrent modification of fields protected by c.ConfigPatchMutex
-	// we store the file
-	c.ConfigPatchMutex.RLock()
+// ValidateUnchanged checks that invariable parts of the config have not changed since init.
+// Caller is responsible for blocking concurrent changes.
+func (c *DaemonConfig) ValidateUnchanged() error {
 	sum := c.checksum()
-	c.ConfigPatchMutex.RUnlock()
-
 	if sum != c.shaSum {
 		return c.diffFromFile()
 	}
@@ -4205,8 +4216,6 @@ func validateConfigMap(cmd *cobra.Command, m map[string]interface{}) error {
 			_, err = cast.ToUint32E(value)
 		case "uint64":
 			_, err = cast.ToUint64E(value)
-		case "stringToString":
-			_, err = cast.ToStringMapStringE(value)
 		default:
 			log.Warnf("Unable to validate option %s value of type %s", key, t)
 		}
