@@ -43,7 +43,7 @@ func (p Parameters) checkDisabled(name string) bool {
 
 func (k *K8sInstaller) detectDatapathMode(helmValues map[string]interface{}) error {
 	if k.params.DatapathMode != "" {
-		k.Log("ℹ️  Custom datapath mode: %s", k.params.DatapathMode)
+		k.Log("ℹ️ Custom datapath mode: %s", k.params.DatapathMode)
 		return nil
 	}
 
@@ -118,7 +118,7 @@ func (k *K8sInstaller) autodetectAndValidate(ctx context.Context, helmValues map
 		}
 	}
 
-	k.Log("ℹ️  Using Cilium version %s", k.chartVersion)
+	k.Log("ℹ️ Using Cilium version %s", k.chartVersion)
 
 	clusterName := getClusterName(helmValues)
 	if clusterName != "" {
@@ -198,7 +198,7 @@ func (k *K8sInstaller) autodetectKubeProxy(ctx context.Context, helmValues map[s
 
 	if apiServerHost != "" && apiServerPort != "" {
 		k.Log("🔮 Auto-detected kube-proxy has not been installed")
-		k.Log("ℹ️  Cilium will fully replace all functionalities of kube-proxy")
+		k.Log("ℹ️ Cilium will fully replace all functionalities of kube-proxy")
 
 		setIfUnset := func(key, value string) {
 			_, found, _ := unstructured.NestedFieldNoCopy(helmValues, key)
