@@ -15,7 +15,7 @@ replace (
 require (
 	github.com/blang/semver/v4 v4.0.0
 	github.com/cilium/charts v0.0.0-20240724150047-2a1e5b85b669
-	github.com/cilium/cilium v1.16.0
+	github.com/cilium/cilium v1.16.1
 	github.com/cilium/workerpool v1.2.0
 	github.com/cloudflare/cfssl v1.6.5
 	github.com/go-openapi/strfmt v0.23.0
@@ -42,7 +42,7 @@ require (
 	github.com/cilium/ebpf v0.15.0 // indirect
 	github.com/cilium/hive v0.0.0-20240529072208-d997f86e4219 // indirect
 	github.com/cilium/proxy v0.0.0-20240418093727-2c7164c53e26 // indirect
-	github.com/cilium/statedb v0.1.1 // indirect
+	github.com/cilium/statedb v0.2.4 // indirect
 	github.com/cilium/stream v0.0.0-20240226091623-f979d32855f8 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
