@@ -322,13 +322,17 @@ func newCmdClusterMeshDisconnectWithHelm() *cobra.Command {
 			}
 		},
 	}
+	cmd.Flags().StringVar(&params.ConnectionMode, "connection-mode", "bidirectional", "Connection mode: unicast, bidirectional or mesh")
 	cmd.Flags().StringVar(&params.DestinationContext, "destination-context", "", "Kubernetes configuration context of destination cluster")
+	cmd.Flags().StringSliceVar(&params.DestinationContexts, "destination-contexts", []string{}, "Comma separated list of Kubernetes configuration contexts of destination cluster")
 
 	return cmd
 }
 
 func addCommonConnectFlags(cmd *cobra.Command, params *clustermesh.Parameters) {
+	cmd.Flags().StringVar(&params.ConnectionMode, "connection-mode", "bidirectional", "Connection mode: unicast, bidirectional or mesh")
 	cmd.Flags().StringVar(&params.DestinationContext, "destination-context", "", "Kubernetes configuration context of destination cluster")
+	cmd.Flags().StringSliceVar(&params.DestinationContexts, "destination-contexts", []string{}, "Comma separated list of Kubernetes configuration contexts of destination cluster")
 	cmd.Flags().StringSliceVar(&params.DestinationEndpoints, "destination-endpoint", []string{}, "IP of ClusterMesh service of destination cluster")
 	cmd.Flags().StringSliceVar(&params.SourceEndpoints, "source-endpoint", []string{}, "IP of ClusterMesh service of source cluster")
 }

@@ -16,6 +16,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -95,6 +96,8 @@ type Parameters struct {
 	Namespace            string
 	ServiceType          string
 	DestinationContext   string
+	DestinationContexts  []string
+	ConnectionMode       string
 	Wait                 bool
 	WaitDuration         time.Duration
 	DestinationEndpoints []string
@@ -488,15 +491,22 @@ func (k *K8sClusterMesh) extractAccessInformation(ctx context.Context, client k8
 	return ai, nil
 }
 
-// getClientsForConnect returns a k8s.Client for the local and remote cluster, respectively
-func (k *K8sClusterMesh) getClientsForConnect() (*k8s.Client, *k8s.Client, error) {
-	remoteClient, err := k8s.NewClient(k.params.DestinationContext, "", k.params.Namespace)
-	if err != nil {
-		return nil, nil, fmt.Errorf(
-			"unable to create Kubernetes client to access remote cluster %q: %w",
-			k.params.DestinationContext, err)
+func (k *K8sClusterMesh) getRemoteClients() ([]*k8s.Client, error) {
+	var remoteClients []*k8s.Client
+	destinationContexts := k.params.DestinationContexts
+	if k.params.DestinationContext != "" {
+		destinationContexts = append(destinationContexts, k.params.DestinationContext)
 	}
-	return k.client.(*k8s.Client), remoteClient, nil
+	for _, d := range destinationContexts {
+		remoteClient, err := k8s.NewClient(d, "", k.params.Namespace)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"unable to create Kubernetes client to access remote cluster %q: %w",
+				d, err)
+		}
+		remoteClients = append(remoteClients, remoteClient)
+	}
+	return remoteClients, nil
 }
 
 func (k *K8sClusterMesh) shallowExtractAccessInfo(ctx context.Context, c *k8s.Client) (*accessInformation, error) {
@@ -519,24 +529,16 @@ func (k *K8sClusterMesh) shallowExtractAccessInfo(ctx context.Context, c *k8s.Cl
 	}, nil
 }
 
-// connectAccessInit initializes a Kubernetes client for the local and remote cluster
-// and performs some validation that the two clusters can be connected via clustermesh
 func (k *K8sClusterMesh) getAccessInfoForConnect(
-	ctx context.Context, localClient, remoteClient *k8s.Client,
-) (*accessInformation, *accessInformation, error) {
-	aiRemote, err := k.extractAccessInformation(ctx, remoteClient, k.params.DestinationEndpoints, true, false)
+	ctx context.Context, client *k8s.Client, endpoints []string,
+) (*accessInformation, error) {
+	ai, err := k.extractAccessInformation(ctx, client, endpoints, true, false)
 	if err != nil {
-		k.Log("❌ Unable to retrieve access information of remote cluster %q: %s", remoteClient.ClusterName(), err)
-		return nil, nil, err
+		k.Log("❌ Unable to retrieve access information of cluster %q: %s", client.ClusterName(), err)
+		return nil, err
 	}
 
-	aiLocal, err := k.extractAccessInformation(ctx, localClient, k.params.SourceEndpoints, true, false)
-	if err != nil {
-		k.Log("❌ Unable to retrieve access information of local cluster %q: %s", k.client.ClusterName(), err)
-		return nil, nil, err
-	}
-
-	return aiLocal, aiRemote, nil
+	return ai, nil
 }
 
 // connectAccessInit initializes a Kubernetes client for the local and remote cluster
@@ -1594,52 +1596,97 @@ func (k *K8sClusterMesh) validateCAMatch(aiLocal, aiRemote *accessInformation) (
 // (certgen) mode. As with classic mode, only autodetected IP-based
 // clustermesh-apiserver Service endpoints are currently supported.
 func (k *K8sClusterMesh) ConnectWithHelm(ctx context.Context) error {
-	localRelease, err := getRelease(k.client.(*k8s.Client), k.params)
+	localClient := k.client.(*k8s.Client)
+	localRelease, err := getRelease(localClient, k.params)
 	if err != nil {
 		k.Log("❌ Unable to find Helm release for the target cluster")
 		return err
 	}
-
-	localClient, remoteClient, err := k.getClientsForConnect()
+	remoteClients, err := k.getRemoteClients()
 	if err != nil {
 		return err
 	}
 
-	aiLocal, aiRemote, err := k.getAccessInfoForConnect(ctx, localClient, remoteClient)
-	if err != nil {
-		return err
-	}
-
-	err = k.validateInfoForConnect(aiLocal, aiRemote)
-	if err != nil {
-		return err
-	}
-
-	// Validate that CA certificates match between the two clusters
-	match, err := k.validateCAMatch(aiLocal, aiRemote)
-	if err != nil {
-		return err
-	} else if !match {
-		k.Log("⚠️ Cilium CA certificates do not match between clusters. Multicluster features will be limited!")
-	}
-
-	// Get existing helm values for the local cluster
 	localHelmValues := localRelease.Config
-	// Expand those values to include the clustermesh configuration
-	localHelmValues, err = updateClustermeshConfig(localHelmValues, aiRemote, !match)
+	localOldClusters, err := getOldClusters(localHelmValues)
+	if err != nil {
+		return err
+	}
+	aiLocal, err := k.getAccessInfoForConnect(ctx, localClient, k.params.SourceEndpoints)
 	if err != nil {
 		return err
 	}
 
-	// Get existing helm values for the remote cluster
-	remoteRelease, err := getRelease(remoteClient, k.params)
-	if err != nil {
-		k.Log("❌ Unable to find Helm release for the remote cluster")
-		return err
+	localNewClusters := make([]map[string]interface{}, 0)
+	remoteHelmValuesAll := make([]map[string]interface{}, 0)
+	remoteHelmValuesBD := make([]map[string]interface{}, 0)
+	remoteOldClustersAll := make([][]map[string]interface{}, 0)
+	remoteNewClusters := make([]map[string]interface{}, 0)
+	remoteClusterNames := make([]string, 0)
+	airemoteClusterNames := make([]string, 0)
+	for _, remoteClient := range remoteClients {
+		remoteClusterNames = append(remoteClusterNames, remoteClient.ClusterName())
+		aiRemote, err := k.getAccessInfoForConnect(ctx, remoteClient, k.params.DestinationEndpoints)
+		airemoteClusterNames = append(airemoteClusterNames, aiRemote.ClusterName)
+		if err != nil {
+			return err
+		}
+
+		err = k.validateInfoForConnect(aiLocal, aiRemote)
+		if err != nil {
+			return err
+		}
+
+		// Validate that CA certificates match between the two clusters
+		match, err := k.validateCAMatch(aiLocal, aiRemote)
+		if err != nil {
+			return err
+		} else if !match {
+			k.Log("⚠️ Cilium CA certificates do not match between clusters. Multicluster features will be limited!")
+		}
+
+		// Expand those values to include the clustermesh configuration
+		newCluster, err := getNewClusters(aiRemote, !match)
+		if err != nil {
+			return err
+		}
+		localNewClusters = append(localNewClusters, newCluster[0])
+
+		// Get existing helm values for the remote cluster
+		remoteRelease, err := getRelease(remoteClient, k.params)
+		if err != nil {
+			k.Log("❌ Unable to find Helm release for the remote cluster")
+			return err
+		}
+
+		remoteOldClusters, err := getOldClusters(remoteRelease.Config)
+		if err != nil {
+			return err
+		}
+		remoteOldClustersAll = append(remoteOldClustersAll, remoteOldClusters)
+
+		remoteNewClusters, err = getNewClusters(aiLocal, !match)
+		if err != nil {
+			return err
+		}
+		remoteHelmValues, err := mergeClusters(remoteOldClusters, remoteNewClusters, "")
+		if err != nil {
+			return err
+		}
+		remoteHelmValuesBD = append(remoteHelmValuesBD, remoteHelmValues)
 	}
-	remoteHelmValues := remoteRelease.Config
-	// Expand those values to include the clustermesh configuration
-	remoteHelmValues, err = updateClustermeshConfig(remoteHelmValues, aiLocal, !match)
+
+	// merge new clusters on top of old clusters
+	localHelmValues, err = mergeClusters(localOldClusters, localNewClusters, "")
+	for i := 0; i < len(remoteClients); i++ {
+		remoteOldClusters := remoteOldClustersAll[i]
+		remoteNewClusters := append(localNewClusters, remoteNewClusters[0])
+		remoteHelmValues, err := mergeClusters(remoteOldClusters, remoteNewClusters, airemoteClusterNames[i])
+		if err != nil {
+			return err
+		}
+		remoteHelmValuesAll = append(remoteHelmValuesAll, remoteHelmValues)
+	}
 	if err != nil {
 		return err
 	}
@@ -1653,34 +1700,78 @@ func (k *K8sClusterMesh) ConnectWithHelm(ctx context.Context) error {
 	}
 
 	// Enable clustermesh using a Helm Upgrade command against our target cluster
-	k.Log("ℹ️ Configuring Cilium in cluster '%s' to connect to cluster '%s'",
-		localClient.ClusterName(), remoteClient.ClusterName())
+	k.Log("ℹ️ Configuring Cilium in cluster %s to connect to cluster %s",
+		localClient.ClusterName(), strings.Join(remoteClusterNames, ","))
 	_, err = helm.Upgrade(ctx, localClient.HelmActionConfig, upgradeParams)
 	if err != nil {
 		return err
 	}
-
-	// Enable clustermesh using a Helm Upgrade command against the remote cluster
-	k.Log("ℹ️ Configuring Cilium in cluster '%s' to connect to cluster '%s'",
-		remoteClient.ClusterName(), localClient.ClusterName())
-	upgradeParams.Values = remoteHelmValues
-	_, err = helm.Upgrade(ctx, remoteClient.HelmActionConfig, upgradeParams)
-	if err != nil {
-		return err
+	if k.params.ConnectionMode == "bidirectional" {
+		err = k.ConnectRemoteWithHelm(ctx, remoteClients, localClient.ClusterName(), []string{}, remoteHelmValuesBD)
+		if err != nil {
+			return err
+		}
+		for _, remoteClient := range remoteClients {
+			k.Log("✅ Connected cluster %s <=> %s!", localClient.ClusterName(), remoteClient.ClusterName())
+		}
+	}
+	if k.params.ConnectionMode == "mesh" {
+		err = k.ConnectRemoteWithHelm(ctx, remoteClients, localClient.ClusterName(), remoteClusterNames, remoteHelmValuesAll)
+		if err != nil {
+			return err
+		}
+		k.Log("✅ Connected cluster %s, and %s!", strings.Join(remoteClusterNames, ", "), localClient.ClusterName())
+	}
+	if k.params.ConnectionMode == "unicast" {
+		for _, remoteClient := range remoteClients {
+			k.Log("✅ Connected cluster %s => %s!", localClient.ClusterName(), remoteClient.ClusterName())
+		}
 	}
 
-	k.Log("✅ Connected cluster %s and %s!", localClient.ClusterName(), remoteClient.ClusterName())
+	return nil
+}
+
+func removeString(slice []string, s string) []string {
+	var result []string
+	for _, v := range slice {
+		if v != s {
+			result = append(result, v)
+		}
+	}
+	return result
+}
+
+func (k *K8sClusterMesh) ConnectRemoteWithHelm(ctx context.Context, remoteClients []*k8s.Client, clusterName string, clusterNames []string, remoteHelmValues []map[string]interface{}) error {
+	for i, remoteClient := range remoteClients {
+		allClusterNames := append(clusterNames, clusterName)
+		allClusterNames = removeString(allClusterNames, remoteClient.ClusterName())
+		upgradeParams := helm.UpgradeParameters{
+			Namespace:   k.params.Namespace,
+			Name:        k.params.HelmReleaseName,
+			Values:      remoteHelmValues[i],
+			ResetValues: false,
+			ReuseValues: true,
+		}
+		// Enable clustermesh using a Helm Upgrade command against the remote cluster
+		k.Log("ℹ️ Configuring Cilium in cluster %s to connect to cluster %s",
+			remoteClient.ClusterName(), strings.Join(allClusterNames, ","))
+		_, err := helm.Upgrade(ctx, remoteClient.HelmActionConfig, upgradeParams)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 func (k *K8sClusterMesh) DisconnectWithHelm(ctx context.Context) error {
-	localRelease, err := getRelease(k.client.(*k8s.Client), k.params)
+	localClient := k.client.(*k8s.Client)
+	localRelease, err := getRelease(localClient, k.params)
 	if err != nil {
 		k.Log("❌ Unable to find Helm release for the target cluster")
 		return err
 	}
 
-	localClient, remoteClient, err := k.getClientsForConnect()
+	remoteClients, err := k.getRemoteClients()
 	if err != nil {
 		return err
 	}
@@ -1688,27 +1779,43 @@ func (k *K8sClusterMesh) DisconnectWithHelm(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	aiRemote, err := k.shallowExtractAccessInfo(ctx, remoteClient)
-	if err != nil {
-		return err
+	clusterNames := make([]string, 0)
+	for _, remoteClient := range remoteClients {
+		aiRemote, err := k.shallowExtractAccessInfo(ctx, remoteClient)
+		if err != nil {
+			return err
+		}
+		clusterNames = append(clusterNames, aiRemote.ClusterName)
 	}
 
 	// Modify the clustermesh config to remove the intended cluster if any
-	localHelmValues, err := removeFromClustermeshConfig(localRelease.Config, aiRemote.ClusterName)
+	localHelmValues, err := removeFromClustermeshConfig(localRelease.Config, clusterNames)
 	if err != nil {
 		return err
 	}
 
 	// Get existing helm values for the remote cluster
-	remoteRelease, err := getRelease(remoteClient, k.params)
-	if err != nil {
-		k.Log("❌ Unable to find Helm release for the remote cluster")
-		return err
+	remoteHelmValuesAll := make([]map[string]interface{}, 0)
+	remoteClusterNames := []string{aiLocal.ClusterName}
+	if k.params.ConnectionMode == "mesh" {
+		remoteClusterNames = append(remoteClusterNames, clusterNames...)
 	}
-	// Modify the clustermesh config to remove the intended cluster if any
-	remoteHelmValues, err := removeFromClustermeshConfig(remoteRelease.Config, aiLocal.ClusterName)
-	if err != nil {
-		return err
+	rc := remoteClients
+	if k.params.ConnectionMode == "unicast" {
+		rc = []*k8s.Client{}
+	}
+	for _, remoteClient := range remoteClients {
+		remoteRelease, err := getRelease(remoteClient, k.params)
+		if err != nil {
+			k.Log("❌ Unable to find Helm release for the remote cluster")
+			return err
+		}
+		// Modify the clustermesh config to remove the intended cluster if any
+		remoteHelmValues, err := removeFromClustermeshConfig(remoteRelease.Config, remoteClusterNames)
+		if err != nil {
+			return err
+		}
+		remoteHelmValuesAll = append(remoteHelmValuesAll, remoteHelmValues)
 	}
 
 	upgradeParams := helm.UpgradeParameters{
@@ -1718,29 +1825,32 @@ func (k *K8sClusterMesh) DisconnectWithHelm(ctx context.Context) error {
 		ResetValues: false,
 		ReuseValues: true,
 	}
-
-	// Disconnect clustermesh using a Helm Upgrade command against our target cluster
-	k.Log("ℹ️ Configuring Cilium in cluster '%s' to disconnect from cluster '%s'",
-		localClient.ClusterName(), remoteClient.ClusterName())
+	for _, remoteClient := range remoteClients {
+		// Disconnect clustermesh using a Helm Upgrade command against our target cluster
+		k.Log("ℹ️ Configuring Cilium in cluster '%s' to disconnect from cluster '%s'",
+			localClient.ClusterName(), remoteClient.ClusterName())
+	}
 	if _, err = helm.Upgrade(ctx, localClient.HelmActionConfig, upgradeParams); err != nil {
 		return err
 	}
 
-	// Disconnect clustermesh using a Helm Upgrade command against the remote cluster
-	k.Log("ℹ️ Configuring Cilium in cluster '%s' to disconnect from cluster '%s'",
-		remoteClient.ClusterName(), localClient.ClusterName())
-	upgradeParams.Values = remoteHelmValues
-	if _, err = helm.Upgrade(ctx, remoteClient.HelmActionConfig, upgradeParams); err != nil {
-		return err
+	for i, remoteClient := range rc {
+		// Disconnect clustermesh using a Helm Upgrade command against the remote cluster
+		k.Log("ℹ️ Configuring Cilium in cluster '%s' to disconnect from cluster '%s'",
+			remoteClient.ClusterName(), localClient.ClusterName())
+		upgradeParams.Values = remoteHelmValuesAll[i]
+		if _, err = helm.Upgrade(ctx, remoteClient.HelmActionConfig, upgradeParams); err != nil {
+			return err
+		}
 	}
-	k.Log("✅ Disconnected clusters %s and %s!", localClient.ClusterName(), remoteClient.ClusterName())
+	for _, remoteClient := range remoteClients {
+		k.Log("✅ Disconnected clusters %s and %s!", localClient.ClusterName(), remoteClient.ClusterName())
+	}
 
 	return nil
 }
 
-func updateClustermeshConfig(
-	values map[string]interface{}, aiRemote *accessInformation, configTLS bool,
-) (map[string]interface{}, error) {
+func getOldClusters(values map[string]interface{}) ([]map[string]interface{}, error) {
 	// get current clusters config slice, if it exists
 	c, found, err := unstructured.NestedFieldCopy(values, "clustermesh", "config", "clusters")
 	if err != nil {
@@ -1764,6 +1874,10 @@ func updateClustermeshConfig(
 		oldClusters = append(oldClusters, cluster)
 	}
 
+	return oldClusters, nil
+}
+
+func getNewClusters(aiRemote *accessInformation, configTLS bool) ([]map[string]interface{}, error) {
 	remoteCluster := map[string]interface{}{
 		"name": aiRemote.ClusterName,
 		"ips":  []string{aiRemote.ServiceIPs[0]},
@@ -1781,11 +1895,13 @@ func updateClustermeshConfig(
 			"caCert": base64.StdEncoding.EncodeToString(aiRemote.CA),
 		}
 	}
-
-	// allocate new cluster entries
 	newClusters := []map[string]interface{}{remoteCluster}
 
-	// merge new clusters on top of old clusters
+	return newClusters, nil
+}
+
+func mergeClusters(
+	oldClusters []map[string]interface{}, newClusters []map[string]interface{}, exceptCluster string) (map[string]interface{}, error) {
 	clusters := map[string]map[string]interface{}{}
 	for _, c := range oldClusters {
 		name, ok := c["name"].(string)
@@ -1795,7 +1911,9 @@ func updateClustermeshConfig(
 		clusters[name] = c
 	}
 	for _, c := range newClusters {
-		clusters[c["name"].(string)] = c
+		if c["name"].(string) != exceptCluster {
+			clusters[c["name"].(string)] = c
+		}
 	}
 
 	outputClusters := make([]map[string]interface{}, 0)
@@ -1811,11 +1929,10 @@ func updateClustermeshConfig(
 			},
 		},
 	}
-
 	return newValues, nil
 }
 
-func removeFromClustermeshConfig(values map[string]any, clusterName string) (map[string]any, error) {
+func removeFromClustermeshConfig(values map[string]any, clusterNames []string) (map[string]any, error) {
 	// get current clusters config slice, if it exists
 	c, found, err := unstructured.NestedFieldCopy(values, "clustermesh", "config", "clusters")
 	if err != nil {
@@ -1836,7 +1953,7 @@ func removeFromClustermeshConfig(values map[string]any, clusterName string) (map
 			return nil, fmt.Errorf("existing clustermesh.config.clusters map is invalid")
 		}
 		name, ok := cluster["name"].(string)
-		if ok && name == clusterName {
+		if ok && slices.Contains(clusterNames, name) {
 			continue
 		}
 		outputClusters = append(outputClusters, cluster)
