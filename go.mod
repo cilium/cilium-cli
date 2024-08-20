@@ -1,7 +1,7 @@
 module github.com/cilium/cilium-cli
 
 // renovate: datasource=golang-version depName=go
-go 1.22.0
+go 1.23.0
 
 // Replace directives from github.com/cilium/cilium. Keep in sync when updating Cilium!
 replace (
