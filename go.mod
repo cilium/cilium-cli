@@ -13,7 +13,7 @@ replace (
 )
 
 require (
-	github.com/cilium/cilium v1.16.0-rc.0.0.20240816120549-e528f9911563
+	github.com/cilium/cilium v1.16.0-rc.0.0.20240819201320-b17c182b5dcd
 	github.com/google/gops v0.3.28
 )
 
@@ -26,7 +26,7 @@ require (
 	github.com/cilium/ebpf v0.16.0 // indirect
 	github.com/cilium/hive v0.0.0-20240529072208-d997f86e4219 // indirect
 	github.com/cilium/proxy v0.0.0-20240723112637-48fa07fc1729 // indirect
-	github.com/cilium/statedb v0.2.4 // indirect
+	github.com/cilium/statedb v0.2.5 // indirect
 	github.com/cilium/stream v0.0.0-20240226091623-f979d32855f8 // indirect
 	github.com/cilium/workerpool v1.2.0 // indirect
 	github.com/cloudflare/cfssl v1.6.5 // indirect
@@ -223,6 +223,7 @@ require (
 	k8s.io/kubectl v0.30.0 // indirect
 	k8s.io/utils v0.0.0-20240711033017-18e509b52bc8 // indirect
 	oras.land/oras-go v1.2.5 // indirect
+	sigs.k8s.io/gateway-api v1.1.1-0.20240815062117-d6e29e302721 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kustomize/api v0.13.5-0.20230601165947-6ce0bf390ce3 // indirect
 	sigs.k8s.io/kustomize/kyaml v0.14.4-0.20230814161922-911ddcda40a8 // indirect
