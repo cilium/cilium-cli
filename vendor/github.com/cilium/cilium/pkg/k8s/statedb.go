@@ -5,10 +5,10 @@ package k8s
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 
 	"github.com/cilium/hive/cell"
@@ -19,44 +19,44 @@ import (
 	"github.com/cilium/cilium/pkg/time"
 )
 
-var errListerWatcherNil = errors.New("ReflectorConfig.ListerWatcher must be defined (was nil)")
-
 // RegisterReflector registers a Kubernetes to StateDB table reflector.
 //
 // Intended to be used with [cell.Invoke] and the module's job group.
 // See [ExampleRegisterReflector] for example usage.
-func RegisterReflector[Obj any](jobGroup job.Group, db *statedb.DB, targetTable statedb.RWTable[Obj], cfg ReflectorConfig[Obj]) error {
-	if cfg.ListerWatcher == nil {
-		return errListerWatcherNil
+func RegisterReflector[Obj any](jobGroup job.Group, db *statedb.DB, cfg ReflectorConfig[Obj]) error {
+	cfg = cfg.withDefaults()
+	if err := cfg.validate(); err != nil {
+		return err
 	}
 
 	// Register initializer that marks when the table has been initially populated,
 	// e.g. the initial "List" has concluded.
+	targetTable := cfg.Table
 	r := &k8sReflector[Obj]{
 		ReflectorConfig: cfg.withDefaults(),
 		db:              db,
 		table:           targetTable,
 	}
 	wtxn := db.WriteTxn(targetTable)
-	r.initDone = targetTable.RegisterInitializer(wtxn, "k8s-reflector")
+	r.initDone = targetTable.RegisterInitializer(wtxn, r.ReflectorConfig.Name)
 	wtxn.Commit()
 
 	jobGroup.Add(job.OneShot(
-		fmt.Sprintf("k8s-reflector-[%T]", *new(Obj)),
+		r.ReflectorConfig.JobName(),
 		r.run))
 
 	return nil
 }
 
 type ReflectorConfig[Obj any] struct {
-	// Maximum number of objects to commit in one transaction. Uses default if left zero.
-	// This does not apply to the initial listing which is committed in one go.
-	BufferSize int
+	// Mandatory name of the reflector. This is used as the table initializer name and as
+	// the reflector job name.
+	Name string
 
-	// The amount of time to wait for the buffer to fill. Uses default if left zero.
-	BufferWaitTime time.Duration
+	// Mandatory table to reflect the objects to.
+	Table statedb.RWTable[Obj]
 
-	// The ListerWatcher to use to retrieve the objects.
+	// Mandatory ListerWatcher to use to retrieve the objects.
 	//
 	// Use [utils.ListerWatcherFromTyped] to create one from the Clientset, e.g.
 	//
@@ -65,15 +65,40 @@ type ReflectorConfig[Obj any] struct {
 	//
 	ListerWatcher cache.ListerWatcher
 
+	// Optional maximum number of objects to commit in one transaction. Uses default if left zero.
+	// This does not apply to the initial listing which is committed in one go.
+	BufferSize int
+
+	// Optional amount of time to wait for the buffer to fill. Uses default if left zero.
+	BufferWaitTime time.Duration
+
 	// Optional function to transform the objects given by the ListerWatcher. This can
 	// be used to convert into an internal model on the fly to save space and add additional
 	// fields or to for example implement TableRow/TableHeader for a cilium-dbg statedb command.
 	Transform TransformFunc[Obj]
 
+	// Optional function to transform the object to a set of objects to insert into the table.
+	// If set, [Transform] must be nil.
+	TransformMany TransformManyFunc[Obj]
+
 	// Optional function to query all objects. Used when replacing the objects on resync.
 	// This can be used to "namespace" the objects managed by this reflector, e.g. on
 	// source.Source etc.
+	//
+	// This function becomes mandatory when working with multiple sources to avoid deleting
+	// all objects when the underlying `cache.Reflector` needs to `Replace()` all items during
+	// a resync.
 	QueryAll QueryAllFunc[Obj]
+
+	// Optional function to merge the new object with an existing object in the target
+	// table.
+	Merge MergeFunc[Obj]
+}
+
+// JobName returns the name of the background reflector job.
+func (cfg ReflectorConfig[Obj]) JobName() string {
+	var obj Obj
+	return fmt.Sprintf("k8s-reflector[%T]/%s", obj, cfg.Name)
 }
 
 // TransformFunc is an optional function to give to the Kubernetes reflector
@@ -82,11 +107,21 @@ type ReflectorConfig[Obj any] struct {
 // skipped.
 type TransformFunc[Obj any] func(any) (obj Obj, ok bool)
 
+// TransformManyFunc is an optional function to give to the Kubernetes reflector
+// to transform the object returned by the ListerWatcher to the desired set of
+// target objects to insert into the table. If the function returns false the object is silently
+// skipped.
+type TransformManyFunc[Obj any] func(any) (objs []Obj)
+
 // QueryAllFunc is an optional function to give to the Kubernetes reflector
 // to query all objects in the table that are managed by the reflector.
 // It is used to delete all objects when the underlying cache.Reflector needs
 // to Replace() all items for a resync.
 type QueryAllFunc[Obj any] func(statedb.ReadTxn, statedb.Table[Obj]) statedb.Iterator[Obj]
+
+// MergeFunc is an optional function to merge the new object with an existing
+// object in th target table. Only invoked if an old object exists.
+type MergeFunc[Obj any] func(old Obj, new Obj) Obj
 
 const (
 	// DefaultBufferSize is the maximum number of objects to commit to the table in one write transaction.
@@ -108,6 +143,28 @@ func (cfg ReflectorConfig[Obj]) withDefaults() ReflectorConfig[Obj] {
 	return cfg
 }
 
+func (cfg ReflectorConfig[Obj]) validate() error {
+	if cfg.Name == "" {
+		return fmt.Errorf("%T.Name cannot be empty", cfg)
+	}
+	if cfg.Table == nil {
+		return fmt.Errorf("%T.Table cannot be nil", cfg)
+	}
+	if cfg.ListerWatcher == nil {
+		return fmt.Errorf("%T.ListerWatcher cannot be nil", cfg)
+	}
+	if cfg.BufferSize <= 0 {
+		return fmt.Errorf("%T.BufferSize (%d) must be larger than zero", cfg, cfg.BufferSize)
+	}
+	if cfg.BufferWaitTime <= 0 {
+		return fmt.Errorf("%T.BufferWaitTime (%d) must be larger than zero", cfg, cfg.BufferWaitTime)
+	}
+	if cfg.Transform != nil && cfg.TransformMany != nil {
+		return fmt.Errorf("Both %T.Transform and .TransformMany cannot be set", cfg)
+	}
+	return nil
+}
+
 type k8sReflector[Obj any] struct {
 	ReflectorConfig[Obj]
 
@@ -121,7 +178,7 @@ func (r *k8sReflector[Obj]) run(ctx context.Context, health cell.Health) error {
 		deleted   bool
 		name      string
 		namespace string
-		obj       Obj
+		obj       any
 	}
 	type buffer struct {
 		replaceItems []any
@@ -131,10 +188,26 @@ func (r *k8sReflector[Obj]) run(ctx context.Context, health cell.Health) error {
 	waitTime := r.BufferWaitTime
 	table := r.table
 
-	transform := r.Transform
-	if transform == nil {
-		// No provided transform function, use the identity function instead.
-		transform = TransformFunc[Obj](func(obj any) (Obj, bool) { return obj.(Obj), true })
+	transformMany := r.TransformMany
+	if transformMany == nil {
+		// Reusing the same buffer for efficiency.
+		buf := make([]Obj, 1)
+		if r.Transform != nil {
+			// Implement TransformMany with Transform.
+			transformMany = TransformManyFunc[Obj](func(obj any) []Obj {
+				var ok bool
+				if buf[0], ok = r.Transform(obj); ok {
+					return buf
+				}
+				return nil
+			})
+		} else {
+			// No provided transform function, use the identity function instead.
+			transformMany = TransformManyFunc[Obj](func(obj any) []Obj {
+				buf[0] = obj.(Obj)
+				return buf
+			})
+		}
 	}
 
 	queryAll := r.QueryAll
@@ -143,6 +216,13 @@ func (r *k8sReflector[Obj]) run(ctx context.Context, health cell.Health) error {
 		queryAll = QueryAllFunc[Obj](func(txn statedb.ReadTxn, tbl statedb.Table[Obj]) statedb.Iterator[Obj] {
 			return tbl.All(txn)
 		})
+	}
+
+	merge := r.Merge
+	if merge == nil {
+		merge = func(old, new Obj) Obj {
+			return new
+		}
 	}
 
 	// Construct a stream of K8s objects, buffered into chunks every [waitTime] period
@@ -170,11 +250,7 @@ func (r *k8sReflector[Obj]) run(ctx context.Context, health cell.Health) error {
 			}
 
 			var entry entry
-			var ok bool
-			entry.obj, ok = transform(ev.Obj)
-			if !ok {
-				return buf
-			}
+			entry.obj = ev.Obj
 			entry.deleted = ev.Kind == CacheStoreEventDelete
 
 			meta, err := meta.Accessor(ev.Obj)
@@ -199,36 +275,47 @@ func (r *k8sReflector[Obj]) run(ctx context.Context, health cell.Health) error {
 
 		txn := r.db.WriteTxn(table)
 		if buf.replaceItems != nil {
-			iter := queryAll(txn, table)
-			for obj, _, ok := iter.Next(); ok; obj, _, ok = iter.Next() {
-				numDeleted++
-				table.Delete(txn, obj)
-			}
+			indexer := table.PrimaryIndexer()
+			inserted := sets.New[string]()
+
 			for _, item := range buf.replaceItems {
-				if obj, ok := transform(item); ok {
+				for _, obj := range transformMany(item) {
 					table.Insert(txn, obj)
 					numUpserted++
+					inserted.Insert(string(indexer.ObjectToKey(obj)))
 				}
 			}
+
+			// Delete the remaining objects that we did not insert.
+			iter := queryAll(txn, table)
+			for obj, _, ok := iter.Next(); ok; obj, _, ok = iter.Next() {
+				if !inserted.Has(string(indexer.ObjectToKey(obj))) {
+					numDeleted++
+					table.Delete(txn, obj)
+				}
+			}
+
 			// Mark the table as initialized. Internally this has a sync.Once
 			// so safe to call multiple times.
 			r.initDone(txn)
 		}
 
 		for _, entry := range buf.entries {
-			if !entry.deleted {
-				numUpserted++
-				table.Insert(txn, entry.obj)
-			} else {
-				numDeleted++
-				table.Delete(txn, entry.obj)
+			for _, obj := range transformMany(entry.obj) {
+				if !entry.deleted {
+					numUpserted++
+					table.Modify(txn, obj, merge)
+				} else {
+					numDeleted++
+					table.Delete(txn, obj)
+				}
 			}
 		}
 
 		numTotal := table.NumObjects(txn)
 		txn.Commit()
 
-		health.OK(fmt.Sprintf("%d inserted, %d deleted, %d total", numUpserted, numDeleted, numTotal))
+		health.OK(fmt.Sprintf("%d upserted, %d deleted, %d total objects", numUpserted, numDeleted, numTotal))
 	}
 
 	errs := make(chan error)
