@@ -13,7 +13,7 @@ replace (
 )
 
 require (
-	github.com/cilium/cilium v1.16.0-rc.0.0.20240816120549-e528f9911563
+	github.com/cilium/cilium v1.16.1
 	github.com/google/gops v0.3.28
 )
 
