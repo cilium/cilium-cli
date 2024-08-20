@@ -20,8 +20,8 @@
 /.github/tools/ @cilium/ci-structure
 /.github/workflows/ @cilium/github-sec @cilium/ci-structure
 /cmd/ @cilium/cli
-/go.sum @cilium/vendor
-/go.mod @cilium/vendor
+/go.sum @cilium/cilium-cli-maintainers
+/go.mod @cilium/cilium-cli-maintainers
 /stable-v0.14.txt @cilium/cilium-cli-maintainers
 /stable.txt @cilium/cilium-cli-maintainers
-/vendor/ @cilium/vendor
+/vendor/ @cilium/cilium-cli-maintainers
