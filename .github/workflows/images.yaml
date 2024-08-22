@@ -67,7 +67,9 @@ jobs:
           context: .
           file: ${{ matrix.dockerfile }}
           push: true
-          platforms: linux/amd64
+          platforms: ${{ matrix.platforms }}
+          build-args: |
+            FINAL_CONTAINER=${{ matrix.name }}
           tags: |
             quay.io/${{ github.repository_owner }}/${{ matrix.name }}:latest
             quay.io/${{ github.repository_owner }}/${{ matrix.name }}:${{ steps.tag.outputs.tag }}
@@ -90,6 +92,8 @@ jobs:
           file: ${{ matrix.dockerfile }}
           push: true
           platforms: ${{ matrix.platforms }}
+          build-args: |
+            FINAL_CONTAINER=${{ matrix.name }}
           tags: |
             quay.io/${{ github.repository_owner }}/${{ matrix.name }}:${{ steps.tag.outputs.tag }}
 
