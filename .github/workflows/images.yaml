@@ -29,7 +29,7 @@ jobs:
             dockerfile: ./Dockerfile
             platforms: linux/amd64
           - name: cilium-cli
-            dockerfile: ./Dockerfile-cli-only
+            dockerfile: ./Dockerfile
             platforms: linux/amd64,linux/arm64
     steps:
       - name: Set up Docker Buildx
