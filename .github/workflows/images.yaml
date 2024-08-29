@@ -25,6 +25,9 @@ jobs:
     strategy:
       matrix:
         include:
+          - name: cilium-cli
+            dockerfile: ./Dockerfile
+            platforms: linux/amd64,linux/arm64
           - name: cilium-cli-ci
             dockerfile: ./Dockerfile
             platforms: linux/amd64
@@ -57,10 +60,10 @@ jobs:
           ref: ${{ steps.tag.outputs.tag }}
 
       # main branch or tag pushes
-      - name: CI Build ${{ matrix.name }}
+      - name: Build ${{ matrix.name }}
         if: ${{ github.event_name != 'pull_request_target' }}
         uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
-        id: docker_build_ci_main
+        id: docker_build_main
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -71,19 +74,19 @@ jobs:
             quay.io/${{ github.repository_owner }}/${{ matrix.name }}:latest
             quay.io/${{ github.repository_owner }}/${{ matrix.name }}:${{ steps.tag.outputs.tag }}
 
-      - name: CI Image Releases digests
+      - name: Image Releases digests
         if: ${{ github.event_name != 'pull_request_target' }}
         shell: bash
         run: |
           mkdir -p image-digest/
-          echo "quay.io/${{ github.repository_owner }}/${{ matrix.name }}:latest@${{ steps.docker_build_ci_main.outputs.digest }}" > image-digest/${{ matrix.name }}.txt
-          echo "quay.io/${{ github.repository_owner }}/${{ matrix.name }}:${{ steps.tag.outputs.tag }}@${{ steps.docker_build_ci_main.outputs.digest }}" >> image-digest/${{ matrix.name }}.txt
+          echo "quay.io/${{ github.repository_owner }}/${{ matrix.name }}:latest@${{ steps.docker_build_main.outputs.digest }}" > image-digest/${{ matrix.name }}.txt
+          echo "quay.io/${{ github.repository_owner }}/${{ matrix.name }}:${{ steps.tag.outputs.tag }}@${{ steps.docker_build_main.outputs.digest }}" >> image-digest/${{ matrix.name }}.txt
 
       # PR updates
-      - name: CI Build ${{ matrix.name }}
+      - name: Build ${{ matrix.name }}
         if: ${{ github.event_name == 'pull_request_target' }}
         uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
-        id: docker_build_ci_pr
+        id: docker_build_pr
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -93,12 +96,12 @@ jobs:
           tags: |
             quay.io/${{ github.repository_owner }}/${{ matrix.name }}:${{ steps.tag.outputs.tag }}
 
-      - name: CI Image Releases digests
+      - name: Image Releases digests
         if: ${{ github.event_name == 'pull_request_target' }}
         shell: bash
         run: |
           mkdir -p image-digest/
-          echo "quay.io/${{ github.repository_owner }}/${{ matrix.name }}:${{ steps.tag.outputs.tag }}@${{ steps.docker_build_ci_pr.outputs.digest }}" > image-digest/${{ matrix.name }}.txt
+          echo "quay.io/${{ github.repository_owner }}/${{ matrix.name }}:${{ steps.tag.outputs.tag }}@${{ steps.docker_build_pr.outputs.digest }}" > image-digest/${{ matrix.name }}.txt
 
       # Upload artifact digests
       - name: Upload artifact digests
