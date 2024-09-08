@@ -529,9 +529,9 @@ func (l4 *L4Filter) Equals(_ *testing.T, bL4 *L4Filter) bool {
 
 // ChangeState allows caller to revert changes made by (multiple) toMapState call(s)
 type ChangeState struct {
-	Adds    Keys                  // Added or modified keys, if not nil
-	Deletes Keys                  // deleted keys, if not nil
-	Old     map[Key]MapStateEntry // Old values of all modified or deleted keys, if not nil
+	Adds    Keys        // Added or modified keys, if not nil
+	Deletes Keys        // deleted keys, if not nil
+	Old     MapStateMap // Old values of all modified or deleted keys, if not nil
 }
 
 // toMapState converts a single filter into a MapState entries added to 'p.PolicyMapState'.
@@ -545,7 +545,7 @@ type ChangeState struct {
 // needs no lock.
 func (l4 *L4Filter) toMapState(p *EndpointPolicy, features policyFeatures, redirects map[string]uint16, changes ChangeState) {
 	port := l4.Port
-	proto := uint8(l4.U8Proto)
+	proto := l4.U8Proto
 
 	direction := trafficdirection.Egress
 	if l4.Ingress {
@@ -572,13 +572,8 @@ func (l4 *L4Filter) toMapState(p *EndpointPolicy, features policyFeatures, redir
 
 	var keysToAdd []Key
 	for _, mp := range PortRangeToMaskedPorts(port, l4.EndPort) {
-		keysToAdd = append(keysToAdd, Key{
-			Identity:         0,       // Set in the loop below (if not wildcard)
-			DestPort:         mp.port, // NOTE: Port is in host byte-order!
-			InvertedPortMask: ^mp.mask,
-			Nexthdr:          proto,
-			TrafficDirection: direction.Uint8(),
-		})
+		keysToAdd = append(keysToAdd,
+			KeyForDirection(direction).WithPortProtoPrefix(proto, mp.port, uint8(bits.LeadingZeros16(^mp.mask))))
 	}
 
 	// find the L7 rules for the wildcard entry, if any
@@ -656,15 +651,15 @@ func (l4 *L4Filter) toMapState(p *EndpointPolicy, features policyFeatures, redir
 		}
 		for _, id := range idents {
 			for _, keyToAdd := range keysToAdd {
-				keyToAdd.Identity = id.Uint32()
+				keyToAdd.Identity = id
 				p.policyMapState.denyPreferredInsertWithChanges(keyToAdd, entry, p.SelectorCache, features, changes)
 				// If Cilium is in dual-stack mode then the "World" identity
 				// needs to be split into two identities to represent World
 				// IPv6 and IPv4 traffic distinctly from one another.
 				if id == identity.ReservedIdentityWorld && option.Config.IsDualStack() {
-					keyToAdd.Identity = identity.ReservedIdentityWorldIPv4.Uint32()
+					keyToAdd.Identity = identity.ReservedIdentityWorldIPv4
 					p.policyMapState.denyPreferredInsertWithChanges(keyToAdd, entry, p.SelectorCache, features, changes)
-					keyToAdd.Identity = identity.ReservedIdentityWorldIPv6.Uint32()
+					keyToAdd.Identity = identity.ReservedIdentityWorldIPv6
 					p.policyMapState.denyPreferredInsertWithChanges(keyToAdd, entry, p.SelectorCache, features, changes)
 				}
 			}
@@ -1583,7 +1578,7 @@ func (l4 *L4Policy) removeUser(user *EndpointPolicy) {
 // present in both 'adds' and 'deletes'.
 func (l4Policy *L4Policy) AccumulateMapChanges(l4 *L4Filter, cs CachedSelector, adds, deletes []identity.NumericIdentity) {
 	port := uint16(l4.Port)
-	proto := uint8(l4.U8Proto)
+	proto := l4.U8Proto
 	derivedFrom := l4.RuleOrigin[cs]
 
 	direction := trafficdirection.Egress
@@ -1633,12 +1628,8 @@ func (l4Policy *L4Policy) AccumulateMapChanges(l4 *L4Filter, cs CachedSelector, 
 		}
 		var keysToAdd []Key
 		for _, mp := range PortRangeToMaskedPorts(port, l4.EndPort) {
-			keysToAdd = append(keysToAdd, Key{
-				DestPort:         mp.port, // NOTE: Port is in host byte-order!
-				InvertedPortMask: ^mp.mask,
-				Nexthdr:          proto,
-				TrafficDirection: direction.Uint8(),
-			})
+			keysToAdd = append(keysToAdd,
+				KeyForDirection(direction).WithPortProtoPrefix(proto, mp.port, uint8(bits.LeadingZeros16(^mp.mask))))
 		}
 		value := NewMapStateEntry(cs, derivedFrom, proxyPort, listener, priority, isDeny, hasAuth, authType)
 
@@ -1763,6 +1754,6 @@ type ProxyPolicy interface {
 	GetL7Parser() L7ParserType
 	GetIngress() bool
 	GetPort() uint16
-	GetProtocol() uint8
+	GetProtocol() u8proto.U8proto
 	GetListener() string
 }

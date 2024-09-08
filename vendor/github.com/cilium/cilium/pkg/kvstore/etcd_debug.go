@@ -5,7 +5,6 @@ package kvstore
 
 import (
 	"bytes"
-	"cmp"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -20,8 +19,10 @@ import (
 	"strings"
 
 	client "go.etcd.io/etcd/client/v3"
+	clientyaml "go.etcd.io/etcd/client/v3/yaml"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"sigs.k8s.io/yaml"
 
 	"github.com/cilium/cilium/pkg/time"
@@ -54,7 +55,7 @@ func EtcdDbg(ctx context.Context, cfgfile string, dialer EtcdDbgDialer, w io.Wri
 	iw := newIndentedWriter(w, 0)
 
 	iw.Println("📄 Configuration path: %s", cfgfile)
-	cfg, err := newConfig(cfgfile)
+	cfg, err := clientyaml.NewConfig(cfgfile)
 	if err != nil {
 		iw.Println("❌ Cannot parse etcd configuration: %s", err)
 		return
@@ -81,21 +82,28 @@ func EtcdDbg(ctx context.Context, cfgfile string, dialer EtcdDbgDialer, w io.Wri
 	iiw := iw.WithExtraIndent(3)
 	cfg.Context = ctx
 	cfg.Logger = zap.NewNop()
-	cfg.DialOptions = append(cfg.DialOptions, grpc.WithBlock(), grpc.WithContextDialer(dialer.DialContext))
-	cfg.DialTimeout = 1 * time.Second // The client hangs in case the connection fails, hence set a short timeout.
+	cfg.DialOptions = append(cfg.DialOptions, grpc.WithContextDialer(dialer.DialContext))
 
 	cl, err := client.New(*cfg)
 	if err != nil {
-		iiw.Println("❌ Failed to establish connection: %s", err)
+		iiw.Println("❌ Failed to create etcd client: %s", err)
 		return
 	}
 	defer cl.Close()
 
 	// Try to retrieve the heartbeat key, as a basic authorization check.
 	// It doesn't really matter whether the heartbeat key exists or not.
-	out, err := cl.Get(ctx, HeartbeatPath)
+	// Client.New() does not block on connection failure, and hence
+	// we need to check the connection state to determine the type of failure.
+	ctxGet, cancelGet := context.WithTimeout(ctx, 1*time.Second)
+	defer cancelGet()
+	out, err := cl.Get(ctxGet, HeartbeatPath)
 	if err != nil {
-		iiw.Println("❌ Failed to retrieve key from etcd: %s", err)
+		if cl.ActiveConnection().GetState() == connectivity.TransientFailure {
+			iiw.Println("❌ Failed to establish connection: %s", err)
+		} else {
+			iiw.Println("❌ Failed to retrieve key from etcd: %s", err)
+		}
 		return
 	}
 
@@ -322,7 +330,9 @@ func etcdDbgOutputIPs(ips []net.IP) string {
 }
 
 func etcdDbgRetrieveRootCAFile(cfgfile string) (certs [][]byte, err error) {
-	var yc yamlConfig
+	var yc struct {
+		TrustedCAfile string `json:"trusted-ca-file"`
+	}
 
 	b, err := os.ReadFile(cfgfile)
 	if err != nil {
@@ -334,12 +344,11 @@ func etcdDbgRetrieveRootCAFile(cfgfile string) (certs [][]byte, err error) {
 		return nil, err
 	}
 
-	crtfile := cmp.Or(yc.TrustedCAfile, yc.CAfile)
-	if crtfile == "" {
+	if yc.TrustedCAfile == "" {
 		return nil, errors.New("not provided")
 	}
 
-	data, err := os.ReadFile(crtfile)
+	data, err := os.ReadFile(yc.TrustedCAfile)
 	if err != nil {
 		return nil, err
 	}

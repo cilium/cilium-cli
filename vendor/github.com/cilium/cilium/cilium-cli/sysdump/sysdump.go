@@ -172,8 +172,13 @@ type Collector struct {
 }
 
 // NewCollector returns a new sysdump collector.
-func NewCollector(k KubernetesClient, o Options, startTime time.Time, cliVersion string) (*Collector, error) {
-	c := Collector{
+func NewCollector(
+	k KubernetesClient,
+	o Options,
+	hooks Hooks,
+	startTime time.Time,
+) (*Collector, error) {
+	c := &Collector{
 		Client:     k,
 		Options:    o,
 		startTime:  startTime,
@@ -191,7 +196,7 @@ func NewCollector(k KubernetesClient, o Options, startTime time.Time, cliVersion
 		return nil, err
 	}
 	c.logDebug("Using %v as a temporary directory", c.sysdumpDir)
-	c.logTask("Collecting sysdump with cilium-cli version: %s, args: %s", cliVersion, os.Args[1:])
+	c.logTask("Collecting sysdump with cilium-cli version: %s, args: %s", defaults.CLIVersion, os.Args[1:])
 
 	if c.Options.CiliumNamespace == "" {
 		ns, err := detectCiliumNamespace(k)
@@ -293,7 +298,11 @@ func NewCollector(k KubernetesClient, o Options, startTime time.Time, cliVersion
 		}
 	}
 
-	return &c, nil
+	if err := hooks.AddSysdumpTasks(c); err != nil {
+		return nil, fmt.Errorf("failed to add custom sysdump tasks: %w", err)
+	}
+
+	return c, nil
 }
 
 // GatherResourceUnstructured queries resources with the given GroupVersionResource, storing them in the file specified by fname.
@@ -2225,7 +2234,7 @@ func zipDirectory(src string, dst string) error {
 func (c *Collector) submitCiliumBugtoolTasks(pods []*corev1.Pod) error {
 	for _, p := range pods {
 		p := p
-		if err := c.Pool.Submit(fmt.Sprintf("cilium-bugtool-"+p.Name), func(ctx context.Context) error {
+		if err := c.Pool.Submit("cilium-bugtool-"+p.Name, func(ctx context.Context) error {
 			p, containerName, cleanupFunc, err := c.ensureExecTarget(ctx, p, ciliumAgentContainerName)
 			if err != nil {
 				return fmt.Errorf("failed to pick exec target: %w", err)
@@ -2298,7 +2307,7 @@ func (c *Collector) submitHubbleFlowsTasks(_ context.Context, pods []*corev1.Pod
 	hubbleFlowsTimeout := strconv.FormatInt(int64(c.Options.HubbleFlowsTimeout/time.Second), 10)
 	for _, p := range pods {
 		p := p
-		if err := c.Pool.Submit(fmt.Sprintf("hubble-flows-"+p.Name), func(ctx context.Context) error {
+		if err := c.Pool.Submit("hubble-flows-"+p.Name, func(ctx context.Context) error {
 			b, e, err := c.Client.ExecInPodWithStderr(ctx, p.Namespace, p.Name, containerName, []string{
 				"timeout", "--signal", "SIGINT", "--preserve-status", hubbleFlowsTimeout, "bash", "-c",
 				fmt.Sprintf("hubble observe --last %d --debug -o jsonpb", c.Options.HubbleFlowsCount),
@@ -2326,7 +2335,7 @@ func (c *Collector) submitHubbleFlowsTasks(_ context.Context, pods []*corev1.Pod
 func (c *Collector) submitSpireEntriesTasks(pods []*corev1.Pod) error {
 	for _, p := range pods {
 		p := p
-		if err := c.Pool.Submit(fmt.Sprintf("spire-entries-"+p.Name), func(ctx context.Context) error {
+		if err := c.Pool.Submit("spire-entries-"+p.Name, func(ctx context.Context) error {
 			p, containerName, cleanupFunc, err := c.ensureExecTarget(ctx, p, spireServerContainerName)
 			if err != nil {
 				return fmt.Errorf("failed to pick exec target: %w", err)
