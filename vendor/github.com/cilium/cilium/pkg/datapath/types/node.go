@@ -10,6 +10,7 @@ import (
 	"github.com/cilium/cilium/api/v1/models"
 	"github.com/cilium/cilium/pkg/cidr"
 	"github.com/cilium/cilium/pkg/datapath/tables"
+	"github.com/cilium/cilium/pkg/datapath/xdp"
 	nodeTypes "github.com/cilium/cilium/pkg/node/types"
 )
 
@@ -72,6 +73,10 @@ type LocalNodeConfiguration struct {
 	// used as NodePort frontends and the addresses to use for BPF masquerading.
 	// Mutable at runtime.
 	NodeAddresses []tables.NodeAddress
+
+	// DeriveMasqIPAddrFromDevice overrides the interface name to use for deriving
+	// the masquerading IP address for the node.
+	DeriveMasqIPAddrFromDevice string
 
 	// HostEndpointID is the endpoint ID assigned to the host endpoint.
 	// Immutable at runtime.
@@ -165,6 +170,10 @@ type LocalNodeConfiguration struct {
 	// these are then used when encryption is enabled to configure the node
 	// for encryption over these subnets at node initialization.
 	IPv6PodSubnets []*cidr.CIDR
+
+	// XDPConfig holds configuration options to determine how the node should
+	// handle XDP programs.
+	XDPConfig xdp.Config
 }
 
 func (cfg *LocalNodeConfiguration) DeviceNames() []string {

@@ -30,9 +30,6 @@ github.com/Masterminds/squirrel
 # github.com/Microsoft/hcsshim v0.11.4
 ## explicit; go 1.18
 github.com/Microsoft/hcsshim/osversion
-# github.com/armon/go-metrics v0.4.1
-## explicit; go 1.12
-github.com/armon/go-metrics
 # github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 ## explicit; go 1.13
 github.com/asaskevich/govalidator
@@ -55,10 +52,10 @@ github.com/chai2010/gettext-go
 github.com/chai2010/gettext-go/mo
 github.com/chai2010/gettext-go/plural
 github.com/chai2010/gettext-go/po
-# github.com/cilium/charts v0.0.0-20240724150047-2a1e5b85b669
+# github.com/cilium/charts v0.0.0-20240814125739-05190b06aeb3
 ## explicit; go 1.17
 github.com/cilium/charts
-# github.com/cilium/cilium v1.16.0-rc.0.0.20240819201320-b17c182b5dcd
+# github.com/cilium/cilium v1.17.0-pre.0
 ## explicit; go 1.22.0
 github.com/cilium/cilium/api/v1/client
 github.com/cilium/cilium/api/v1/client/bgp
@@ -134,7 +131,6 @@ github.com/cilium/cilium/pkg/command
 github.com/cilium/cilium/pkg/command/exec
 github.com/cilium/cilium/pkg/common
 github.com/cilium/cilium/pkg/comparator
-github.com/cilium/cilium/pkg/components
 github.com/cilium/cilium/pkg/container/bitlpm
 github.com/cilium/cilium/pkg/controller
 github.com/cilium/cilium/pkg/crypto/certificatemanager
@@ -144,6 +140,7 @@ github.com/cilium/cilium/pkg/datapath/loader/metrics
 github.com/cilium/cilium/pkg/datapath/tables
 github.com/cilium/cilium/pkg/datapath/tunnel
 github.com/cilium/cilium/pkg/datapath/types
+github.com/cilium/cilium/pkg/datapath/xdp
 github.com/cilium/cilium/pkg/debug
 github.com/cilium/cilium/pkg/defaults
 github.com/cilium/cilium/pkg/endpoint/id
@@ -270,7 +267,7 @@ github.com/cilium/ebpf/internal/sysenc
 github.com/cilium/ebpf/internal/tracefs
 github.com/cilium/ebpf/internal/unix
 github.com/cilium/ebpf/link
-# github.com/cilium/hive v0.0.0-20240529072208-d997f86e4219
+# github.com/cilium/hive v0.0.0-20240816121742-535330fad6ce
 ## explicit; go 1.21.3
 github.com/cilium/hive
 github.com/cilium/hive/cell
@@ -529,7 +526,7 @@ github.com/cilium/statedb/index
 github.com/cilium/statedb/internal
 github.com/cilium/statedb/part
 github.com/cilium/statedb/reconciler
-# github.com/cilium/stream v0.0.0-20240226091623-f979d32855f8
+# github.com/cilium/stream v0.0.0-20240816054136-71321e385273
 ## explicit; go 1.21.0
 github.com/cilium/stream
 # github.com/cilium/workerpool v1.2.0
@@ -621,7 +618,7 @@ github.com/docker/distribution/registry/client/auth/challenge
 github.com/docker/distribution/registry/client/transport
 github.com/docker/distribution/registry/storage/cache
 github.com/docker/distribution/registry/storage/cache/memory
-# github.com/docker/docker v27.1.1+incompatible
+# github.com/docker/docker v27.1.2+incompatible
 ## explicit
 github.com/docker/docker/api/types/filters
 github.com/docker/docker/api/types/registry
@@ -778,10 +775,6 @@ github.com/google/go-cmp/cmp/internal/value
 ## explicit; go 1.12
 github.com/google/gofuzz
 github.com/google/gofuzz/bytesource
-# github.com/google/gopacket v1.1.19
-## explicit; go 1.12
-github.com/google/gopacket
-github.com/google/gopacket/layers
 # github.com/google/gops v0.3.28
 ## explicit; go 1.17
 github.com/google/gops/agent
@@ -793,6 +786,10 @@ github.com/google/shlex
 # github.com/google/uuid v1.6.0
 ## explicit
 github.com/google/uuid
+# github.com/gopacket/gopacket v1.2.0
+## explicit; go 1.20
+github.com/gopacket/gopacket
+github.com/gopacket/gopacket/layers
 # github.com/gorilla/mux v1.8.1
 ## explicit; go 1.20
 github.com/gorilla/mux
@@ -807,30 +804,15 @@ github.com/gosuri/uitable/util/wordwrap
 # github.com/gregjones/httpcache v0.0.0-20180305231024-9cad4c3443a7
 ## explicit
 github.com/gregjones/httpcache
-# github.com/hashicorp/consul/api v1.29.2
-## explicit; go 1.19
-github.com/hashicorp/consul/api
 # github.com/hashicorp/errwrap v1.1.0
 ## explicit
 github.com/hashicorp/errwrap
-# github.com/hashicorp/go-cleanhttp v0.5.2
-## explicit; go 1.13
-github.com/hashicorp/go-cleanhttp
 # github.com/hashicorp/go-hclog v1.6.3
 ## explicit; go 1.13
 github.com/hashicorp/go-hclog
-# github.com/hashicorp/go-immutable-radix v1.3.1
-## explicit
-github.com/hashicorp/go-immutable-radix
 # github.com/hashicorp/go-multierror v1.1.1
 ## explicit; go 1.13
 github.com/hashicorp/go-multierror
-# github.com/hashicorp/go-rootcerts v1.0.2
-## explicit; go 1.12
-github.com/hashicorp/go-rootcerts
-# github.com/hashicorp/golang-lru v0.5.4
-## explicit; go 1.12
-github.com/hashicorp/golang-lru/simplelru
 # github.com/hashicorp/hcl v1.0.1-vault-5
 ## explicit; go 1.15
 github.com/hashicorp/hcl
@@ -843,9 +825,6 @@ github.com/hashicorp/hcl/hcl/token
 github.com/hashicorp/hcl/json/parser
 github.com/hashicorp/hcl/json/scanner
 github.com/hashicorp/hcl/json/token
-# github.com/hashicorp/serf v0.10.1
-## explicit; go 1.12
-github.com/hashicorp/serf/coordinate
 # github.com/huandu/xstrings v1.4.0
 ## explicit; go 1.12
 github.com/huandu/xstrings
@@ -866,8 +845,8 @@ github.com/josharian/intern
 # github.com/json-iterator/go v1.1.12
 ## explicit; go 1.12
 github.com/json-iterator/go
-# github.com/klauspost/compress v1.17.2
-## explicit; go 1.18
+# github.com/klauspost/compress v1.17.9
+## explicit; go 1.20
 github.com/klauspost/compress
 github.com/klauspost/compress/fse
 github.com/klauspost/compress/huff0
@@ -912,9 +891,6 @@ github.com/mattn/go-runewidth
 # github.com/mitchellh/copystructure v1.2.0
 ## explicit; go 1.15
 github.com/mitchellh/copystructure
-# github.com/mitchellh/go-homedir v1.1.0
-## explicit
-github.com/mitchellh/go-homedir
 # github.com/mitchellh/go-wordwrap v1.0.1
 ## explicit; go 1.14
 github.com/mitchellh/go-wordwrap
@@ -981,7 +957,7 @@ github.com/pelletier/go-toml/v2/unstable
 # github.com/peterbourgon/diskv v2.0.1+incompatible
 ## explicit
 github.com/peterbourgon/diskv
-# github.com/petermattis/goid v0.0.0-20230904192822-1876fd5063bc
+# github.com/petermattis/goid v0.0.0-20240813172612-4fcff4a6cae7
 ## explicit; go 1.17
 github.com/petermattis/goid
 # github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
@@ -990,8 +966,10 @@ github.com/pkg/browser
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
-# github.com/prometheus/client_golang v1.19.1
+# github.com/prometheus/client_golang v1.20.1
 ## explicit; go 1.20
+github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil
+github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil/header
 github.com/prometheus/client_golang/prometheus
 github.com/prometheus/client_golang/prometheus/collectors
 github.com/prometheus/client_golang/prometheus/internal
@@ -1024,7 +1002,7 @@ github.com/sagikazarmark/locafero
 # github.com/sagikazarmark/slog-shim v0.1.0
 ## explicit; go 1.20
 github.com/sagikazarmark/slog-shim
-# github.com/sasha-s/go-deadlock v0.3.1
+# github.com/sasha-s/go-deadlock v0.3.5
 ## explicit
 github.com/sasha-s/go-deadlock
 # github.com/shopspring/decimal v1.3.1
@@ -1150,7 +1128,7 @@ go.mongodb.org/mongo-driver/x/bsonx/bsoncore
 ## explicit; go 1.20
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp/internal/semconvutil
-# go.opentelemetry.io/otel v1.28.0
+# go.opentelemetry.io/otel v1.29.0
 ## explicit; go 1.21
 go.opentelemetry.io/otel
 go.opentelemetry.io/otel/attribute
@@ -1166,11 +1144,11 @@ go.opentelemetry.io/otel/semconv/v1.17.0
 go.opentelemetry.io/otel/semconv/v1.17.0/httpconv
 go.opentelemetry.io/otel/semconv/v1.20.0
 go.opentelemetry.io/otel/semconv/v1.21.0
-# go.opentelemetry.io/otel/metric v1.28.0
+# go.opentelemetry.io/otel/metric v1.29.0
 ## explicit; go 1.21
 go.opentelemetry.io/otel/metric
 go.opentelemetry.io/otel/metric/embedded
-# go.opentelemetry.io/otel/trace v1.28.0
+# go.opentelemetry.io/otel/trace v1.29.0
 ## explicit; go 1.21
 go.opentelemetry.io/otel/trace
 go.opentelemetry.io/otel/trace/embedded
@@ -1289,8 +1267,8 @@ golang.org/x/time/rate
 google.golang.org/genproto/googleapis/api
 google.golang.org/genproto/googleapis/api/annotations
 google.golang.org/genproto/googleapis/api/expr/v1alpha1
-# google.golang.org/genproto/googleapis/rpc v0.0.0-20240812133136-8ffd90a71988
-## explicit; go 1.20
+# google.golang.org/genproto/googleapis/rpc v0.0.0-20240820151423-278611b39280
+## explicit; go 1.21
 google.golang.org/genproto/googleapis/rpc/status
 # google.golang.org/grpc v1.65.0
 ## explicit; go 1.21
@@ -1401,7 +1379,7 @@ gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.1
 ## explicit
 gopkg.in/yaml.v3
-# helm.sh/helm/v3 v3.15.3
+# helm.sh/helm/v3 v3.15.4
 ## explicit; go 1.22.0
 helm.sh/helm/v3/internal/fileutil
 helm.sh/helm/v3/internal/resolver
@@ -1824,7 +1802,7 @@ k8s.io/kube-openapi/pkg/spec3
 k8s.io/kube-openapi/pkg/util/proto
 k8s.io/kube-openapi/pkg/util/proto/validation
 k8s.io/kube-openapi/pkg/validation/spec
-# k8s.io/kubectl v0.30.0
+# k8s.io/kubectl v0.30.3
 ## explicit; go 1.22.0
 k8s.io/kubectl/pkg/cmd/util
 k8s.io/kubectl/pkg/scheme
@@ -1863,7 +1841,7 @@ oras.land/oras-go/pkg/target
 # sigs.k8s.io/controller-runtime v0.18.4
 ## explicit; go 1.22.0
 sigs.k8s.io/controller-runtime/pkg/client/apiutil
-# sigs.k8s.io/gateway-api v1.1.1-0.20240815062117-d6e29e302721
+# sigs.k8s.io/gateway-api v1.1.1-0.20240819173812-8f5f9d1f515b
 ## explicit; go 1.22.0
 sigs.k8s.io/gateway-api/apis/v1
 sigs.k8s.io/gateway-api/apis/v1alpha2
@@ -1955,7 +1933,7 @@ sigs.k8s.io/kustomize/kyaml/yaml/merge2
 sigs.k8s.io/kustomize/kyaml/yaml/merge3
 sigs.k8s.io/kustomize/kyaml/yaml/schema
 sigs.k8s.io/kustomize/kyaml/yaml/walk
-# sigs.k8s.io/mcs-api v0.1.1-0.20240801074550-a32df8816421
+# sigs.k8s.io/mcs-api v0.1.1-0.20240819144851-b512d0dec827
 ## explicit; go 1.22.0
 sigs.k8s.io/mcs-api/pkg/apis/v1alpha1
 sigs.k8s.io/mcs-api/pkg/client/clientset/versioned

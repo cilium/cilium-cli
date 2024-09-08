@@ -11,6 +11,9 @@ const (
 	// LogSubsys is the field denoting the subsystem when logging
 	LogSubsys = "subsys"
 
+	// Stacktrace is a field for a stacktrace
+	Stacktrace = "stacktrace"
+
 	// Signal is the field to print os signals on exit etc.
 	Signal = "signal"
 
@@ -799,4 +802,7 @@ const (
 
 	// Target identifies a target value
 	Target = "target"
+
+	// StaleIPs represents a set of stale IPs.
+	StaleIPs = "staleIPs"
 )

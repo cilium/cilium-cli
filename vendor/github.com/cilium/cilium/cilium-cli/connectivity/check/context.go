@@ -25,6 +25,7 @@ import (
 	"github.com/cilium/cilium/cilium-cli/connectivity/perf/common"
 	"github.com/cilium/cilium/cilium-cli/defaults"
 	"github.com/cilium/cilium/cilium-cli/k8s"
+	"github.com/cilium/cilium/cilium-cli/sysdump"
 	"github.com/cilium/cilium/cilium-cli/utils/features"
 	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	"github.com/cilium/cilium/pkg/lock"
@@ -47,10 +48,9 @@ type ConnectivityTest struct {
 	// Parameters to the test suite, specified by the CLI user.
 	params Parameters
 
-	logger *ConcurrentLogger
+	sysdumpHooks sysdump.Hooks
 
-	// version is the version string of the cilium-cli itself
-	version string
+	logger *ConcurrentLogger
 
 	// Clients for source and destination clusters.
 	clients *deploymentClients
@@ -189,7 +189,12 @@ func (ct *ConnectivityTest) failedActions() []*Action {
 }
 
 // NewConnectivityTest returns a new ConnectivityTest.
-func NewConnectivityTest(client *k8s.Client, p Parameters, version string, logger *ConcurrentLogger) (*ConnectivityTest, error) {
+func NewConnectivityTest(
+	client *k8s.Client,
+	p Parameters,
+	sysdumpHooks sysdump.Hooks,
+	logger *ConcurrentLogger,
+) (*ConnectivityTest, error) {
 	if err := p.validate(); err != nil {
 		return nil, err
 	}
@@ -197,8 +202,8 @@ func NewConnectivityTest(client *k8s.Client, p Parameters, version string, logge
 	k := &ConnectivityTest{
 		client:                   client,
 		params:                   p,
+		sysdumpHooks:             sysdumpHooks,
 		logger:                   logger,
-		version:                  version,
 		ciliumPods:               make(map[string]Pod),
 		echoPods:                 make(map[string]Pod),
 		echoExternalPods:         make(map[string]Pod),
@@ -538,8 +543,8 @@ func (ct *ConnectivityTest) report() error {
 			}
 		}
 		ct.Logf("%s", strings.Repeat("-", 85))
-		if ct.Params().PerfReportDir != "" {
-			common.ExportPerfSummaries(ct.PerfResults, ct.Params().PerfReportDir)
+		if ct.Params().PerfParameters.ReportDir != "" {
+			common.ExportPerfSummaries(ct.PerfResults, ct.Params().PerfParameters.ReportDir)
 		}
 	}
 
@@ -1006,14 +1011,14 @@ func (ct *ConnectivityTest) DigCommand(peer TestPeer, ipFam features.IPFamily) [
 	return cmd
 }
 
-func (ct *ConnectivityTest) DigCommandService(peer TestPeer, ipFam features.IPFamily) []string {
-	cmd := []string{"dig"}
+func (ct *ConnectivityTest) NSLookupCommandService(peer TestPeer, ipFam features.IPFamily) []string {
+	cmd := []string{"nslookup"}
 	if ipFam == features.IPFamilyV4 {
-		cmd = append(cmd, "A")
+		cmd = append(cmd, "-type=A")
 	} else if ipFam == features.IPFamilyV6 {
-		cmd = append(cmd, "AAAA")
+		cmd = append(cmd, "-type=AAAA")
 	}
-	cmd = append(cmd, "+time=2", peer.Name())
+	cmd = append(cmd, "-timeout=2", peer.Address(features.IPFamilyAny))
 	return cmd
 }
 

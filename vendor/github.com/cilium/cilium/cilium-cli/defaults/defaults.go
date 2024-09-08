@@ -72,7 +72,7 @@ const (
 	// renovate: datasource=docker
 	ConnectivityTestConnDisruptImage = "quay.io/cilium/test-connection-disruption:v0.0.14@sha256:c3fd56e326ae16f6cb63dbb2e26b4e47ec07a123040623e11399a7fe1196baa0"
 	// renovate: datasource=docker
-	ConnectivityTestFRRImage = "quay.io/frrouting/frr:10.0.1@sha256:83e2ff39e9c033c086e02e1cfd32ff188837a666876212f2a875bd85a79afb7c"
+	ConnectivityTestFRRImage = "quay.io/frrouting/frr:10.1.0@sha256:cb2b672ee9856553c7552593dccd3de916f8acfe04655216abcd44137f6ccaf7"
 
 	ConfigMapName = "cilium-config"
 
@@ -109,8 +109,9 @@ const (
 )
 
 var (
-	// renovate: datasource=github-releases depName=cilium/cilium
-	Version = "v1.16.0"
+	// Version is the default Cilium version to be installed. It is set during build based on
+	// the version in stable.txt.
+	Version string
 
 	// HelmRepository specifies Helm repository to download Cilium charts from.
 	HelmRepository = "https://helm.cilium.io"

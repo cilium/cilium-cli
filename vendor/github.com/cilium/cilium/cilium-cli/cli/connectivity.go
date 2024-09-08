@@ -74,7 +74,7 @@ func RunE(hooks api.Hooks) func(cmd *cobra.Command, args []string) error {
 
 		logger := check.NewConcurrentLogger(params.Writer, params.TestConcurrency)
 
-		connTests, err := newConnectivityTests(params, logger)
+		connTests, err := newConnectivityTests(params, hooks, logger)
 		if err != nil {
 			return err
 		}
@@ -132,6 +132,7 @@ func newCmdConnectivityTest(hooks api.Hooks) *cobra.Command {
 	cmd.Flags().StringVar(&params.ExternalCIDR, "external-cidr", "1.0.0.0/8", "CIDR to use as external target in connectivity tests")
 	cmd.Flags().StringVar(&params.ExternalIP, "external-ip", "1.1.1.1", "IP to use as external target in connectivity tests")
 	cmd.Flags().StringVar(&params.ExternalOtherIP, "external-other-ip", "1.0.0.1", "Other IP to use as external target in connectivity tests")
+	cmd.Flags().StringVar(&params.ServiceType, "service-type", "NodePort", "Type of Kubernetes Services created for connectivity tests")
 	cmd.Flags().StringSliceVar(&params.NodeCIDRs, "node-cidr", nil, "one or more CIDRs that cover all nodes in the cluster")
 	cmd.Flags().StringVar(&params.JunitFile, "junit-file", "", "Generate junit report and write to file")
 	cmd.Flags().Var(option.NewNamedMapOptions("junit-property", &params.JunitProperties, nil), "junit-property", "Add key=value properties to the generated junit file")
@@ -205,13 +206,19 @@ func newCmdConnectivityPerf(hooks api.Hooks) *cobra.Command {
 		RunE: RunE(hooks),
 	}
 
-	cmd.Flags().DurationVar(&params.PerfDuration, "duration", 10*time.Second, "Duration for the Performance test to run")
-	cmd.Flags().IntVar(&params.PerfSamples, "samples", 1, "Number of Performance samples to capture (how many times to run each test)")
-	cmd.Flags().BoolVar(&params.PerfHostNet, "host-net", false, "Test host network")
-	cmd.Flags().BoolVar(&params.PerfPodNet, "pod-net", true, "Test pod network")
+	cmd.Flags().DurationVar(&params.PerfParameters.Duration, "duration", 10*time.Second, "Duration for the Performance test to run")
+	cmd.Flags().IntVar(&params.PerfParameters.MessageSize, "msg-size", 1024, "Size of message to use in UDP test")
+	cmd.Flags().BoolVar(&params.PerfParameters.CRR, "crr", false, "Run CRR test")
+	cmd.Flags().BoolVar(&params.PerfParameters.RR, "rr", true, "Run RR test")
+	cmd.Flags().BoolVar(&params.PerfParameters.UDP, "udp", false, "Run UDP tests")
+	cmd.Flags().BoolVar(&params.PerfParameters.Throughput, "throughput", true, "Run throughput test")
+	cmd.Flags().BoolVar(&params.PerfParameters.Mixed, "mixed", false, "Run pod-to-host and host-to-pod tests (only works if both host-net=true and pod-net=true)")
+	cmd.Flags().IntVar(&params.PerfParameters.Samples, "samples", 1, "Number of Performance samples to capture (how many times to run each test)")
+	cmd.Flags().BoolVar(&params.PerfParameters.HostNet, "host-net", true, "Test host network")
+	cmd.Flags().BoolVar(&params.PerfParameters.PodNet, "pod-net", true, "Test pod network")
 
-	cmd.Flags().StringVar(&params.PerformanceImage, "performance-image", defaults.ConnectivityPerformanceImage, "Image path to use for performance")
-	cmd.Flags().StringVar(&params.PerfReportDir, "report-dir", "", "Directory to save perf results in json format")
+	cmd.Flags().StringVar(&params.PerfParameters.Image, "performance-image", defaults.ConnectivityPerformanceImage, "Image path to use for performance")
+	cmd.Flags().StringVar(&params.PerfParameters.ReportDir, "report-dir", "", "Directory to save perf results in json format")
 	registerCommonFlags(cmd.Flags())
 
 	return cmd
@@ -224,7 +231,11 @@ func registerCommonFlags(flags *pflag.FlagSet) {
 	flags.Var(&params.DeploymentAnnotations, "deployment-pod-annotations", "Add annotations to the connectivity pods, e.g. '{\"client\":{\"foo\":\"bar\"}}'")
 }
 
-func newConnectivityTests(params check.Parameters, logger *check.ConcurrentLogger) ([]*check.ConnectivityTest, error) {
+func newConnectivityTests(
+	params check.Parameters,
+	hooks api.Hooks,
+	logger *check.ConcurrentLogger,
+) ([]*check.ConnectivityTest, error) {
 	if params.TestConcurrency < 1 {
 		fmt.Printf("--test-concurrency parameter value is invalid [%d], using 1 instead\n", params.TestConcurrency)
 		params.TestConcurrency = 1
@@ -240,7 +251,7 @@ func newConnectivityTests(params check.Parameters, logger *check.ConcurrentLogge
 		}
 		params.ExternalDeploymentPort += i
 		params.EchoServerHostPort += i
-		cc, err := check.NewConnectivityTest(k8sClient, params, defaults.CLIVersion, logger)
+		cc, err := check.NewConnectivityTest(k8sClient, params, hooks, logger)
 		if err != nil {
 			return nil, err
 		}
