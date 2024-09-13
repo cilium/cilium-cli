@@ -3,7 +3,7 @@
 # Copyright Authors of Cilium
 # SPDX-License-Identifier: Apache-2.0
 
-FROM docker.io/library/golang:1.23.1-alpine3.19@sha256:257b9536b8e607c5111b33d44939db4df4268b8456a2618c21af8e14a3bf8687 AS builder
+FROM docker.io/library/golang:1.23.1-alpine3.19@sha256:e0ea2a119ae0939a6d449ea18b2b1ba30b44986ec48dbb88f3a93371b4bf8750 AS builder
 WORKDIR /go/src/github.com/cilium/cilium-cli
 RUN apk add --no-cache git make ca-certificates
 COPY . .
