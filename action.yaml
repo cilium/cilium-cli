@@ -114,4 +114,4 @@ runs:
     - name: Run Cilium CLI Version
       shell: bash
       run: |
-        ${{ inputs.binary-dir }}/${{ inputs.binary-name }} version
+        ${{ inputs.binary-dir }}/${{ inputs.binary-name }} version --client
