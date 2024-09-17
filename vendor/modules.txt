@@ -777,8 +777,6 @@ github.com/google/gofuzz
 github.com/google/gofuzz/bytesource
 # github.com/google/gops v0.3.28
 ## explicit; go 1.17
-github.com/google/gops/agent
-github.com/google/gops/internal
 github.com/google/gops/signal
 # github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 ## explicit; go 1.13
