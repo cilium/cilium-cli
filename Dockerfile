@@ -5,7 +5,7 @@
 
 FROM docker.io/library/golang:1.23.1-alpine3.19@sha256:e0ea2a119ae0939a6d449ea18b2b1ba30b44986ec48dbb88f3a93371b4bf8750 AS builder
 WORKDIR /go/src/github.com/cilium/cilium-cli
-RUN apk add --no-cache git make ca-certificates
+RUN apk add --no-cache curl git make ca-certificates
 COPY . .
 RUN make
 
