@@ -743,20 +743,6 @@ func (c *Collector) Run() error {
 			},
 		},
 		{
-			Description: "Collecting Cilium BGP Peering Policies",
-			Quick:       true,
-			Task: func(ctx context.Context) error {
-				v, err := c.Client.ListCiliumBGPPeeringPolicies(ctx, metav1.ListOptions{})
-				if err != nil {
-					return fmt.Errorf("failed to collect Cilium BGP Peering policies: %w", err)
-				}
-				if err := c.WriteYAML(ciliumBPGPeeringPoliciesFileName, v); err != nil {
-					return fmt.Errorf("failed to collect Cilium BGP Peering policies: %w", err)
-				}
-				return nil
-			},
-		},
-		{
 			Description: "Collecting Cilium LoadBalancer IP Pools",
 			Quick:       true,
 			Task: func(ctx context.Context) error {
@@ -1021,7 +1007,7 @@ func (c *Collector) Run() error {
 				if err != nil {
 					return fmt.Errorf("failed to get the Cilium operator pods: %w", err)
 				}
-				err = c.submitMetricsSubtask(pods, defaults.OperatorContainerName, defaults.OperatorMetricsPortName)
+				err = c.SubmitMetricsSubtask(pods, defaults.OperatorContainerName, defaults.OperatorMetricsPortName)
 				if err != nil {
 					return fmt.Errorf("failed to collect the Cilium operator metrics: %w", err)
 				}
@@ -1044,15 +1030,15 @@ func (c *Collector) Run() error {
 					return fmt.Errorf("failed to collect the Cilium clustermesh debug information: %w", err)
 				}
 
-				err = c.submitMetricsSubtask(pods, defaults.ClusterMeshContainerName, defaults.ClusterMeshMetricsPortName)
+				err = c.SubmitMetricsSubtask(pods, defaults.ClusterMeshContainerName, defaults.ClusterMeshMetricsPortName)
 				if err != nil {
 					return fmt.Errorf("failed to collect the Cilium clustermesh metrics: %w", err)
 				}
-				err = c.submitMetricsSubtask(pods, defaults.ClusterMeshKVStoreMeshContainerName, defaults.ClusterMeshKVStoreMeshMetricsPortName)
+				err = c.SubmitMetricsSubtask(pods, defaults.ClusterMeshKVStoreMeshContainerName, defaults.ClusterMeshKVStoreMeshMetricsPortName)
 				if err != nil {
 					return fmt.Errorf("failed to collect the Cilium clustermesh metrics: %w", err)
 				}
-				err = c.submitMetricsSubtask(pods, defaults.ClusterMeshEtcdContainerName, defaults.ClusterMeshEtcdMetricsPortName)
+				err = c.SubmitMetricsSubtask(pods, defaults.ClusterMeshEtcdContainerName, defaults.ClusterMeshEtcdMetricsPortName)
 				if err != nil {
 					return fmt.Errorf("failed to collect the Cilium clustermesh metrics: %w", err)
 				}
@@ -1625,6 +1611,9 @@ func (c *Collector) Run() error {
 	if c.FeatureSet[features.EnableEnvoyConfig].Enabled {
 		tasks = append(tasks, c.getEnvoyConfigTasks()...)
 	}
+	if c.FeatureSet[features.BGPControlPlane].Enabled {
+		tasks = append(tasks, c.getBGPControlPlaneTasks()...)
+	}
 
 	// First, run each serial task in its own workerpool.
 	var r []workerpool.Task
@@ -2036,6 +2025,95 @@ func (c *Collector) getEnvoyConfigTasks() []Task {
 				}
 				if err := c.WriteYAML(ciliumEnvoyConfigsFileName, v); err != nil {
 					return fmt.Errorf("failed to collect CiliumEnvoyConfigs: %w", err)
+				}
+				return nil
+			},
+		},
+	}
+}
+
+func (c *Collector) getBGPControlPlaneTasks() []Task {
+	return []Task{
+		{
+			Description: "Collecting Cilium BGP Peering Policies",
+			Quick:       true,
+			Task: func(ctx context.Context) error {
+				v, err := c.Client.ListCiliumBGPPeeringPolicies(ctx, metav1.ListOptions{})
+				if err != nil {
+					return fmt.Errorf("failed to collect Cilium BGP Peering policies: %w", err)
+				}
+				if err := c.WriteYAML(ciliumBPGPeeringPoliciesFileName, v); err != nil {
+					return fmt.Errorf("failed to collect Cilium BGP Peering policies: %w", err)
+				}
+				return nil
+			},
+		},
+		{
+			Description: "Collecting Cilium BGP Cluster Configs",
+			Quick:       true,
+			Task: func(ctx context.Context) error {
+				v, err := c.Client.ListCiliumBGPClusterConfigs(ctx, metav1.ListOptions{})
+				if err != nil {
+					return fmt.Errorf("failed to collect Cilium BGP Cluster Configs: %w", err)
+				}
+				if err := c.WriteYAML(ciliumBPGClusterConfigsFileName, v); err != nil {
+					return fmt.Errorf("failed to collect Cilium BGP Cluster Configs: %w", err)
+				}
+				return nil
+			},
+		},
+		{
+			Description: "Collecting Cilium BGP Peer Configs",
+			Quick:       true,
+			Task: func(ctx context.Context) error {
+				v, err := c.Client.ListCiliumBGPPeerConfigs(ctx, metav1.ListOptions{})
+				if err != nil {
+					return fmt.Errorf("failed to collect Cilium BGP Peer Configs: %w", err)
+				}
+				if err := c.WriteYAML(ciliumBPGPeerConfigsFileName, v); err != nil {
+					return fmt.Errorf("failed to collect Cilium BGP Peer Configs: %w", err)
+				}
+				return nil
+			},
+		},
+		{
+			Description: "Collecting Cilium BGP Advertisements",
+			Quick:       true,
+			Task: func(ctx context.Context) error {
+				v, err := c.Client.ListCiliumBGPAdvertisements(ctx, metav1.ListOptions{})
+				if err != nil {
+					return fmt.Errorf("failed to collect Cilium BGP Advertisements: %w", err)
+				}
+				if err := c.WriteYAML(ciliumBPGAdvertisementsFileName, v); err != nil {
+					return fmt.Errorf("failed to collect Cilium BGP Advertisements: %w", err)
+				}
+				return nil
+			},
+		},
+		{
+			Description: "Collecting Cilium BGP Node Configs",
+			Quick:       true,
+			Task: func(ctx context.Context) error {
+				v, err := c.Client.ListCiliumBGPNodeConfigs(ctx, metav1.ListOptions{})
+				if err != nil {
+					return fmt.Errorf("failed to collect Cilium BGP Node Configs: %w", err)
+				}
+				if err := c.WriteYAML(ciliumBPGNodeConfigsFileName, v); err != nil {
+					return fmt.Errorf("failed to collect Cilium BGP Node Configs: %w", err)
+				}
+				return nil
+			},
+		},
+		{
+			Description: "Collecting Cilium BGP Node Config Overrides",
+			Quick:       true,
+			Task: func(ctx context.Context) error {
+				v, err := c.Client.ListCiliumBGPNodeConfigOverrides(ctx, metav1.ListOptions{})
+				if err != nil {
+					return fmt.Errorf("failed to collect Cilium BGP Node Config Overrides: %w", err)
+				}
+				if err := c.WriteYAML(ciliumBPGNodeConfigOverridesFileName, v); err != nil {
+					return fmt.Errorf("failed to collect Cilium BGP Node Config Overrides: %w", err)
 				}
 				return nil
 			},
@@ -2749,8 +2827,8 @@ func (c *Collector) submitKVStoreTasks(ctx context.Context, pod *corev1.Pod) err
 	return nil
 }
 
-// submitMetricsSubtask submits tasks to collect metrics from pods.
-func (c *Collector) submitMetricsSubtask(pods *corev1.PodList, containerName, portName string) error {
+// SubmitMetricsSubtask submits tasks to collect metrics from pods.
+func (c *Collector) SubmitMetricsSubtask(pods *corev1.PodList, containerName, portName string) error {
 	for _, p := range pods.Items {
 		p := p
 		if !podIsRunningAndHasContainer(&p, containerName) {
@@ -2878,13 +2956,10 @@ func getPodMetricsPort(pod corev1.Pod, containerName, portName string) (int32, e
 // and includes the specified container.
 func podIsRunningAndHasContainer(pod *corev1.Pod, container string) bool {
 	if pod.Status.Phase == corev1.PodRunning {
-		for i := range pod.Spec.Containers {
-			if pod.Spec.Containers[i].Name == container {
-				return true
-			}
-		}
+		return slices.ContainsFunc(pod.Spec.Containers, func(c corev1.Container) bool {
+			return c.Name == container
+		})
 	}
-
 	return false
 }
 
