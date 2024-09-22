@@ -108,6 +108,22 @@ check:
 	docker run --rm -v `pwd`:/app -w /app docker.io/golangci/golangci-lint:$(GOLANGCILINT_WANT_VERSION) golangci-lint run
 endif
 
-.PHONY: $(TARGET) release local-release install clean test bench check clean-tags tags
+.PHONY: $(TARGET) release local-release install clean test bench check clean-tags tags help
+
+help:
+	@echo "Available commands:"
+	@printf "  %-18s Build the Cilium binary.\n" $(TARGET)
+	@printf "  %-18s Create a release of the binary.\n" release
+	@printf "  %-18s Build binaries for local environment.\n" local-release
+	@printf "  %-18s Install the Cilium binary.\n" install
+	@printf "  %-18s Remove the binary and release files.\n" clean
+	@printf "  %-18s Run tests with race detection and coverage.\n" test
+	@printf "  %-18s Run benchmarks.\n" bench
+	@printf "  %-18s Run lint checks on the code.\n" check
+	@printf "  %-18s Remove generated tags and cscope files.\n" clean-tags
+	@printf "  %-18s Generate tags for the source code.\n" tags
+	@echo ""
+	@echo "Run 'make <command>' to execute a command."
+	@echo "Use 'make help' to see this help message."
 
 -include Makefile.override
