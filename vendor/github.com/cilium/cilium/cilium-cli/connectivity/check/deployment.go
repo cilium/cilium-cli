@@ -527,6 +527,15 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("unable to create deployment %s: %w", testConnDisruptClientDeployment, err)
 			}
+
+			// Wait for the client deployment to become ready, to catch any issues early if the
+			// clients are not able to connect to the server:
+			// See: https://github.com/cilium/test-connection-disruption/blob/main/cmd/client/main.go#L36-L44
+			err := WaitForDeployment(ctx, ct, ct.clients.src, ct.params.TestNamespace, testConnDisruptClientDeploymentName)
+			if err != nil {
+				ct.Failf("%s deployment is not ready: %s", testConnDisruptClientDeploymentName, err)
+			}
+
 		}
 	}
 
