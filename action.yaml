@@ -11,6 +11,10 @@ inputs:
   local-path:
     description: 'Path to the local copy of the Cilium CLI repository'
     default: '*/cilium-cli'
+  enable-go-cache:
+    default: false
+    description: >
+      Enable caching in setup-go action when building Cilium CLI from source.
   go-mod-directory:
     description: >
       Override the directory that contains go.mod when building the Cilium CLI
@@ -59,7 +63,7 @@ runs:
       if: ${{ steps.build-cli.outputs.path != '' }}
       with:
         go-version-file: '${{ steps.build-cli.outputs.go-mod-path }}'
-        cache: true
+        cache: ${{ inputs.enable-go-cache }}
         cache-dependency-path: '${{ steps.build-cli.outputs.go-sum-path }}'
 
     - name: Build Cilium CLI from source
