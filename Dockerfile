@@ -16,9 +16,11 @@ RUN make
 
 FROM scratch AS cilium-cli
 COPY --from=builder /go/src/github.com/cilium/cilium-cli/cilium /usr/local/bin/cilium
+ENTRYPOINT ["cilium"]
 
 FROM ubuntu:24.04@sha256:dfc10878be8d8fc9c61cbff33166cb1d1fe44391539243703c72766894fa834a AS cilium-cli-ci
 COPY --from=builder /go/src/github.com/cilium/cilium-cli/cilium /usr/local/bin/cilium
+ENTRYPOINT []
 
 # Install cloud CLIs. Based on these instructions:
 # - https://cloud.google.com/sdk/docs/install#deb
@@ -40,4 +42,3 @@ RUN apt-get update -y \
 FROM ${FINAL_CONTAINER} 
 LABEL maintainer="maintainer@cilium.io"
 WORKDIR /root/app
-ENTRYPOINT ["/usr/local/bin/cilium"]
