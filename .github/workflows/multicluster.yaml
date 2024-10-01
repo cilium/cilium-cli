@@ -194,7 +194,8 @@ jobs:
             --set cluster.name="${{ env.clusterName1 }}" \
             --set cluster.id=1 \
             --set bpf.monitorAggregation=none \
-            --set ipv4NativeRoutingCIDR=10.0.0.0/9
+            --set ipv4NativeRoutingCIDR=10.0.0.0/9 \
+            --set hubble.eventQueueSize=65536
 
           # Copy the CA cert from cluster1 to cluster2
           kubectl --context ${{ steps.contexts.outputs.cluster1 }} get secrets -n kube-system cilium-ca -oyaml \
@@ -212,7 +213,8 @@ jobs:
             --set cluster.name="${{ env.clusterName2 }}" \
             --set cluster.id=2 \
             --set bpf.monitorAggregation=none \
-            --set ipv4NativeRoutingCIDR=10.0.0.0/9
+            --set ipv4NativeRoutingCIDR=10.0.0.0/9 \
+            --set hubble.eventQueueSize=65536
 
           # Enable Relay
           cilium --context "${{ steps.contexts.outputs.cluster1 }}" hubble enable
