@@ -6,16 +6,16 @@ package check
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net"
 	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/blang/semver/v4"
-	"golang.org/x/exp/maps"
-	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	corev1 "k8s.io/api/core/v1"
@@ -861,7 +861,6 @@ func (ct *ConnectivityTest) getNodes(ctx context.Context) error {
 	}
 
 	for _, node := range nodeList.Items {
-		node := node
 		if canNodeRunCilium(&node) {
 			if isControlPlane(&node) {
 				ct.controlPlaneNodes[node.ObjectMeta.Name] = node.DeepCopy()
@@ -1154,7 +1153,7 @@ func (ct *ConnectivityTest) K8sClient() *k8s.Client {
 }
 
 func (ct *ConnectivityTest) NodesWithoutCilium() []string {
-	return maps.Keys(ct.nodesWithoutCilium)
+	return slices.Collect(maps.Keys(ct.nodesWithoutCilium))
 }
 
 func (ct *ConnectivityTest) Feature(f features.Feature) (features.Status, bool) {

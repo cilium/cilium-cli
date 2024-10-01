@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"reflect"
 	"runtime/pprof"
+	"slices"
 	"time"
 
 	upstream "github.com/cilium/hive"
@@ -14,7 +15,6 @@ import (
 	"github.com/cilium/hive/job"
 	"github.com/cilium/statedb"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/exp/slices"
 
 	"github.com/cilium/cilium/pkg/cidr"
 	"github.com/cilium/cilium/pkg/hive/health"
@@ -60,12 +60,12 @@ func New(cells ...cell.Cell) *Hive {
 		func(hp types.Provider, fmid cell.FullModuleID) cell.Health {
 			return hp.ForModule(fmid)
 		},
+		func(db *statedb.DB, mid cell.ModuleID) *statedb.DB {
+			return db.NewHandle(string(mid))
+		},
 	}
 	modulePrivateProviders := []cell.ModulePrivateProvider{
 		jobGroupProvider,
-		func(db *statedb.DB, mid cell.ModuleID) statedb.Handle {
-			return db.NewHandle(string(mid))
-		},
 	}
 	return upstream.NewWithOptions(
 		upstream.Options{
