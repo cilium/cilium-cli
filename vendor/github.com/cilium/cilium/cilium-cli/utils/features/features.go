@@ -5,9 +5,9 @@ package features
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
-
-	"golang.org/x/exp/maps"
 
 	"github.com/blang/semver/v4"
 	v1 "k8s.io/api/core/v1"
@@ -30,6 +30,7 @@ const (
 	KPRGracefulTermination Feature = "kpr-graceful-termination"
 	KPRHostPort            Feature = "kpr-hostport"
 	KPRSocketLB            Feature = "kpr-socket-lb"
+	KPRSocketLBHostnsOnly  Feature = "kpr-socket-lb-hostns-only"
 	KPRNodePort            Feature = "kpr-nodeport"
 	KPRSessionAffinity     Feature = "kpr-session-affinity"
 
@@ -324,6 +325,6 @@ func (fs Set) ExtractFromConfigMap(cm *v1.ConfigMap) {
 func (fs Set) ExtractFromNodes(nodesWithoutCilium map[string]struct{}) {
 	fs[NodeWithoutCilium] = Status{
 		Enabled: len(nodesWithoutCilium) != 0,
-		Mode:    strings.Join(maps.Keys(nodesWithoutCilium), ","),
+		Mode:    strings.Join(slices.Collect(maps.Keys(nodesWithoutCilium)), ","),
 	}
 }
