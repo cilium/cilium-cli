@@ -18,7 +18,7 @@ FROM scratch AS cilium-cli
 COPY --from=builder /go/src/github.com/cilium/cilium-cli/cilium /usr/local/bin/cilium
 ENTRYPOINT ["cilium"]
 
-FROM ubuntu:24.04@sha256:dfc10878be8d8fc9c61cbff33166cb1d1fe44391539243703c72766894fa834a AS cilium-cli-ci
+FROM ubuntu:24.04@sha256:b359f1067efa76f37863778f7b6d0e8d911e3ee8efa807ad01fbf5dc1ef9006b AS cilium-cli-ci
 COPY --from=builder /go/src/github.com/cilium/cilium-cli/cilium /usr/local/bin/cilium
 ENTRYPOINT []
 
