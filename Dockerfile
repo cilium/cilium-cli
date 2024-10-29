@@ -3,24 +3,25 @@
 # Copyright Authors of Cilium
 # SPDX-License-Identifier: Apache-2.0
 
-# FINAL_CONTAINER specifies the source for the output
-# cilium-cli-ci (default) is based on ubuntu with cloud CLIs
-# cilium-cli is from scratch only including cilium binaries
-ARG FINAL_CONTAINER="cilium-cli-ci"
-
 FROM docker.io/library/golang:1.23.3-alpine3.19@sha256:36cc30986d1f9bc46670526fe6553b078097e562e196344dea6a075e434f8341 AS builder
 WORKDIR /go/src/github.com/cilium/cilium-cli
 RUN apk add --no-cache curl git make ca-certificates
 COPY . .
 RUN make
 
+# cilium-cli is from scratch only including cilium binaries
 FROM scratch AS cilium-cli
 ENTRYPOINT ["cilium"]
+LABEL maintainer="maintainer@cilium.io"
+WORKDIR /root/app
 COPY --from=builder --chown=root:root --chmod=755 /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /go/src/github.com/cilium/cilium-cli/cilium /usr/local/bin/cilium
 
+# cilium-cli-ci is based on ubuntu with cloud CLIs
 FROM ubuntu:24.04@sha256:99c35190e22d294cdace2783ac55effc69d32896daaa265f0bbedbcde4fbe3e5 AS cilium-cli-ci
 ENTRYPOINT []
+LABEL maintainer="maintainer@cilium.io"
+WORKDIR /root/app
 COPY --from=builder /go/src/github.com/cilium/cilium-cli/cilium /usr/local/bin/cilium
 
 # Install cloud CLIs. Based on these instructions:
@@ -39,7 +40,3 @@ RUN apt-get update -y \
   && ./aws/install \
   && rm -r ./aws awscliv2.zip \
   && curl -sL https://aka.ms/InstallAzureCLIDeb | bash
-
-FROM ${FINAL_CONTAINER} 
-LABEL maintainer="maintainer@cilium.io"
-WORKDIR /root/app
