@@ -15,12 +15,13 @@ COPY . .
 RUN make
 
 FROM scratch AS cilium-cli
-COPY --from=builder /go/src/github.com/cilium/cilium-cli/cilium /usr/local/bin/cilium
 ENTRYPOINT ["cilium"]
+COPY --from=builder --chown=root:root --chmod=755 /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /go/src/github.com/cilium/cilium-cli/cilium /usr/local/bin/cilium
 
 FROM ubuntu:24.04@sha256:99c35190e22d294cdace2783ac55effc69d32896daaa265f0bbedbcde4fbe3e5 AS cilium-cli-ci
-COPY --from=builder /go/src/github.com/cilium/cilium-cli/cilium /usr/local/bin/cilium
 ENTRYPOINT []
+COPY --from=builder /go/src/github.com/cilium/cilium-cli/cilium /usr/local/bin/cilium
 
 # Install cloud CLIs. Based on these instructions:
 # - https://cloud.google.com/sdk/docs/install#deb
