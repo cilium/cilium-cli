@@ -395,6 +395,30 @@ func (ct *ConnectivityTest) ingresses() map[string]string {
 	return ingresses
 }
 
+// maybeNodeToNodeEncryptionAffinity returns a node affinity term to prefer nodes
+// not being part of the control plane when node to node encryption is enabled,
+// because they are excluded by default from node to node encryption. This logic
+// is currently suboptimal as it only accounts for the default selector, for the
+// sake of simplicity, but it should cover all common use cases.
+func (ct *ConnectivityTest) maybeNodeToNodeEncryptionAffinity() *corev1.NodeAffinity {
+	encryptNode, _ := ct.Feature(features.EncryptionNode)
+	if !encryptNode.Enabled || encryptNode.Mode == "" {
+		return nil
+	}
+
+	return &corev1.NodeAffinity{
+		PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{{
+			Weight: 100,
+			Preference: corev1.NodeSelectorTerm{
+				MatchExpressions: []corev1.NodeSelectorRequirement{{
+					Key:      "node-role.kubernetes.io/control-plane",
+					Operator: corev1.NodeSelectorOpDoesNotExist,
+				}},
+			},
+		}},
+	}
+}
+
 // deploy ensures the test Namespace, Services and Deployments are running on the cluster.
 func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 	var err error
@@ -633,6 +657,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 						},
 					},
 				},
+				NodeAffinity: ct.maybeNodeToNodeEncryptionAffinity(),
 			},
 			ReadinessProbe: newLocalReadinessProbe(containerPort, "/"),
 		}, ct.params.DNSTestServerImage)
@@ -655,6 +680,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 			Image:        ct.params.CurlImage,
 			Command:      []string{"/usr/bin/pause"},
 			Annotations:  ct.params.DeploymentAnnotations.Match(clientDeploymentName),
+			Affinity:     &corev1.Affinity{NodeAffinity: ct.maybeNodeToNodeEncryptionAffinity()},
 			NodeSelector: ct.params.NodeSelector,
 		})
 		_, err = ct.clients.src.CreateServiceAccount(ctx, ct.params.TestNamespace, k8s.NewServiceAccount(clientDeploymentName), metav1.CreateOptions{})
@@ -691,6 +717,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 						},
 					},
 				},
+				NodeAffinity: ct.maybeNodeToNodeEncryptionAffinity(),
 			},
 			NodeSelector: ct.params.NodeSelector,
 		})
@@ -729,6 +756,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 							},
 						},
 					},
+					NodeAffinity: ct.maybeNodeToNodeEncryptionAffinity(),
 				},
 				NodeSelector: ct.params.NodeSelector,
 			})
@@ -832,6 +860,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 							},
 						},
 					},
+					NodeAffinity: ct.maybeNodeToNodeEncryptionAffinity(),
 				},
 				NodeSelector:   ct.params.NodeSelector,
 				ReadinessProbe: newLocalReadinessProbe(containerPort, "/"),
@@ -1042,6 +1071,34 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 		}
 	}
 
+	if ct.Features[features.Multicast].Enabled {
+		_, err = ct.clients.src.GetDeployment(ctx, ct.params.TestNamespace, socatClientDeploymentName, metav1.GetOptions{})
+		if err != nil {
+			ct.Logf("✨ [%s] Deploying %s deployment...", ct.clients.src.ClusterName(), socatClientDeploymentName)
+			ds := NewSocatClientDeployment(ct.params)
+			_, err = ct.clients.src.CreateServiceAccount(ctx, ct.params.TestNamespace, k8s.NewServiceAccount(socatClientDeploymentName), metav1.CreateOptions{})
+			if err != nil {
+				return fmt.Errorf("unable to create service account %s: %w", socatClientDeploymentName, err)
+			}
+			_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, ds, metav1.CreateOptions{})
+			if err != nil {
+				return fmt.Errorf("unable to create deployment %s: %w", socatClientDeploymentName, err)
+			}
+		}
+	}
+
+	if ct.Features[features.Multicast].Enabled {
+		_, err = ct.clients.src.GetDaemonSet(ctx, ct.params.TestNamespace, socatServerDaemonsetName, metav1.GetOptions{})
+		if err != nil {
+			ct.Logf("✨ [%s] Deploying %s daemonset...", ct.clients.src.ClusterName(), socatServerDaemonsetName)
+			ds := NewSocatServerDaemonSet(ct.params)
+			_, err = ct.clients.src.CreateDaemonSet(ctx, ct.params.TestNamespace, ds, metav1.CreateOptions{})
+			if err != nil {
+				return fmt.Errorf("unable to create daemonset %s: %w", socatServerDaemonsetName, err)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -1202,6 +1259,10 @@ func (ct *ConnectivityTest) deploymentList() (srcList []string, dstList []string
 		srcList = append(srcList, lrpBackendDeploymentName)
 	}
 
+	if ct.Features[features.Multicast].Enabled {
+		srcList = append(srcList, socatClientDeploymentName)
+	}
+
 	return srcList, dstList
 }
 
@@ -1212,6 +1273,8 @@ func (ct *ConnectivityTest) deleteDeployments(ctx context.Context, client *k8s.C
 	_ = client.DeleteDeployment(ctx, ct.params.TestNamespace, clientDeploymentName, metav1.DeleteOptions{})
 	_ = client.DeleteDeployment(ctx, ct.params.TestNamespace, client2DeploymentName, metav1.DeleteOptions{})
 	_ = client.DeleteDeployment(ctx, ct.params.TestNamespace, client3DeploymentName, metav1.DeleteOptions{})
+	_ = client.DeleteDeployment(ctx, ct.params.TestNamespace, socatClientDeploymentName, metav1.DeleteOptions{})
+	_ = client.DeleteDeployment(ctx, ct.params.TestNamespace, socatServerDaemonsetName, metav1.DeleteOptions{}) // Q:Daemonset in here is OK?
 	_ = client.DeleteServiceAccount(ctx, ct.params.TestNamespace, echoSameNodeDeploymentName, metav1.DeleteOptions{})
 	_ = client.DeleteServiceAccount(ctx, ct.params.TestNamespace, echoOtherNodeDeploymentName, metav1.DeleteOptions{})
 	_ = client.DeleteServiceAccount(ctx, ct.params.TestNamespace, clientDeploymentName, metav1.DeleteOptions{})
@@ -1413,6 +1476,35 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 		}
 		for _, pod := range frrPods.Items {
 			ct.frrPods = append(ct.frrPods, Pod{
+				K8sClient: ct.client,
+				Pod:       pod.DeepCopy(),
+			})
+		}
+	}
+
+	if ct.Features[features.Multicast].Enabled {
+		// socat client pods
+		socatCilentPods, err := ct.clients.src.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "name=" + socatClientDeploymentName})
+		if err != nil {
+			return fmt.Errorf("unable to list socat client pods: %w", err)
+		}
+		for _, pod := range socatCilentPods.Items {
+			ct.socatClientPods = append(ct.socatClientPods, Pod{
+				K8sClient: ct.client,
+				Pod:       pod.DeepCopy(),
+			})
+		}
+
+		// socat server pods
+		if err := WaitForDaemonSet(ctx, ct, ct.clients.src, ct.Params().TestNamespace, socatServerDaemonsetName); err != nil {
+			return err
+		}
+		socatServerPods, err := ct.clients.src.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "name=" + socatServerDaemonsetName})
+		if err != nil {
+			return fmt.Errorf("unable to list socat server pods: %w", err)
+		}
+		for _, pod := range socatServerPods.Items {
+			ct.socatServerPods = append(ct.socatServerPods, Pod{
 				K8sClient: ct.client,
 				Pod:       pod.DeepCopy(),
 			})
