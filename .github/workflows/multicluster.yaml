@@ -250,7 +250,11 @@ jobs:
           # Port forward Relay
           cilium --context "${{ steps.contexts.outputs.cluster1 }}" hubble port-forward&
           sleep 10s
-          [[ $(pgrep -f "kubectl.*port-forward.*hubble-relay" | wc -l) == 1 ]]
+          if ! [[ $(pgrep -f "kubectl.*port-forward.*hubble-relay" | wc -l) == 1 ]]; then
+            # support for native port-forwarding
+            # TODO: remove kubectl version after 0.16.20 release
+            [[ $(pgrep -f "cilium.*hubble.*port-forward" | wc -l) == 1 ]]
+          fi
 
           # Run connectivity test
           cilium --context "${{ steps.contexts.outputs.cluster1 }}" connectivity test --test-concurrency=5 \
