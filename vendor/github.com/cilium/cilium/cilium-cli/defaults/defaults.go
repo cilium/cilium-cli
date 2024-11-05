@@ -76,6 +76,8 @@ const (
 	ConnectivityTestConnDisruptImage = "quay.io/cilium/test-connection-disruption:v0.0.14@sha256:c3fd56e326ae16f6cb63dbb2e26b4e47ec07a123040623e11399a7fe1196baa0"
 	// renovate: datasource=docker
 	ConnectivityTestFRRImage = "quay.io/frrouting/frr:10.1.1@sha256:7c7901eb5611f12634395c949e59663e154b37cf006f32c7f4c8650884cdc0b1"
+	// renovate: datasource=docker
+	ConnectivityTestSocatImage = "docker.io/alpine/socat:1.8.0.0@sha256:a6be4c0262b339c53ddad723cdd178a1a13271e1137c65e27f90a08c16de02b8"
 
 	ConfigMapName = "cilium-config"
 
@@ -87,7 +89,7 @@ const (
 	FlowWaitTimeout   = 10 * time.Second
 	FlowRetryInterval = 500 * time.Millisecond
 
-	PolicyWaitTimeout = 15 * time.Second
+	PolicyWaitTimeout = 30 * time.Second
 
 	ConnectRetry      = 3
 	ConnectRetryDelay = 3 * time.Second
@@ -158,6 +160,7 @@ var (
 		"Host datapath not ready",
 		"Unknown ICMPv4 code",
 		"Forbidden ICMPv6 message",
+		"No egress gateway found",
 	}
 
 	ExpectedXFRMErrors = []string{
