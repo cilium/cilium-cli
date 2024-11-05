@@ -135,6 +135,8 @@ jobs:
       - name: Install Cilium and run tests
         timeout-minutes: 30
         run: |
+          set -x
+
           # Install Cilium
           cilium install \
             --version "${{ env.cilium_version }}" \
@@ -157,6 +159,12 @@ jobs:
           # Port forward Relay
           cilium hubble port-forward&
           sleep 10s
+
+          echo "[DEBUG] port-forward"
+          ps | grep port-forward
+          pgrep -f "kubectl.*port-forward.*hubble-relay" || true >/dev/null
+          pgrep -f "cilium.*hubble.*port-forward" || true >/dev/null
+
           if ! [[ $(pgrep -f "kubectl.*port-forward.*hubble-relay" | wc -l) == 1 ]]; then
             # support for native port-forwarding
             # TODO: remove kubectl version after 0.16.20 release
