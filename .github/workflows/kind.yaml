@@ -82,7 +82,11 @@ jobs:
         run: |
           cilium hubble port-forward&
           sleep 10s
-          [[ $(pgrep -f "cilium.*hubble.*port-forward|kubectl.*port-forward.*hubble-relay" | wc -l) == 2 ]]
+          if ! [[ $(pgrep -f "kubectl.*port-forward.*hubble-relay" | wc -l) == 1 ]]; then
+            # support for native port-forwarding
+            # TODO: remove kubectl version after 0.16.20 release
+            [[ $(pgrep -f "cilium.*hubble.*port-forward" | wc -l) == 1 ]]
+          fi
 
       - name: Set up external targets
         id: external_targets
@@ -160,7 +164,11 @@ jobs:
         run: |
           cilium hubble port-forward&
           sleep 10s
-          [[ $(pgrep -f "cilium.*hubble.*port-forward|kubectl.*port-forward.*hubble-relay" | wc -l) == 2 ]]
+          if ! [[ $(pgrep -f "kubectl.*port-forward.*hubble-relay" | wc -l) == 1 ]]; then
+            # support for native port-forwarding
+            # TODO: remove kubectl version after 0.16.20 release
+            [[ $(pgrep -f "cilium.*hubble.*port-forward" | wc -l) == 1 ]]
+          fi
 
       - name: Connectivity test
         run: |
