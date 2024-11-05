@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-	"testing"
 
 	cilium "github.com/cilium/proxy/go/cilium/api"
 	"github.com/sirupsen/logrus"
@@ -60,8 +59,9 @@ func (l4rule *PerSelectorPolicy) covers(l3l4rule *PerSelectorPolicy) bool {
 	if l3l4IsRedirect && !l4OnlyIsRedirect {
 		// Can not skip if l3l4-rule is redirect while l4-only is not
 		return false
-	} else if l3l4IsRedirect && l4OnlyIsRedirect && l3l4rule.Listener != l4rule.Listener {
-		// L3l4 rule has a different listener, it can not be skipped
+	} else if l3l4IsRedirect && l4OnlyIsRedirect &&
+		(l3l4rule.Listener != l4rule.Listener || l3l4rule.Priority != l4rule.Priority) {
+		// L3l4 rule has a different listener or priority, it can not be skipped
 		return false
 	}
 
@@ -504,7 +504,7 @@ func (l4 *L4Filter) GetPort() uint16 {
 }
 
 // Equals returns true if two L4Filters are equal
-func (l4 *L4Filter) Equals(_ *testing.T, bL4 *L4Filter) bool {
+func (l4 *L4Filter) Equals(bL4 *L4Filter) bool {
 	if l4.Port == bL4.Port &&
 		l4.EndPort == bL4.EndPort &&
 		l4.PortName == bL4.PortName &&
@@ -529,14 +529,24 @@ func (l4 *L4Filter) Equals(_ *testing.T, bL4 *L4Filter) bool {
 }
 
 // ChangeState allows caller to revert changes made by (multiple) toMapState call(s)
+// All fields are maps so we can pass this by value.
 type ChangeState struct {
-	Adds    Keys        // Added or modified keys, if not nil
-	Deletes Keys        // deleted keys, if not nil
-	Old     MapStateMap // Old values of all modified or deleted keys, if not nil
+	Adds    Keys                  // Added or modified keys, if not nil
+	Deletes Keys                  // deleted keys, if not nil
+	old     map[Key]mapStateEntry // Old values of all modified or deleted keys, if not nil
+}
+
+// NewRevertState returns an empty ChangeState suitable for reverting MapState changes.
+// The private 'old' field is initialized so that old state can be restored if need be.
+func NewRevertState() ChangeState {
+	return ChangeState{
+		Adds: make(Keys),
+		old:  make(map[Key]mapStateEntry),
+	}
 }
 
 func (c *ChangeState) Empty() bool {
-	return len(c.Adds)+len(c.Deletes)+len(c.Old) == 0
+	return len(c.Adds)+len(c.Deletes)+len(c.old) == 0
 }
 
 // toMapState converts a single filter into a MapState entries added to 'p.PolicyMapState'.
@@ -548,7 +558,7 @@ func (c *ChangeState) Empty() bool {
 // 'redirects' is the map of currently realized redirects, it is used to find the proxy port for any redirects.
 // p.SelectorCache is used as Identities interface during this call, which only has GetPrefix() that
 // needs no lock.
-func (l4 *L4Filter) toMapState(p *EndpointPolicy, features policyFeatures, redirects map[string]uint16, changes ChangeState) {
+func (l4 *L4Filter) toMapState(p *EndpointPolicy, features policyFeatures, changes ChangeState) {
 	port := l4.Port
 	proto := l4.U8Proto
 
@@ -588,9 +598,10 @@ func (l4 *L4Filter) toMapState(p *EndpointPolicy, features policyFeatures, redir
 		wildcardRule = l4.PerSelectorPolicies[l4.wildcard]
 	}
 
+	isL4Wildcard := (l4.Port != 0 || l4.PortName != "") && l4.wildcard != nil
 	for cs, currentRule := range l4.PerSelectorPolicies {
 		// have wildcard and this is an L3L4 key?
-		isL3L4withWildcardPresent := (l4.Port != 0 || l4.PortName != "") && l4.wildcard != nil && cs != l4.wildcard
+		isL3L4withWildcardPresent := isL4Wildcard && cs != l4.wildcard
 
 		if isL3L4withWildcardPresent && wildcardRule.covers(currentRule) {
 			logger.WithField(logfields.EndpointSelector, cs).Debug("ToMapState: Skipping L3/L4 key due to existing L4-only key")
@@ -600,6 +611,7 @@ func (l4 *L4Filter) toMapState(p *EndpointPolicy, features policyFeatures, redir
 		isDenyRule := currentRule != nil && currentRule.IsDeny
 		isRedirect := currentRule.IsRedirect()
 		listener := currentRule.GetListener()
+		priority := currentRule.GetPriority()
 		if !isDenyRule && isL3L4withWildcardPresent && !isRedirect {
 			// Inherit the redirect status from the wildcard rule.
 			// This is now needed as 'covers()' can pass non-redirect L3L4 rules
@@ -608,27 +620,27 @@ func (l4 *L4Filter) toMapState(p *EndpointPolicy, features policyFeatures, redir
 			// L4-only rule.
 			isRedirect = wildcardRule.IsRedirect()
 			listener = wildcardRule.GetListener()
+			priority = wildcardRule.GetPriority()
 		}
 		hasAuth, authType := currentRule.GetAuthType()
 		var proxyPort uint16
 		if isRedirect {
-			var exists bool
-			proxyID := ProxyID(uint16(p.PolicyOwner.GetID()), l4.Ingress, string(l4.Protocol), port, listener)
-			proxyPort, exists = redirects[proxyID]
-			if !exists {
+			var err error
+			proxyPort, err = p.LookupRedirectPort(l4.Ingress, string(l4.Protocol), port, listener)
+			if err != nil {
 				// Skip unrealized redirects; this happens routineously just
 				// before new redirects are realized. Once created, we are called
 				// again.
-				logger.WithField(logfields.EndpointSelector, cs).Debugf("Skipping unrealized redirect %s (%v)", proxyID, redirects)
+				logger.WithError(err).WithField(logfields.EndpointSelector, cs).Debugf("Skipping unrealized redirect")
 				continue
 			}
 		}
-		entry := NewMapStateEntry(cs, l4.RuleOrigin[cs], proxyPort, currentRule.GetListener(), currentRule.GetPriority(), isDenyRule, hasAuth, authType)
+		entry := newMapStateEntry(cs, l4.RuleOrigin[cs], proxyPort, priority, isDenyRule, hasAuth, authType)
 
 		if cs.IsWildcard() {
 			for _, keyToAdd := range keysToAdd {
 				keyToAdd.Identity = 0
-				p.policyMapState.denyPreferredInsertWithChanges(keyToAdd, entry, features, changes)
+				p.policyMapState.insertWithChanges(keyToAdd, entry, features, changes)
 
 				if port == 0 {
 					// Allow-all
@@ -660,15 +672,15 @@ func (l4 *L4Filter) toMapState(p *EndpointPolicy, features policyFeatures, redir
 		for _, id := range idents {
 			for _, keyToAdd := range keysToAdd {
 				keyToAdd.Identity = id
-				p.policyMapState.denyPreferredInsertWithChanges(keyToAdd, entry, features, changes)
+				p.policyMapState.insertWithChanges(keyToAdd, entry, features, changes)
 				// If Cilium is in dual-stack mode then the "World" identity
 				// needs to be split into two identities to represent World
 				// IPv6 and IPv4 traffic distinctly from one another.
 				if id == identity.ReservedIdentityWorld && option.Config.IsDualStack() {
 					keyToAdd.Identity = identity.ReservedIdentityWorldIPv4
-					p.policyMapState.denyPreferredInsertWithChanges(keyToAdd, entry, features, changes)
+					p.policyMapState.insertWithChanges(keyToAdd, entry, features, changes)
 					keyToAdd.Identity = identity.ReservedIdentityWorldIPv6
-					p.policyMapState.denyPreferredInsertWithChanges(keyToAdd, entry, features, changes)
+					p.policyMapState.insertWithChanges(keyToAdd, entry, features, changes)
 				}
 			}
 		}
@@ -677,7 +689,7 @@ func (l4 *L4Filter) toMapState(p *EndpointPolicy, features policyFeatures, redir
 		log.WithFields(logrus.Fields{
 			logfields.PolicyKeysAdded:   changes.Adds,
 			logfields.PolicyKeysDeleted: changes.Deletes,
-			logfields.PolicyEntriesOld:  changes.Old,
+			logfields.PolicyEntriesOld:  changes.old,
 		}).Debug("ToMapChange changes")
 	}
 }
@@ -1106,7 +1118,7 @@ func addL4Filter(policyCtx PolicyContext,
 	ctx *SearchContext, resMap L4PolicyMap,
 	p api.PortProtocol, proto api.L4Proto,
 	filterToMerge *L4Filter,
-	ruleLabels labels.LabelArray) error {
+) error {
 
 	existingFilter := resMap.ExactLookup(p.Port, uint16(p.EndPort), string(proto))
 	if existingFilter == nil {
@@ -1144,16 +1156,17 @@ type L4PolicyMap interface {
 	IngressCoversContext(ctx *SearchContext) api.Decision
 	EgressCoversContext(ctx *SearchContext) api.Decision
 	ForEach(func(l4 *L4Filter) bool)
-	Equals(t *testing.T, bMap L4PolicyMap) bool
-	Diff(t *testing.T, expectedMap L4PolicyMap) string
+	TestingOnlyEquals(bMap L4PolicyMap) bool
+	TestingOnlyDiff(expectedMap L4PolicyMap) string
 	Len() int
 }
 
 // NewL4PolicyMap creates an new L4PolicMap.
 func NewL4PolicyMap() L4PolicyMap {
 	return &l4PolicyMap{
-		namedPortMap: make(map[string]*L4Filter),
-		rangePortMap: bitlpm.NewUintTrie[uint32, map[portProtoKey]*L4Filter](),
+		namedPortMap:   make(map[string]*L4Filter),
+		rangePortMap:   make(map[portProtoKey]*L4Filter),
+		rangePortIndex: bitlpm.NewUintTrie[uint32, map[portProtoKey]struct{}](),
 	}
 }
 
@@ -1161,8 +1174,9 @@ func NewL4PolicyMap() L4PolicyMap {
 // set of values. The initMap argument does not support port ranges.
 func NewL4PolicyMapWithValues(initMap map[string]*L4Filter) L4PolicyMap {
 	l4M := &l4PolicyMap{
-		namedPortMap: make(map[string]*L4Filter),
-		rangePortMap: bitlpm.NewUintTrie[uint32, map[portProtoKey]*L4Filter](),
+		namedPortMap:   make(map[string]*L4Filter),
+		rangePortMap:   make(map[portProtoKey]*L4Filter),
+		rangePortIndex: bitlpm.NewUintTrie[uint32, map[portProtoKey]struct{}](),
 	}
 	for k, v := range initMap {
 		portProtoSlice := strings.Split(k, "/")
@@ -1186,16 +1200,13 @@ type l4PolicyMap struct {
 	// level, because they can only be resolved at the endpoint/identity
 	// level. Named ports cannot have ranges.
 	namedPortMap map[string]*L4Filter
-	// rangePortMap has to keep a map of L4Filters rather than
-	// a single L4Filter reference so that the l4PolicyMap does
-	// not merge L4Filter that are not the same port range, but
-	// share an overlapping range in the trie.
-	rangePortMap *bitlpm.UintTrie[uint32, map[portProtoKey]*L4Filter]
-	// rangeMapLen counts the number of unique L4Filters in
-	// the rangePortMap. It must be tracked separately from
-	// rangePortMap as L4Filters are split up when
-	// the port range length is not a power of two.
-	rangeMapLen int
+	// rangePortMap is a map of all L4Filters indexed by their port-
+	// protocol.
+	rangePortMap map[portProtoKey]*L4Filter
+	// rangePortIndex is an index of all L4Filters so that
+	// L4Filters that have overlapping port ranges can be looked up
+	// by with a single port.
+	rangePortIndex *bitlpm.UintTrie[uint32, map[portProtoKey]struct{}]
 }
 
 func parsePortProtocol(port, protocol string) (uint16, uint8) {
@@ -1226,22 +1237,21 @@ func (l4M *l4PolicyMap) Upsert(port string, endPort uint16, protocol string, l4 
 		endPort: endPort,
 		proto:   protoU,
 	}
-	var upsertHappened bool
-	for _, mp := range PortRangeToMaskedPorts(portU, endPort) {
-		k := makePolicyMapKey(mp.port, mp.mask, protoU)
-		prefix := 32 - uint(bits.TrailingZeros16(mp.mask))
-		portProtoMap, ok := l4M.rangePortMap.ExactLookup(prefix, k)
-		if !ok {
-			portProtoMap = make(map[portProtoKey]*L4Filter)
-			l4M.rangePortMap.Upsert(prefix, k, portProtoMap)
-		}
-		if !upsertHappened {
-			if _, ok := portProtoMap[ppK]; !ok {
-				l4M.rangeMapLen += 1
-				upsertHappened = true
+	_, indexExists := l4M.rangePortMap[ppK]
+	l4M.rangePortMap[ppK] = l4
+	// We do not need to reindex a key that already exists,
+	// even if the filter changed.
+	if !indexExists {
+		for _, mp := range PortRangeToMaskedPorts(portU, endPort) {
+			k := makePolicyMapKey(mp.port, mp.mask, protoU)
+			prefix := 32 - uint(bits.TrailingZeros16(mp.mask))
+			portProtoSet, ok := l4M.rangePortIndex.ExactLookup(prefix, k)
+			if !ok {
+				portProtoSet = make(map[portProtoKey]struct{})
+				l4M.rangePortIndex.Upsert(prefix, k, portProtoSet)
 			}
+			portProtoSet[ppK] = struct{}{}
 		}
-		portProtoMap[ppK] = l4
 	}
 }
 
@@ -1258,23 +1268,21 @@ func (l4M *l4PolicyMap) Delete(port string, endPort uint16, protocol string) {
 		endPort: endPort,
 		proto:   protoU,
 	}
-	var deleteHappened bool
-	for _, mp := range PortRangeToMaskedPorts(portU, endPort) {
-		k := makePolicyMapKey(mp.port, mp.mask, protoU)
-		prefix := 32 - uint(bits.TrailingZeros16(mp.mask))
-		portProtoMap, ok := l4M.rangePortMap.ExactLookup(prefix, k)
-		if !ok {
-			return
-		}
-		if _, ok := portProtoMap[ppK]; ok {
-			delete(portProtoMap, ppK)
-			if !deleteHappened {
-				l4M.rangeMapLen -= 1
-				deleteHappened = true
+	_, indexExists := l4M.rangePortMap[ppK]
+	delete(l4M.rangePortMap, ppK)
+	// Only delete the index if the key exists.
+	if indexExists {
+		for _, mp := range PortRangeToMaskedPorts(portU, endPort) {
+			k := makePolicyMapKey(mp.port, mp.mask, protoU)
+			prefix := 32 - uint(bits.TrailingZeros16(mp.mask))
+			portProtoSet, ok := l4M.rangePortIndex.ExactLookup(prefix, k)
+			if !ok {
+				return
 			}
-		}
-		if len(portProtoMap) == 0 {
-			l4M.rangePortMap.Delete(prefix, k)
+			delete(portProtoSet, ppK)
+			if len(portProtoSet) == 0 {
+				l4M.rangePortIndex.Delete(prefix, k)
+			}
 		}
 	}
 }
@@ -1291,18 +1299,7 @@ func (l4M *l4PolicyMap) ExactLookup(port string, endPort uint16, protocol string
 		endPort: endPort,
 		proto:   protoU,
 	}
-	for _, mp := range PortRangeToMaskedPorts(portU, endPort) {
-		k := makePolicyMapKey(mp.port, mp.mask, protoU)
-		prefix := 32 - uint(bits.TrailingZeros16(mp.mask))
-		portProtoMap, ok := l4M.rangePortMap.ExactLookup(prefix, k)
-		if !ok {
-			return nil
-		}
-		if l4, ok := portProtoMap[ppK]; ok {
-			return l4
-		}
-	}
-	return nil
+	return l4M.rangePortMap[ppK]
 }
 
 // MatchesLabels checks if a given port, protocol, and labels matches
@@ -1318,13 +1315,16 @@ func (l4M *l4PolicyMap) MatchesLabels(port, protocol string, labels labels.Label
 
 	portU, protoU := parsePortProtocol(port, protocol)
 	l4PortProtoKeys := make(map[portProtoKey]struct{})
-	l4M.rangePortMap.Ancestors(32, makePolicyMapKey(portU, 0xffff, protoU),
-		func(_ uint, _ uint32, portProtoMap map[portProtoKey]*L4Filter) bool {
-			for k, v := range portProtoMap {
-				if _, ok := l4PortProtoKeys[k]; !ok {
-					match, isDeny = v.matchesLabels(labels)
-					if isDeny {
-						return false
+	l4M.rangePortIndex.Ancestors(32, makePolicyMapKey(portU, 0xffff, protoU),
+		func(_ uint, _ uint32, portProtoSet map[portProtoKey]struct{}) bool {
+			for k := range portProtoSet {
+				v, ok := l4M.rangePortMap[k]
+				if ok {
+					if _, ok := l4PortProtoKeys[k]; !ok {
+						match, isDeny = v.matchesLabels(labels)
+						if isDeny {
+							return false
+						}
 					}
 				}
 			}
@@ -1336,23 +1336,19 @@ func (l4M *l4PolicyMap) MatchesLabels(port, protocol string, labels labels.Label
 // ForEach iterates over all L4Filters in the l4PolicyMap.
 func (l4M *l4PolicyMap) ForEach(fn func(l4 *L4Filter) bool) {
 	for _, f := range l4M.namedPortMap {
-		fn(f)
-	}
-	l4PortProtoKeys := make(map[portProtoKey]struct{})
-	l4M.rangePortMap.ForEach(func(prefix uint, key uint32, portPortoMap map[portProtoKey]*L4Filter) bool {
-		for k, v := range portPortoMap {
-			// We check for redundant L4Filters, because we split them apart in the index.
-			if _, ok := l4PortProtoKeys[k]; !ok {
-				fn(v)
-				l4PortProtoKeys[k] = struct{}{}
-			}
+		if !fn(f) {
+			return
 		}
-		return true
-	})
+	}
+	for _, v := range l4M.rangePortMap {
+		if !fn(v) {
+			return
+		}
+	}
 }
 
 // Equals returns true if both L4PolicyMaps are equal.
-func (l4M *l4PolicyMap) Equals(_ *testing.T, bMap L4PolicyMap) bool {
+func (l4M *l4PolicyMap) TestingOnlyEquals(bMap L4PolicyMap) bool {
 	if l4M.Len() != bMap.Len() {
 		return false
 	}
@@ -1363,14 +1359,14 @@ func (l4M *l4PolicyMap) Equals(_ *testing.T, bMap L4PolicyMap) bool {
 			port = fmt.Sprintf("%d", l4.Port)
 		}
 		l4B := bMap.ExactLookup(port, l4.EndPort, string(l4.Protocol))
-		equal = l4.Equals(nil, l4B)
+		equal = l4.Equals(l4B)
 		return equal
 	})
 	return equal
 }
 
 // Diff returns the difference between to L4PolicyMaps.
-func (l4M *l4PolicyMap) Diff(_ *testing.T, expected L4PolicyMap) (res string) {
+func (l4M *l4PolicyMap) TestingOnlyDiff(expected L4PolicyMap) (res string) {
 	res += "Missing (-), Unexpected (+):\n"
 	expected.ForEach(func(eV *L4Filter) bool {
 		port := eV.PortName
@@ -1379,7 +1375,7 @@ func (l4M *l4PolicyMap) Diff(_ *testing.T, expected L4PolicyMap) (res string) {
 		}
 		oV := l4M.ExactLookup(port, eV.Port, string(eV.Protocol))
 		if oV != nil {
-			if !eV.Equals(nil, oV) {
+			if !eV.Equals(oV) {
 				res += "- " + eV.String() + "\n"
 				res += "+ " + oV.String() + "\n"
 			}
@@ -1407,7 +1403,7 @@ func (l4M *l4PolicyMap) Len() int {
 	if l4M == nil {
 		return 0
 	}
-	return len(l4M.namedPortMap) + l4M.rangeMapLen
+	return len(l4M.namedPortMap) + len(l4M.rangePortMap)
 }
 
 type policyFeatures uint8
@@ -1631,14 +1627,18 @@ func (l4Policy *L4Policy) AccumulateMapChanges(l4 *L4Filter, cs CachedSelector, 
 		var proxyPort uint16
 		if redirect {
 			var err error
-			proxyPort, err = epPolicy.PolicyOwner.LookupRedirectPort(l4.Ingress, string(l4.Protocol), port, listener)
+			proxyPort, err = epPolicy.LookupRedirectPort(l4.Ingress, string(l4.Protocol), port, listener)
 			if err != nil {
-				// This happens for new redirects that have not been realized
-				// yet. The accumulated changes should only be consumed after new
-				// redirects have been realized. ConsumeMapChanges then maps this
-				// invalid value to the real redirect port before the entry is
-				// visible to the endpoint package.
-				proxyPort = unrealizedRedirectPort
+				log.WithFields(logrus.Fields{
+					logfields.EndpointSelector: cs,
+					logfields.Port:             port,
+					logfields.Protocol:         proto,
+					logfields.TrafficDirection: direction,
+					logfields.IsRedirect:       redirect,
+					logfields.Listener:         listener,
+					logfields.ListenerPriority: priority,
+				}).Warn("AccumulateMapChanges: Missing redirect.")
+				continue
 			}
 		}
 		var keysToAdd []Key
@@ -1646,7 +1646,7 @@ func (l4Policy *L4Policy) AccumulateMapChanges(l4 *L4Filter, cs CachedSelector, 
 			keysToAdd = append(keysToAdd,
 				KeyForDirection(direction).WithPortProtoPrefix(proto, mp.port, uint8(bits.LeadingZeros16(^mp.mask))))
 		}
-		value := NewMapStateEntry(cs, derivedFrom, proxyPort, listener, priority, isDeny, hasAuth, authType)
+		value := newMapStateEntry(cs, derivedFrom, proxyPort, priority, isDeny, hasAuth, authType)
 
 		if option.Config.Debug {
 			authString := "default"
@@ -1666,7 +1666,7 @@ func (l4Policy *L4Policy) AccumulateMapChanges(l4 *L4Filter, cs CachedSelector, 
 				logfields.ListenerPriority: priority,
 			}).Debug("AccumulateMapChanges")
 		}
-		epPolicy.policyMapChanges.AccumulateMapChanges(cs, adds, deletes, keysToAdd, value)
+		epPolicy.policyMapChanges.AccumulateMapChanges(adds, deletes, keysToAdd, value)
 	}
 }
 
@@ -1674,6 +1674,7 @@ func (l4Policy *L4Policy) AccumulateMapChanges(l4 *L4Filter, cs CachedSelector, 
 func (l4Policy *L4Policy) SyncMapChanges(l4 *L4Filter, txn *versioned.Tx) {
 	// SelectorCache may not be called into while holding this lock!
 	l4Policy.mutex.RLock()
+
 	for epPolicy := range l4Policy.users {
 		epPolicy.policyMapChanges.SyncMapChanges(txn)
 	}
