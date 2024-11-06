@@ -158,7 +158,7 @@ jobs:
           # Port forward Relay
           cilium hubble port-forward&
           sleep 10s
-          [[ $(pgrep -f "^cilium.*hubble.*port-forward$" | wc -l) == 1 ]]
+          nc -nvz 127.0.0.1 4245
 
           # Run connectivity test
           cilium connectivity test --test-concurrency=3 --all-flows --collect-sysdump-on-failure --external-target amazon.com. \

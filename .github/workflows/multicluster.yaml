@@ -250,7 +250,7 @@ jobs:
           # Port forward Relay
           cilium --context "${{ steps.contexts.outputs.cluster1 }}" hubble port-forward&
           sleep 10s
-          [[ $(pgrep -f "^cilium.*hubble.*port-forward$" | wc -l) == 1 ]]
+          nc -nvz 127.0.0.1 4245
 
           # Run connectivity test
           cilium --context "${{ steps.contexts.outputs.cluster1 }}" connectivity test --test-concurrency=5 \

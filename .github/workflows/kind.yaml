@@ -82,7 +82,7 @@ jobs:
         run: |
           cilium hubble port-forward&
           sleep 10s
-          [[ $(pgrep -f "^cilium.*hubble.*port-forward$" | wc -l) == 1 ]]
+          nc -nvz 127.0.0.1 4245
 
       - name: Set up external targets
         id: external_targets
@@ -160,7 +160,7 @@ jobs:
         run: |
           cilium hubble port-forward&
           sleep 10s
-          [[ $(pgrep -f "^cilium.*hubble.*port-forward$" | wc -l) == 1 ]]
+          nc -nvz 127.0.0.1 4245
 
       - name: Connectivity test
         run: |
