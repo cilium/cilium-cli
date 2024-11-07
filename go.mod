@@ -12,7 +12,7 @@ replace (
 	sigs.k8s.io/controller-tools => github.com/cilium/controller-tools v0.8.0-2
 )
 
-require github.com/cilium/cilium v1.17.0-pre.2
+require github.com/cilium/cilium v1.17.0-pre.2.0.20241107004524-bce68e12b646
 
 require (
 	cel.dev/expr v0.16.0 // indirect
@@ -130,7 +130,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.0 // indirect
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b // indirect
-	github.com/osrg/gobgp/v3 v3.29.0 // indirect
+	github.com/osrg/gobgp/v3 v3.31.0 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.2 // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
@@ -209,7 +209,7 @@ require (
 	k8s.io/component-base v0.31.2 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20240423202451-8948a665c108 // indirect
-	k8s.io/kubectl v0.31.1 // indirect
+	k8s.io/kubectl v0.31.2 // indirect
 	k8s.io/utils v0.0.0-20240921022957-49e7df575cb6 // indirect
 	oras.land/oras-go v1.2.5 // indirect
 	sigs.k8s.io/controller-runtime v0.19.0 // indirect
