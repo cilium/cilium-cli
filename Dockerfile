@@ -18,7 +18,7 @@ COPY --from=builder --chown=root:root --chmod=755 /etc/ssl/certs/ca-certificates
 COPY --from=builder /go/src/github.com/cilium/cilium-cli/cilium /usr/local/bin/cilium
 
 # cilium-cli-ci is based on ubuntu with cloud CLIs
-FROM ubuntu:24.04@sha256:99c35190e22d294cdace2783ac55effc69d32896daaa265f0bbedbcde4fbe3e5 AS cilium-cli-ci
+FROM ubuntu:24.04@sha256:278628f08d4979fb9af9ead44277dbc9c92c2465922310916ad0c46ec9999295 AS cilium-cli-ci
 ENTRYPOINT []
 LABEL maintainer="maintainer@cilium.io"
 WORKDIR /root/app
