@@ -20,7 +20,7 @@ concurrency:
 jobs:
   build-and-push-prs:
     if: ${{ github.repository == 'cilium/cilium-cli' }}
-    environment: ci
+    environment: ${{ matrix.gh-env }}
     runs-on: ubuntu-24.04
     strategy:
       matrix:
@@ -28,9 +28,11 @@ jobs:
           - name: cilium-cli
             dockerfile: ./Dockerfile
             platforms: linux/amd64,linux/arm64
+            gh-env: release
           - name: cilium-cli-ci
             dockerfile: ./Dockerfile
             platforms: linux/amd64
+            gh-env: ci
 
     steps:
       - name: Set up Docker Buildx
