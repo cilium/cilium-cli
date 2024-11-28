@@ -58,7 +58,8 @@ runs:
       uses: actions/setup-go@41dfa10bad2bb2ae585af6ee5bb4d7d973ad74ed # v5.1.0
       if: ${{ steps.build-cli.outputs.path != '' }}
       with:
-        go-version: '1.23.3'
+        # renovate: datasource=golang-version depName=go
+        go-version: 1.23.3
         cache: true
         cache-dependency-path: '${{ steps.build-cli.outputs.go-sum-path }}'
 
