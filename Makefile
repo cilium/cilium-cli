@@ -7,7 +7,7 @@ GO_TAGS ?=
 TARGET=cilium
 INSTALL = $(QUIET)install
 BINDIR ?= /usr/local/bin
-CILIUM_VERSION=$(shell curl -s https://raw.githubusercontent.com/cilium/cilium/main/stable.txt)
+CILIUM_VERSION=v$(shell ls vendor/github.com/cilium/charts/ | grep -E "cilium-[0-9]+\.[0-9]+\.[0-9]+\.tgz" | sort -V | tail -n 1 | sed -E 's/cilium-([0-9]+\.[0-9]+\.[0-9]+).tgz/\1/')
 CLI_VERSION=$(shell git describe --tags --always)
 STRIP_DEBUG=-w -s
 ifdef DEBUG
