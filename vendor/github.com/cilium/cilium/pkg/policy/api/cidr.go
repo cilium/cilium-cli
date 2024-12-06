@@ -44,6 +44,12 @@ type CIDRRule struct {
 	// +kubebuilder:validation:OneOf
 	CIDRGroupRef CIDRGroupRef `json:"cidrGroupRef,omitempty"`
 
+	// CIDRGroupSelector selects CiliumCIDRGroups by their labels,
+	// rather than by name.
+	//
+	// +kubebuilder:validation:OneOf
+	CIDRGroupSelector *slim_metav1.LabelSelector `json:"cidrGroupSelector,omitempty"`
+
 	// ExceptCIDRs is a list of IP blocks which the endpoint subject to the rule
 	// is not allowed to initiate connections to. These CIDR prefixes should be
 	// contained within Cidr, using ExceptCIDRs together with CIDRGroupRef is not
@@ -161,7 +167,7 @@ func (s CIDRRuleSlice) GetAsEndpointSelectors() EndpointSelectorSlice {
 		}
 
 		// add the "main" label:
-		// either a CIDR or CIDRGroupRef
+		// either a CIDR, CIDRGroupRef, or CIDRGroupSelector
 		if r.Cidr != "" {
 			var lbl labels.Label
 			switch r.Cidr {
@@ -190,6 +196,8 @@ func (s CIDRRuleSlice) GetAsEndpointSelectors() EndpointSelectorSlice {
 				Key:      lbl.GetExtendedKey(),
 				Operator: slim_metav1.LabelSelectorOpExists,
 			})
+		} else if r.CIDRGroupSelector != nil {
+			ls = *NewESFromK8sLabelSelector(labels.LabelSourceCIDRGroupKeyPrefix, r.CIDRGroupSelector).LabelSelector
 		} else {
 			// should never be hit, but paranoia
 			continue
