@@ -43,10 +43,10 @@ binary releases.
 
 | Release                                                                | Maintained | Compatible Cilium Versions |
 |------------------------------------------------------------------------|------------|----------------------------|
-| [v0.16.20](https://github.com/cilium/cilium-cli/releases/tag/v0.16.20) | Yes        | Cilium 1.15 and newer      |
+| [v0.16.21](https://github.com/cilium/cilium-cli/releases/tag/v0.16.21) | Yes        | Cilium 1.15 and newer      |
 | [v0.15.22](https://github.com/cilium/cilium-cli/releases/tag/v0.15.22) | Yes        | Cilium 1.14 (*)            |
 
-Note: 
+Note:
 - [v0.15.22](https://github.com/cilium/cilium-cli/releases/tag/v0.15.22) can
   still be used for Cilium 1.15 and newer if Gateway API support is not enabled.
 
@@ -232,27 +232,27 @@ To install Cilium while automatically detected:
     Jan  6 13:41:30.509: 10.0.0.11:59414 -> 10.0.0.166:8080 to-endpoint FORWARDED (TCP Flags: ACK)
     ✅ client pod client-9f579495f-b2pcq was able to communicate with service echo-same-node
 
-#### Network Performance test 
+#### Network Performance test
 
     cilium connectivity perf
     🔥 Network Performance Test Summary:
     --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     📋 Scenario        | Node       | Test            | Duration        | Min             | Mean            | Max             | P50             | P90             | P99             | Transaction rate OP/s
     --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-    📋 pod-to-pod      | same-node  | TCP_RR          | 1s              | 16µs            | 32.39µs         | 1.567ms         | 20µs            | 52µs            | 97µs            | 30696.13    
-    📋 pod-to-pod      | same-node  | UDP_RR          | 1s              | 14µs            | 29.86µs         | 4.41ms          | 17µs            | 47µs            | 97µs            | 33251.51    
-    📋 pod-to-pod      | same-node  | TCP_CRR         | 1s              | 290µs           | 512.1µs         | 13.413ms        | 467µs           | 626µs           | 980µs           | 1949.69     
-    📋 pod-to-pod      | other-node | TCP_RR          | 1s              | 350µs           | 692.85µs        | 3.543ms         | 631µs           | 1.001ms         | 1.483ms         | 1438.69     
-    📋 pod-to-pod      | other-node | UDP_RR          | 1s              | 312µs           | 865.83µs        | 8.731ms         | 605µs           | 1.444ms         | 6ms             | 1150.79     
-    📋 pod-to-pod      | other-node | TCP_CRR         | 1s              | 959µs           | 2.15805ms       | 7.677ms         | 1.555ms         | 5.425ms         | 7.133ms         | 461.78      
+    📋 pod-to-pod      | same-node  | TCP_RR          | 1s              | 16µs            | 32.39µs         | 1.567ms         | 20µs            | 52µs            | 97µs            | 30696.13
+    📋 pod-to-pod      | same-node  | UDP_RR          | 1s              | 14µs            | 29.86µs         | 4.41ms          | 17µs            | 47µs            | 97µs            | 33251.51
+    📋 pod-to-pod      | same-node  | TCP_CRR         | 1s              | 290µs           | 512.1µs         | 13.413ms        | 467µs           | 626µs           | 980µs           | 1949.69
+    📋 pod-to-pod      | other-node | TCP_RR          | 1s              | 350µs           | 692.85µs        | 3.543ms         | 631µs           | 1.001ms         | 1.483ms         | 1438.69
+    📋 pod-to-pod      | other-node | UDP_RR          | 1s              | 312µs           | 865.83µs        | 8.731ms         | 605µs           | 1.444ms         | 6ms             | 1150.79
+    📋 pod-to-pod      | other-node | TCP_CRR         | 1s              | 959µs           | 2.15805ms       | 7.677ms         | 1.555ms         | 5.425ms         | 7.133ms         | 461.78
     --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     -------------------------------------------------------------------------------------
     📋 Scenario        | Node       | Test            | Duration        | Throughput Mb/s
     -------------------------------------------------------------------------------------
-    📋 pod-to-pod      | same-node  | TCP_STREAM      | 1s              | 631.58       
-    📋 pod-to-pod      | same-node  | UDP_STREAM      | 1s              | 458.66       
-    📋 pod-to-pod      | other-node | TCP_STREAM      | 1s              | 411.43       
-    📋 pod-to-pod      | other-node | UDP_STREAM      | 1s              | 144.44       
+    📋 pod-to-pod      | same-node  | TCP_STREAM      | 1s              | 631.58
+    📋 pod-to-pod      | same-node  | UDP_STREAM      | 1s              | 458.66
+    📋 pod-to-pod      | other-node | TCP_STREAM      | 1s              | 411.43
+    📋 pod-to-pod      | other-node | UDP_STREAM      | 1s              | 144.44
     -------------------------------------------------------------------------------------
 
 

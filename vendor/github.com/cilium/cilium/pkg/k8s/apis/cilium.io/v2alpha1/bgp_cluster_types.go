@@ -108,9 +108,13 @@ type CiliumBGPPeer struct {
 	// PeerASN is the ASN of the peer BGP router.
 	// Supports extended 32bit ASNs.
 	//
+	// If peerASN is 0, the BGP OPEN message validation of ASN will be disabled and
+	// ASN will be determined based on peer's OPEN message.
+	//
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=4294967295
+	// +kubebuilder:default=0
 	PeerASN *int64 `json:"peerASN,omitempty"`
 
 	// PeerConfigRef is a reference to a peer configuration resource.
@@ -153,7 +157,8 @@ type CiliumBGPClusterConfigStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-// Conditions for CiliumBGPClusterConfig
+// Conditions for CiliumBGPClusterConfig. When you add a new condition, don't
+// forget to update the AllBGPClusterConfigConditions list as well.
 const (
 	// Node selector selects nothing
 	BGPClusterConfigConditionNoMatchingNode = "cilium.io/NoMatchingNode"
@@ -162,3 +167,9 @@ const (
 	// ClusterConfig with conflicting nodeSelector present
 	BGPClusterConfigConditionConflictingClusterConfigs = "cilium.io/ConflictingClusterConfig"
 )
+
+var AllBGPClusterConfigConditions = []string{
+	BGPClusterConfigConditionNoMatchingNode,
+	BGPClusterConfigConditionMissingPeerConfigs,
+	BGPClusterConfigConditionConflictingClusterConfigs,
+}

@@ -31,6 +31,7 @@ type PerfParameters struct {
 	RR          bool
 	UDP         bool
 	Image       string
+	NetQos      bool
 }
 
 type Parameters struct {
@@ -86,6 +87,8 @@ type Parameters struct {
 	NodesWithoutCiliumIPs  []nodesWithoutCiliumIP
 	JunitFile              string
 	JunitProperties        map[string]string
+	ImpersonateAs          string
+	ImpersonateGroups      []string
 
 	IncludeConnDisruptTest        bool
 	ConnDisruptTestSetup          bool
@@ -95,6 +98,8 @@ type Parameters struct {
 
 	ExpectedDropReasons []string
 	ExpectedXFRMErrors  []string
+
+	LogCheckLevels []string
 
 	FlushCT               bool
 	SecondaryNetworkIface string
@@ -109,6 +114,7 @@ type Parameters struct {
 	ConnectTimeout time.Duration
 	RequestTimeout time.Duration
 	CurlInsecure   bool
+	CurlParallel   uint
 
 	CollectSysdumpOnFailure bool
 	SysdumpOptions          sysdump.Options

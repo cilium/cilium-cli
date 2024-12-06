@@ -145,7 +145,7 @@ func NewWithOptions(opts Options, cells ...cell.Cell) *Hive {
 	// and adds all config flags. Invokes are delayed until Start() is
 	// called.
 	for _, cell := range cells {
-		if err := cell.Apply(h.container); err != nil {
+		if err := cell.Apply(h.container, h.container); err != nil {
 			panic(fmt.Sprintf("Failed to apply cell: %s", err))
 		}
 	}
@@ -335,7 +335,7 @@ func (h *Hive) Start(log *slog.Logger, ctx context.Context) error {
 
 	defer close(h.fatalOnTimeout(ctx))
 
-	log.Info("Starting")
+	log.Info("Starting hive")
 	start := time.Now()
 	err := h.lifecycle.Start(log, ctx)
 	if err == nil {

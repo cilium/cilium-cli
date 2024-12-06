@@ -5,6 +5,7 @@ package check
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"net"
@@ -48,6 +49,9 @@ type ConnectivityTest struct {
 
 	// Features contains the features enabled on the running Cilium cluster
 	Features features.Set
+
+	// ClusterName is the identifier of the local cluster.
+	ClusterName string
 
 	// Parameters to the test suite, specified by the CLI user.
 	params Parameters
@@ -507,7 +511,7 @@ func (ct *ConnectivityTest) report() error {
 		return fmt.Errorf("[%s] %d tests failed", ct.params.TestNamespace, nf)
 	}
 
-	if ct.params.Perf {
+	if ct.params.Perf && !ct.params.PerfParameters.NetQos {
 		ct.Header(fmt.Sprintf("🔥 Network Performance Test Summary [%s]:", ct.params.TestNamespace))
 		ct.Logf("%s", strings.Repeat("-", 200))
 		ct.Logf("📋 %-15s | %-10s | %-15s | %-15s | %-15s | %-15s | %-15s | %-15s | %-15s | %-15s | %-15s", "Scenario", "Node", "Test", "Duration", "Min", "Mean", "Max", "P50", "P90", "P99", "Transaction rate OP/s")
@@ -824,7 +828,7 @@ func (ct *ConnectivityTest) initClients(ctx context.Context) error {
 	if ct.params.MultiCluster != "" {
 		multiClusterClientLock.Lock()
 		defer multiClusterClientLock.Unlock()
-		dst, err := k8s.NewClient(ct.params.MultiCluster, "", ct.params.CiliumNamespace)
+		dst, err := k8s.NewClient(ct.params.MultiCluster, "", ct.params.CiliumNamespace, ct.params.ImpersonateAs, ct.params.ImpersonateGroups)
 		if err != nil {
 			return fmt.Errorf("unable to create Kubernetes client for remote cluster %q: %w", ct.params.MultiCluster, err)
 		}
@@ -904,13 +908,16 @@ func (ct *ConnectivityTest) DetectMinimumCiliumVersion(ctx context.Context) (*se
 	for name, ciliumPod := range ct.ciliumPods {
 		podVersion, err := ciliumPod.K8sClient.GetCiliumVersion(ctx, ciliumPod.Pod)
 		if err != nil {
-			return nil, fmt.Errorf("unable to parse cilium version on pod %q: %w", name, err)
+			return nil, fmt.Errorf("unable to parse Cilium version on pod %q: %w", name, err)
 		}
 		if minVersion == nil || podVersion.LT(*minVersion) {
 			minVersion = podVersion
 		}
 	}
 
+	if minVersion == nil {
+		return nil, errors.New("unable to detect minimum Cilium version")
+	}
 	return minVersion, nil
 }
 
@@ -941,11 +948,21 @@ func (ct *ConnectivityTest) CurlCommand(peer TestPeer, ipFam features.IPFamily, 
 		cmd = append(cmd, "-H", fmt.Sprintf("Host: %s", strings.TrimSuffix(host, ".")))
 	}
 
+	numTargets := 1
+	if ct.params.CurlParallel > 0 {
+		numTargets = int(ct.params.CurlParallel)
+		cmd = append(cmd, "--parallel", "--parallel-immediate")
+	}
+
 	cmd = append(cmd, opts...)
-	cmd = append(cmd, fmt.Sprintf("%s://%s%s",
-		peer.Scheme(),
-		net.JoinHostPort(peer.Address(ipFam), fmt.Sprint(peer.Port())),
-		peer.Path()))
+
+	for range numTargets {
+		cmd = append(cmd, fmt.Sprintf("%s://%s%s",
+			peer.Scheme(),
+			net.JoinHostPort(peer.Address(ipFam), fmt.Sprint(peer.Port())),
+			peer.Path()))
+	}
+
 	return cmd
 }
 
