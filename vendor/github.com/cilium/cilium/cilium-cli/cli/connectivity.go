@@ -55,6 +55,8 @@ var tests []string
 func RunE(hooks api.Hooks) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, _ []string) error {
 		params.CiliumNamespace = namespace
+		params.ImpersonateAs = impersonateAs
+		params.ImpersonateGroups = impersonateGroups
 
 		for _, test := range tests {
 			if strings.HasPrefix(test, "!") {
@@ -175,6 +177,9 @@ func newCmdConnectivityTest(hooks api.Hooks) *cobra.Command {
 	cmd.Flags().MarkHidden("expected-drop-reasons")
 	cmd.Flags().StringSliceVar(&params.ExpectedXFRMErrors, "expected-xfrm-errors", defaults.ExpectedXFRMErrors, "List of expected XFRM errors")
 	cmd.Flags().MarkHidden("expected-xfrm-errors")
+
+	cmd.Flags().StringSliceVar(&params.LogCheckLevels, "log-check-levels", defaults.LogCheckLevels, "Log levels to check for in log messages")
+	cmd.Flags().MarkHidden("log-check-levels")
 
 	cmd.Flags().BoolVar(&params.FlushCT, "flush-ct", false, "Flush conntrack of Cilium on each node")
 	cmd.Flags().MarkHidden("flush-ct")

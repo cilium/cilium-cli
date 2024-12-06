@@ -66,6 +66,12 @@ var (
 	//go:embed manifests/client-egress-l7-http-named-port.yaml
 	clientEgressL7HTTPNamedPortPolicyYAML string
 
+	//go:embed manifests/client-egress-tls-sni.yaml
+	clientEgressTLSSNIPolicyYAML string
+
+	//go:embed manifests/client-egress-l7-tls-sni.yaml
+	clientEgressL7TLSSNIPolicyYAML string
+
 	//go:embed manifests/client-egress-l7-tls.yaml
 	clientEgressL7TLSPolicyYAML string
 
@@ -232,6 +238,7 @@ func concurrentTests(connTests []*check.ConnectivityTest) error {
 		clientEgressL7NamedPort{},
 		clientEgressL7TlsDenyWithoutHeaders{},
 		clientEgressL7TlsHeaders{},
+		clientEgressTlsSni{},
 		clientEgressL7SetHeader{},
 		echoIngressAuthAlwaysFail{},
 		echoIngressMutualAuthSpiffe{},
@@ -274,7 +281,7 @@ func finalTests(ct *check.ConnectivityTest) error {
 	return injectTests([]testBuilder{checkLogErrors{}}, ct)
 }
 
-func renderTemplates(param check.Parameters) (map[string]string, error) {
+func renderTemplates(clusterName string, param check.Parameters) (map[string]string, error) {
 	templates := map[string]string{
 		"clientEgressToCIDRExternalPolicyYAML":             clientEgressToCIDRExternalPolicyYAML,
 		"clientEgressToCIDRExternalPolicyKNPYAML":          clientEgressToCIDRExternalPolicyKNPYAML,
@@ -285,12 +292,15 @@ func renderTemplates(param check.Parameters) (map[string]string, error) {
 		"clientEgressL7HTTPPolicyPortRangeYAML":            clientEgressL7HTTPPolicyPortRangeYAML,
 		"clientEgressL7HTTPNamedPortPolicyYAML":            clientEgressL7HTTPNamedPortPolicyYAML,
 		"clientEgressToFQDNsPolicyYAML":                    clientEgressToFQDNsPolicyYAML,
+		"clientEgressTLSSNIPolicyYAML":                     clientEgressTLSSNIPolicyYAML,
+		"clientEgressL7TLSSNIPolicyYAML":                   clientEgressL7TLSSNIPolicyYAML,
 		"clientEgressL7TLSPolicyYAML":                      clientEgressL7TLSPolicyYAML,
 		"clientEgressL7TLSPolicyPortRangeYAML":             clientEgressL7TLSPolicyPortRangeYAML,
 		"clientEgressL7HTTPMatchheaderSecretYAML":          clientEgressL7HTTPMatchheaderSecretYAML,
 		"clientEgressL7HTTPMatchheaderSecretPortRangeYAML": clientEgressL7HTTPMatchheaderSecretPortRangeYAML,
 		"clientEgressL7HTTPExternalYAML":                   clientEgressL7HTTPExternalYAML,
 		"clientEgressNodeLocalDNSYAML":                     clientEgressNodeLocalDNSYAML,
+		"clientEgressOnlyDNSPolicyYAML":                    clientEgressOnlyDNSPolicyYAML,
 		"echoIngressFromCIDRYAML":                          echoIngressFromCIDRYAML,
 		"denyCIDRPolicyYAML":                               denyCIDRPolicyYAML,
 	}
@@ -301,7 +311,13 @@ func renderTemplates(param check.Parameters) (map[string]string, error) {
 
 	renderedTemplates := map[string]string{}
 	for key, temp := range templates {
-		val, err := template.Render(temp, param)
+		val, err := template.Render(temp, struct {
+			check.Parameters
+			ClusterName string
+		}{
+			Parameters:  param,
+			ClusterName: clusterName,
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -317,7 +333,7 @@ func injectTests(tests []testBuilder, connTests ...*check.ConnectivityTest) erro
 	id := 0
 	for i := range tests {
 		if _, ok := templates[connTests[id].Params().TestNamespace]; !ok {
-			nsTemplates, err := renderTemplates(connTests[id].Params())
+			nsTemplates, err := renderTemplates(connTests[id].ClusterName, connTests[id].Params())
 			if err != nil {
 				return err
 			}

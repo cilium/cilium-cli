@@ -28,6 +28,7 @@ import (
 	"github.com/cilium/cilium/pkg/metrics"
 	"github.com/cilium/cilium/pkg/option"
 	"github.com/cilium/cilium/pkg/policy/api"
+	"github.com/cilium/cilium/pkg/spanstat"
 )
 
 // PolicyContext is an interface policy resolution functions use to access the Repository.
@@ -42,7 +43,7 @@ type PolicyContext interface {
 	// GetTLSContext resolves the given 'api.TLSContext' into CA
 	// certs and the public and private keys, using secrets from
 	// k8s or from the local file system.
-	GetTLSContext(tls *api.TLSContext) (ca, public, private string, err error)
+	GetTLSContext(tls *api.TLSContext) (ca, public, private string, inlineSecrets bool, err error)
 
 	// GetEnvoyHTTPRules translates the given 'api.L7Rules' into
 	// the protobuf representation the Envoy can consume. The bool
@@ -81,9 +82,9 @@ func (p *policyContext) GetSelectorCache() *SelectorCache {
 }
 
 // GetTLSContext() returns data for TLS Context via a CertificateManager
-func (p *policyContext) GetTLSContext(tls *api.TLSContext) (ca, public, private string, err error) {
+func (p *policyContext) GetTLSContext(tls *api.TLSContext) (ca, public, private string, inlineSecrets bool, err error) {
 	if p.repo.certManager == nil {
-		return "", "", "", fmt.Errorf("No Certificate Manager set on Policy Repository")
+		return "", "", "", false, fmt.Errorf("No Certificate Manager set on Policy Repository")
 	}
 	return p.repo.certManager.GetTLSContext(context.TODO(), tls, p.ns)
 }
@@ -124,7 +125,15 @@ type PolicyRepository interface {
 	DeleteByResourceLocked(rid ipcachetypes.ResourceID) (ruleSlice, uint64)
 	GetAuthTypes(localID identity.NumericIdentity, remoteID identity.NumericIdentity) AuthTypes
 	GetEnvoyHTTPRules(l7Rules *api.L7Rules, ns string) (*cilium.HttpNetworkPolicyRules, bool)
-	GetPolicyCache() *PolicyCache
+
+	// GetSelectorPolicy computes the SelectorPolicy for a given identity.
+	//
+	// It returns nil if skipRevision is >= than the already calculated version.
+	// This is used to skip policy calculation when a certain revision delta is
+	// known to not affect the given identity. Pass a skipRevision of 0 to force
+	// calculation.
+	GetSelectorPolicy(id *identity.Identity, skipRevision uint64, stats GetPolicyStatistics) (SelectorPolicy, uint64, error)
+
 	GetRevision() uint64
 	GetRulesList() *models.Policy
 	GetSelectorCache() *SelectorCache
@@ -134,8 +143,13 @@ type PolicyRepository interface {
 	Release(rs ruleSlice)
 	ReplaceByResourceLocked(rules api.Rules, resource ipcachetypes.ResourceID) (newRules ruleSlice, oldRules ruleSlice, revision uint64)
 	SearchRLocked(lbls labels.LabelArray) api.Rules
-	SetEnvoyRulesFunc(f func(certificatemanager.SecretManager, *api.L7Rules, string) (*cilium.HttpNetworkPolicyRules, bool))
+	SetEnvoyRulesFunc(f func(certificatemanager.SecretManager, *api.L7Rules, string, string) (*cilium.HttpNetworkPolicyRules, bool))
 	Start()
+}
+
+type GetPolicyStatistics interface {
+	WaitingForPolicyRepository() *spanstat.SpanStat
+	PolicyCalculation() *spanstat.SpanStat
 }
 
 // Repository is a list of policy rules which in combination form the security
@@ -173,12 +187,12 @@ type Repository struct {
 	selectorCache *SelectorCache
 
 	// PolicyCache tracks the selector policies created from this repo
-	policyCache *PolicyCache
+	policyCache *policyCache
 
 	certManager   certificatemanager.CertificateManager
 	secretManager certificatemanager.SecretManager
 
-	getEnvoyHTTPRules func(certificatemanager.SecretManager, *api.L7Rules, string) (*cilium.HttpNetworkPolicyRules, bool)
+	getEnvoyHTTPRules func(certificatemanager.SecretManager, *api.L7Rules, string, string) (*cilium.HttpNetworkPolicyRules, bool)
 }
 
 // Lock acquiers the lock of the whole policy tree.
@@ -216,10 +230,10 @@ func (p *Repository) GetRuleReactionQueue() *eventqueue.EventQueue {
 
 // GetAuthTypes returns the AuthTypes required by the policy between the localID and remoteID
 func (p *Repository) GetAuthTypes(localID, remoteID identity.NumericIdentity) AuthTypes {
-	return p.policyCache.GetAuthTypes(localID, remoteID)
+	return p.policyCache.getAuthTypes(localID, remoteID)
 }
 
-func (p *Repository) SetEnvoyRulesFunc(f func(certificatemanager.SecretManager, *api.L7Rules, string) (*cilium.HttpNetworkPolicyRules, bool)) {
+func (p *Repository) SetEnvoyRulesFunc(f func(certificatemanager.SecretManager, *api.L7Rules, string, string) (*cilium.HttpNetworkPolicyRules, bool)) {
 	p.getEnvoyHTTPRules = f
 }
 
@@ -227,12 +241,7 @@ func (p *Repository) GetEnvoyHTTPRules(l7Rules *api.L7Rules, ns string) (*cilium
 	if p.getEnvoyHTTPRules == nil {
 		return nil, true
 	}
-	return p.getEnvoyHTTPRules(p.secretManager, l7Rules, ns)
-}
-
-// GetPolicyCache() returns the policy cache used by the Repository
-func (p *Repository) GetPolicyCache() *PolicyCache {
-	return p.policyCache
+	return p.getEnvoyHTTPRules(p.secretManager, l7Rules, ns, p.secretManager.GetSecretSyncNamespace())
 }
 
 // NewPolicyRepository creates a new policy repository.
@@ -269,7 +278,7 @@ func NewStoppedPolicyRepository(
 		secretManager:    secretManager,
 	}
 	repo.revision.Store(1)
-	repo.policyCache = NewPolicyCache(repo, idmgr)
+	repo.policyCache = newPolicyCache(repo, idmgr)
 	return repo
 }
 
@@ -315,6 +324,7 @@ func (state *traceState) trace(rules int, ctx *SearchContext) {
 //
 // Must only be called if using [NewStoppedPolicyRepository]
 func (p *Repository) Start() {
+	p.selectorCache.RegisterMetrics()
 	p.repositoryChangeQueue = eventqueue.NewEventQueueBuffered("repository-change-queue", option.Config.PolicyQueueSize)
 	p.ruleReactionQueue = eventqueue.NewEventQueueBuffered("repository-reaction-queue", option.Config.PolicyQueueSize)
 	p.repositoryChangeQueue.Run()
@@ -377,7 +387,6 @@ func (p *Repository) ResolveL4EgressPolicy(ctx *SearchContext) (L4PolicyMap, err
 		return cmp.Compare(a.key.idx, b.key.idx)
 	})
 	result, err := rules.resolveL4EgressPolicy(&policyCtx, ctx)
-
 	if err != nil {
 		return nil, err
 	}
@@ -738,8 +747,7 @@ func (p *Repository) resolvePolicyLocked(securityIdentity *identity.Identity) (*
 	// perform the matching decision again when computing policy for each
 	// protocol layer, which is quite costly in terms of performance.
 	ingressEnabled, egressEnabled,
-		matchingRules :=
-		p.computePolicyEnforcementAndRules(securityIdentity)
+		matchingRules := p.computePolicyEnforcementAndRules(securityIdentity)
 
 	calculatedPolicy := &selectorPolicy{
 		Revision:             p.GetRevision(),
@@ -930,4 +938,38 @@ func wildcardRule(lbls labels.LabelArray, ingress bool) *rule {
 	_ = r.Sanitize()
 
 	return r
+}
+
+// GetSelectorPolicy computes the SelectorPolicy for a given identity.
+//
+// It returns nil if skipRevision is >= than the already calculated version.
+// This is used to skip policy calculation when a certain revision delta is
+// known to not affect the given identity. Pass a skipRevision of 0 to force
+// calculation.
+func (r *Repository) GetSelectorPolicy(id *identity.Identity, skipRevision uint64, stats GetPolicyStatistics) (SelectorPolicy, uint64, error) {
+	stats.WaitingForPolicyRepository().Start()
+	r.RLock()
+	defer r.RUnlock()
+	stats.WaitingForPolicyRepository().End(true)
+
+	rev := r.GetRevision()
+
+	// Do we already have a given revision?
+	// If so, skip calculation.
+	if skipRevision >= rev {
+		return nil, rev, nil
+	}
+
+	stats.PolicyCalculation().Start()
+	// This may call back in to the (locked) repository to generate the
+	// selector policy
+	sp, updated, err := r.policyCache.updateSelectorPolicy(id)
+	stats.PolicyCalculation().EndError(err)
+
+	// If we hit cache, reset the statistics.
+	if !updated {
+		stats.PolicyCalculation().Reset()
+	}
+
+	return sp, rev, nil
 }

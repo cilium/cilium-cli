@@ -26,6 +26,7 @@ import (
 	"golang.org/x/time/rate"
 	"sigs.k8s.io/yaml"
 
+	"github.com/cilium/cilium/api/v1/models"
 	"github.com/cilium/cilium/pkg/backoff"
 	"github.com/cilium/cilium/pkg/defaults"
 	"github.com/cilium/cilium/pkg/lock"
@@ -351,15 +352,11 @@ type etcdClient struct {
 	// purposes, associated with a shorter TTL
 	lockLeaseManager *etcdLeaseManager
 
-	// statusLock protects latestStatusSnapshot and latestErrorStatus for
-	// read/write access
+	// statusLock protects status for read/write access
 	statusLock lock.RWMutex
 
-	// latestStatusSnapshot is a snapshot of the latest etcd cluster status
-	latestStatusSnapshot string
-
-	// latestErrorStatus is the latest error condition of the etcd connection
-	latestErrorStatus error
+	// status is a snapshot of the latest etcd cluster status
+	status models.Status
 
 	extraOptions *ExtraOptions
 
@@ -377,10 +374,14 @@ type etcdClient struct {
 type etcdMutex struct {
 	mutex    *concurrency.Mutex
 	onUnlock func()
+	path     string
 }
 
-func (e *etcdMutex) Unlock(ctx context.Context) error {
+func (e *etcdMutex) Unlock(ctx context.Context) (err error) {
 	e.onUnlock()
+	defer func(duration *spanstat.SpanStat) {
+		increaseMetric(e.path, metricDelete, "Unlock", duration.EndError(err).Total(), err)
+	}(spanstat.Start())
 	return e.mutex.Unlock(ctx)
 }
 
@@ -538,15 +539,18 @@ func connectEtcdClient(ctx context.Context, config *client.Config, cfgPath strin
 	}
 
 	ec := &etcdClient{
-		client:               c,
-		config:               config,
-		configPath:           cfgPath,
-		firstSession:         make(chan struct{}),
-		latestStatusSnapshot: "Waiting for initial connection to be established",
-		stopStatusChecker:    make(chan struct{}),
-		extraOptions:         opts,
-		listBatchSize:        clientOptions.ListBatchSize,
-		statusCheckErrors:    make(chan error, 128),
+		client:       c,
+		config:       config,
+		configPath:   cfgPath,
+		firstSession: make(chan struct{}),
+		status: models.Status{
+			State: models.StatusStateWarning,
+			Msg:   "Waiting for initial connection to be established",
+		},
+		stopStatusChecker: make(chan struct{}),
+		extraOptions:      opts,
+		listBatchSize:     clientOptions.ListBatchSize,
+		statusCheckErrors: make(chan error, 128),
 		logger: log.WithFields(logrus.Fields{
 			"endpoints": config.Endpoints,
 			"config":    cfgPath,
@@ -599,8 +603,8 @@ func (e *etcdClient) asyncConnectEtcdClient(errChan chan<- error) {
 
 	propagateError := func(err error) {
 		e.statusLock.Lock()
-		e.latestStatusSnapshot = "Failed to establish initial connection"
-		e.latestErrorStatus = err
+		e.status.State = models.StatusStateFailure
+		e.status.Msg = fmt.Sprintf("Failed to establish initial connection: %s", err.Error())
 		e.statusLock.Unlock()
 
 		errChan <- err
@@ -712,7 +716,7 @@ func (e *etcdClient) sessionError() (err error) {
 	return
 }
 
-func (e *etcdClient) LockPath(ctx context.Context, path string) (KVLocker, error) {
+func (e *etcdClient) LockPath(ctx context.Context, path string) (locker KVLocker, err error) {
 	// Create the context first, so that the timeout also accounts for the time
 	// possibly required to acquire a new session (if not already established).
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
@@ -723,6 +727,9 @@ func (e *etcdClient) LockPath(ctx context.Context, path string) (KVLocker, error
 		return nil, Hint(err)
 	}
 
+	defer func(duration *spanstat.SpanStat) {
+		increaseMetric(path, metricSet, "Lock", duration.EndError(err).Total(), err)
+	}(spanstat.Start())
 	mu := concurrency.NewMutex(session, path)
 	err = mu.Lock(ctx)
 	if err != nil {
@@ -731,7 +738,7 @@ func (e *etcdClient) LockPath(ctx context.Context, path string) (KVLocker, error
 	}
 
 	release := func() { e.lockLeaseManager.Release(path) }
-	return &etcdMutex{mutex: mu, onUnlock: release}, nil
+	return &etcdMutex{mutex: mu, onUnlock: release, path: path}, nil
 }
 
 func (e *etcdClient) DeletePrefix(ctx context.Context, path string) (err error) {
@@ -809,7 +816,13 @@ reList:
 		kvs, revision, err := e.paginatedList(ctx, scopedLog, w.Prefix)
 		if err != nil {
 			lr.Error(err, -1)
-			scopedLog.WithError(Hint(err)).Warn("Unable to list keys before starting watcher")
+
+			if attempt := errLimiter.Attempt(); attempt < 10 {
+				scopedLog.WithError(Hint(err)).WithField(logfields.Attempt, attempt).Info("Unable to list keys before starting watcher, will retry")
+			} else {
+				scopedLog.WithError(Hint(err)).WithField(logfields.Attempt, attempt).Warn("Unable to list keys before starting watcher, will retry")
+			}
+
 			errLimiter.Wait(ctx)
 			continue
 		}
@@ -1016,6 +1029,7 @@ func (e *etcdClient) statusChecker() {
 	ctx := context.Background()
 
 	var consecutiveQuorumErrors uint
+	var err error
 
 	e.RWMutex.Lock()
 	// Ensure that lastHearbeat is always set to a non-zero value when starting
@@ -1075,25 +1089,27 @@ func (e *etcdClient) statusChecker() {
 
 		switch {
 		case consecutiveQuorumErrors > option.Config.KVstoreMaxConsecutiveQuorumErrors:
-			e.latestErrorStatus = fmt.Errorf("quorum check failed %d times in a row: %w",
-				consecutiveQuorumErrors, quorumError)
-			e.latestStatusSnapshot = e.latestErrorStatus.Error()
+			err = fmt.Errorf("quorum check failed %d times in a row: %w", consecutiveQuorumErrors, quorumError)
+			e.status.State = models.StatusStateFailure
+			e.status.Msg = fmt.Sprintf("Err: %s", err.Error())
 		case len(endpoints) > 0 && ok == 0:
-			e.latestErrorStatus = fmt.Errorf("not able to connect to any etcd endpoints")
-			e.latestStatusSnapshot = e.latestErrorStatus.Error()
+			err = fmt.Errorf("not able to connect to any etcd endpoints")
+			e.status.State = models.StatusStateFailure
+			e.status.Msg = fmt.Sprintf("Err: %s", err.Error())
 		default:
-			e.latestErrorStatus = nil
-			e.latestStatusSnapshot = fmt.Sprintf("etcd: %d/%d connected, leases=%d, lock leases=%d, has-quorum=%s: %s",
+			err = nil
+			e.status.State = models.StatusStateOk
+			e.status.Msg = fmt.Sprintf("etcd: %d/%d connected, leases=%d, lock leases=%d, has-quorum=%s: %s",
 				ok, len(endpoints), e.leaseManager.TotalLeases(), e.lockLeaseManager.TotalLeases(), quorumString, strings.Join(newStatus, "; "))
 		}
 
 		e.statusLock.Unlock()
-		if e.latestErrorStatus != nil {
+		if err != nil {
 			select {
-			case e.statusCheckErrors <- e.latestErrorStatus:
+			case e.statusCheckErrors <- err:
 			default:
 				// Channel's buffer is full, skip sending errors to the channel but log warnings instead
-				log.WithError(e.latestErrorStatus).
+				log.WithError(err).
 					Warning("Status check error channel is full, dropping this error")
 			}
 		}
@@ -1107,11 +1123,14 @@ func (e *etcdClient) statusChecker() {
 	}
 }
 
-func (e *etcdClient) Status() (string, error) {
+func (e *etcdClient) Status() *models.Status {
 	e.statusLock.RLock()
 	defer e.statusLock.RUnlock()
 
-	return e.latestStatusSnapshot, Hint(e.latestErrorStatus)
+	return &models.Status{
+		State: e.status.State,
+		Msg:   e.status.Msg,
+	}
 }
 
 // GetIfLocked returns value of key if the client is still holding the given lock.

@@ -86,6 +86,8 @@ type Parameters struct {
 	NodesWithoutCiliumIPs  []nodesWithoutCiliumIP
 	JunitFile              string
 	JunitProperties        map[string]string
+	ImpersonateAs          string
+	ImpersonateGroups      []string
 
 	IncludeConnDisruptTest        bool
 	ConnDisruptTestSetup          bool
@@ -95,6 +97,8 @@ type Parameters struct {
 
 	ExpectedDropReasons []string
 	ExpectedXFRMErrors  []string
+
+	LogCheckLevels []string
 
 	FlushCT               bool
 	SecondaryNetworkIface string

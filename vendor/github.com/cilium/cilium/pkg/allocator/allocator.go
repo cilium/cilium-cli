@@ -128,7 +128,7 @@ type Allocator struct {
 
 	// remoteCaches is the list of additional remote caches being watched
 	// in addition to the main cache
-	remoteCaches map[string]*RemoteCache
+	remoteCaches map[string]*remoteCache
 
 	// stopGC is the channel used to stop the garbage collector
 	stopGC chan struct{}
@@ -289,9 +289,6 @@ type Backend interface {
 	// Note: not all Backend implementations rely on this, such as the kvstore
 	// backends, and may use leases to expire keys.
 	RunLocksGC(ctx context.Context, staleKeysPrevRound map[string]kvstore.Value) (map[string]kvstore.Value, error)
-
-	// Status returns a human-readable status of the Backend.
-	Status() (string, error)
 }
 
 // NewAllocator creates a new Allocator. Any type can be used as key as long as
@@ -316,7 +313,7 @@ func NewAllocator(typ AllocatorKey, backend Backend, opts ...AllocatorOption) (*
 		localKeys:    newLocalKeys(),
 		stopGC:       make(chan struct{}),
 		suffix:       uuid.New().String()[:10],
-		remoteCaches: map[string]*RemoteCache{},
+		remoteCaches: map[string]*remoteCache{},
 		backoffTemplate: backoff.Exponential{
 			Min:    time.Duration(20) * time.Millisecond,
 			Factor: 2.0,
@@ -931,8 +928,8 @@ func (a *Allocator) Release(ctx context.Context, key AllocatorKey) (lastUse bool
 }
 
 // RunGC scans the kvstore for unused master keys and removes them
-func (a *Allocator) RunGC(rateLimit *rate.Limiter, staleKeysPrevRound map[string]uint64) (map[string]uint64, *GCStats, error) {
-	return a.backend.RunGC(context.TODO(), rateLimit, staleKeysPrevRound, a.min, a.max)
+func (a *Allocator) RunGC(ctx context.Context, rateLimit *rate.Limiter, staleKeysPrevRound map[string]uint64) (map[string]uint64, *GCStats, error) {
+	return a.backend.RunGC(ctx, rateLimit, staleKeysPrevRound, a.min, a.max)
 }
 
 // RunLocksGC scans the kvstore for stale locks and removes them
@@ -951,21 +948,64 @@ func (a *Allocator) DeleteAllKeys() {
 func (a *Allocator) syncLocalKeys() error {
 	// Create a local copy of all local allocations to not require to hold
 	// any locks while performing kvstore operations. Local use can
-	// disappear while we perform the sync but that is fine as worst case,
-	// a master key is created for a slave key that no longer exists. The
-	// garbage collector will remove it again.
+	// disappear while we perform the sync. For master keys this is fine as
+	// the garbage collector will remove it again. However, for slave keys, they
+	// will continue to exist until the kvstore lease expires after the agent is restarted.
+	// To ensure slave keys are not leaked, we do an extra check after the upsert,
+	// to ensure the key is still in use. If it's not in use, we grab the slave key mutex
+	// and hold it until we have released the key knowing that no new usage has started during the operation.
 	ids := a.localKeys.getVerifiedIDs()
+	ctx := context.TODO()
 
-	for id, value := range ids {
-		if err := a.backend.UpdateKey(context.TODO(), id, value, false); err != nil {
-			log.WithError(err).WithFields(logrus.Fields{
-				fieldKey: value,
-				fieldID:  id,
-			}).Warning("Unable to sync key")
-		}
+	for id, key := range ids {
+		a.syncLocalKey(ctx, id, key)
 	}
 
 	return nil
+}
+
+func (a *Allocator) syncLocalKey(ctx context.Context, id idpool.ID, key AllocatorKey) {
+	encodedKey := key.GetKey()
+	if newId := a.localKeys.lookupKey(encodedKey); newId != id {
+		return
+	}
+	err := a.backend.UpdateKey(ctx, id, key, false)
+	if err != nil {
+		log.WithError(err).WithFields(logrus.Fields{
+			fieldKey: key,
+			fieldID:  id,
+		}).Warning("Error updating key")
+	}
+
+	// Check if the key is still in use locally. Given its expected it's still
+	// in use in most cases, we avoid grabbing the slaveKeysMutex here to reduce lock contention.
+	// If it is in use here, we know the slave key is not leaked, and we don't need to do any cleanup.
+	if newId := a.localKeys.lookupKey(encodedKey); newId != idpool.NoID {
+		return
+	}
+
+	a.slaveKeysMutex.Lock()
+	defer a.slaveKeysMutex.Unlock()
+
+	// Check once again that the slave key is unused locally before releasing it,
+	// all while holding the slaveKeysMutex to ensure there are no concurrent allocations or releases.
+	// If the key is still unused, it could mean that the slave key was upserted into the kvstore during "UpdateKey"
+	// after it was previously released. If that is the case, we release it while holding the slaveKeysMutex.
+	if newId := a.localKeys.lookupKey(encodedKey); newId == idpool.NoID {
+		ctx, cancel := context.WithTimeout(ctx, backendOpTimeout)
+		defer cancel()
+		log.WithFields(logrus.Fields{
+			fieldKey: key,
+			fieldID:  id,
+		}).Warning("Releasing now unused key that was re-recreated")
+		err = a.backend.Release(ctx, id, key)
+		if err != nil {
+			log.WithError(err).WithFields(logrus.Fields{
+				fieldKey: key,
+				fieldID:  id,
+			}).Warning("Error releasing unused key")
+		}
+	}
 }
 
 func (a *Allocator) startLocalKeySync() {
@@ -1004,34 +1044,40 @@ type AllocatorEvent struct {
 	Key AllocatorKey
 }
 
-// RemoteCache represents the cache content of an additional kvstore managing
+// remoteCache represents the cache content of an additional kvstore managing
 // identities. The contents are not directly accessible but will be merged into
 // the ForeachCache() function.
-type RemoteCache struct {
+type remoteCache struct {
 	name string
 
 	allocator *Allocator
 	cache     *cache
 
-	watchFunc func(ctx context.Context, remote *RemoteCache, onSync func(context.Context))
+	watchFunc func(ctx context.Context, remote *remoteCache, onSync func(context.Context))
 }
 
-func (a *Allocator) NewRemoteCache(remoteName string, remoteAlloc *Allocator) *RemoteCache {
-	return &RemoteCache{
+type RemoteIDCache interface {
+	NumEntries() int
+	Synced() bool
+	Watch(ctx context.Context, onSync func(context.Context))
+}
+
+func (a *Allocator) NewRemoteCache(remoteName string, remoteAlloc *Allocator) RemoteIDCache {
+	return &remoteCache{
 		name:      remoteName,
 		allocator: remoteAlloc,
 		cache:     &remoteAlloc.mainCache,
 
-		watchFunc: a.WatchRemoteKVStore,
+		watchFunc: a.watchRemoteKVStore,
 	}
 }
 
-// WatchRemoteKVStore starts watching an allocator base prefix the kvstore
+// watchRemoteKVStore starts watching an allocator base prefix the kvstore
 // represents by the provided backend. A local cache of all identities of that
 // kvstore will be maintained in the RemoteCache structure returned and will
 // start being reported in the identities returned by the ForeachCache()
 // function. RemoteName should be unique per logical "remote".
-func (a *Allocator) WatchRemoteKVStore(ctx context.Context, rc *RemoteCache, onSync func(context.Context)) {
+func (a *Allocator) watchRemoteKVStore(ctx context.Context, rc *remoteCache, onSync func(context.Context)) {
 	scopedLog := log.WithField(logfields.ClusterName, rc.name)
 	scopedLog.Info("Starting remote kvstore watcher")
 
@@ -1112,12 +1158,12 @@ func (a *Allocator) RemoveRemoteKVStore(remoteName string) {
 
 // Watch starts watching the remote kvstore and synchronize the identities in
 // the local cache. It blocks until the context is closed.
-func (rc *RemoteCache) Watch(ctx context.Context, onSync func(context.Context)) {
+func (rc *remoteCache) Watch(ctx context.Context, onSync func(context.Context)) {
 	rc.watchFunc(ctx, rc, onSync)
 }
 
 // NumEntries returns the number of entries in the remote cache
-func (rc *RemoteCache) NumEntries() int {
+func (rc *remoteCache) NumEntries() int {
 	if rc == nil {
 		return 0
 	}
@@ -1127,7 +1173,7 @@ func (rc *RemoteCache) NumEntries() int {
 
 // Synced returns whether the initial list of entries has been retrieved from
 // the kvstore, and new events are currently being watched.
-func (rc *RemoteCache) Synced() bool {
+func (rc *remoteCache) Synced() bool {
 	if rc == nil {
 		return false
 	}
@@ -1147,7 +1193,7 @@ func (rc *RemoteCache) Synced() bool {
 
 // close stops watching for identities in the kvstore associated with the
 // remote cache.
-func (rc *RemoteCache) close() {
+func (rc *remoteCache) close() {
 	rc.cache.allocator.Delete()
 }
 
