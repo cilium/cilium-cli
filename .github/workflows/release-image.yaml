@@ -1,0 +1,74 @@
+on:
+  push:
+    tags:
+      - 'v*'
+
+name: Release Image
+
+jobs:
+  build-image:
+    name: Create Release Image
+    runs-on: ubuntu-24.04
+    environment: release
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
+
+      - name: Login to quay.io for release
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_RELEASE_USERNAME }}
+          password: ${{ secrets.QUAY_RELEASE_TOKEN }}
+
+      - name: Checkout Source Code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Release Image Build cilium-cli
+        uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
+        id: docker_build_release
+        with:
+          context: .
+          file: Dockerfile
+          target: cilium-cli
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            quay.io/${{ github.repository_owner }}/cilium-cli:latest
+            quay.io/${{ github.repository_owner }}/cilium-cli:${{ github.ref_name }}
+
+      - name: Release Image digest
+        shell: bash
+        run: |
+          mkdir -p image-digest/
+          echo "quay.io/${{ github.repository_owner }}/cilium-cli:latest@${{ steps.docker_build_release.outputs.digest }}" > image-digest/cilium-cli.txt
+          echo "quay.io/${{ github.repository_owner }}/cilium-cli:${{ github.ref_name }}@${{ steps.docker_build_release.outputs.digest }}" >> image-digest/cilium-cli.txt
+
+      - name: Upload artifact digests
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: image-digest cilium-cli
+          path: image-digest
+          retention-days: 1
+
+  image-digests:
+    name: Display Digests
+    runs-on: ubuntu-24.04
+    needs: [build-image]
+    steps:
+      - name: Downloading Image Digests
+        shell: bash
+        run: |
+          mkdir -p image-digest/
+
+      - name: Download digests of all images built
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          path: image-digest/
+          pattern: "*image-digest *"
+
+      - name: Image Digests Output
+        shell: bash
+        run: |
+          cd image-digest/
+          find -type f | sort | xargs -d '\n' cat
