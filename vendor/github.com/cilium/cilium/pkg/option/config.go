@@ -287,12 +287,6 @@ const (
 	// LoadBalancerProtocolDifferentiation enables support for service protocol differentiation (TCP, UDP, SCTP)
 	LoadBalancerProtocolDifferentiation = "bpf-lb-proto-diff"
 
-	// MaglevTableSize determines the size of the backend table per service
-	MaglevTableSize = "bpf-lb-maglev-table-size"
-
-	// MaglevHashSeed contains the cluster-wide seed for the hash
-	MaglevHashSeed = "bpf-lb-maglev-hash-seed"
-
 	// NodePortBindProtection rejects bind requests to NodePort service ports
 	NodePortBindProtection = "node-port-bind-protection"
 
@@ -855,6 +849,9 @@ const (
 	// endpoints that are no longer alive and healthy.
 	EndpointGCInterval = "endpoint-gc-interval"
 
+	// EndpointRegenInterval is the interval of the periodic endpoint regeneration loop.
+	EndpointRegenInterval = "endpoint-regen-interval"
+
 	// LoopbackIPv4 is the address to use for service loopback SNAT
 	LoopbackIPv4 = "ipv4-service-loopback-address"
 
@@ -1141,6 +1138,10 @@ const (
 
 	// EnableNonDefaultDenyPolicies allows policies to define whether they are operating in default-deny mode
 	EnableNonDefaultDenyPolicies = "enable-non-default-deny-policies"
+
+	// EnableEndpointLockdownOnPolicyOverflow enables endpoint lockdown when an endpoint's
+	// policy map overflows.
+	EnableEndpointLockdownOnPolicyOverflow = "enable-endpoint-lockdown-on-policy-overflow"
 )
 
 // Default string arguments
@@ -1892,12 +1893,6 @@ type DaemonConfig struct {
 	// replies to the client (when needed).
 	EnablePMTUDiscovery bool
 
-	// Maglev backend table size (M) per service. Must be prime number.
-	MaglevTableSize int
-
-	// MaglevHashSeed contains the cluster-wide seed for the hash(es).
-	MaglevHashSeed string
-
 	// NodePortAcceleration indicates whether NodePort should be accelerated
 	// via XDP ("none", "generic", "native", or "best-effort")
 	NodePortAcceleration string
@@ -2243,6 +2238,10 @@ type DaemonConfig struct {
 
 	// EnableSourceIPVerification enables the source ip validation of connection from endpoints to endpoints
 	EnableSourceIPVerification bool
+
+	// EnableEndpointLockdownOnPolicyOverflow enables endpoint lockdown when an endpoint's
+	// policy map overflows.
+	EnableEndpointLockdownOnPolicyOverflow bool
 }
 
 var (
@@ -2852,8 +2851,6 @@ func (c *DaemonConfig) Populate(vp *viper.Viper) {
 	c.EnableSVCSourceRangeCheck = vp.GetBool(EnableSVCSourceRangeCheck)
 	c.EnableHostPort = vp.GetBool(EnableHostPort)
 	c.EnableHostLegacyRouting = vp.GetBool(EnableHostLegacyRouting)
-	c.MaglevTableSize = vp.GetInt(MaglevTableSize)
-	c.MaglevHashSeed = vp.GetString(MaglevHashSeed)
 	c.NodePortBindProtection = vp.GetBool(NodePortBindProtection)
 	c.EnableAutoProtectNodePortRange = vp.GetBool(EnableAutoProtectNodePortRange)
 	c.KubeProxyReplacement = vp.GetString(KubeProxyReplacement)
@@ -3279,6 +3276,9 @@ func (c *DaemonConfig) Populate(vp *viper.Viper) {
 
 	// Enable BGP control plane status reporting
 	c.EnableBGPControlPlaneStatusReport = vp.GetBool(EnableBGPControlPlaneStatusReport)
+
+	// Support failure-mode for policy map overflow
+	c.EnableEndpointLockdownOnPolicyOverflow = vp.GetBool(EnableEndpointLockdownOnPolicyOverflow)
 
 	// Parse node label patterns
 	nodeLabelPatterns := vp.GetStringSlice(ExcludeNodeLabelPatterns)

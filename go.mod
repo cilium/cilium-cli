@@ -12,7 +12,7 @@ replace (
 	sigs.k8s.io/controller-tools => github.com/cilium/controller-tools v0.8.0-2
 )
 
-require github.com/cilium/cilium v1.17.0-pre.3.0.20241206091809-befdbb49a88b
+require github.com/cilium/cilium v1.17.0-pre.3.0.20241206234938-95ee091cd967
 
 require (
 	cel.dev/expr v0.18.0 // indirect
@@ -35,7 +35,7 @@ require (
 	github.com/cilium/ebpf v0.16.1-0.20241119131019-e2607b570f29 // indirect
 	github.com/cilium/hive v0.0.0-20241129122706-af5052cfd6d4 // indirect
 	github.com/cilium/proxy v0.0.0-20241115112946-fb67566cbd95 // indirect
-	github.com/cilium/statedb v0.3.3 // indirect
+	github.com/cilium/statedb v0.3.4 // indirect
 	github.com/cilium/stream v0.0.0-20241203114243-53c3e5d79744 // indirect
 	github.com/cilium/workerpool v1.2.0 // indirect
 	github.com/cloudflare/cfssl v1.6.5 // indirect
