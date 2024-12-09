@@ -7,15 +7,13 @@ GO_TAGS ?=
 TARGET=cilium
 INSTALL = $(QUIET)install
 BINDIR ?= /usr/local/bin
-CILIUM_VERSION=$(shell curl -s https://raw.githubusercontent.com/cilium/cilium/main/stable.txt)
 CLI_VERSION=$(shell git describe --tags --always)
 STRIP_DEBUG=-w -s
 ifdef DEBUG
 	STRIP_DEBUG=
 endif
 GO_BUILD_LDFLAGS ?= $(STRIP_DEBUG) \
-		    -X 'github.com/cilium/cilium/cilium-cli/defaults.CLIVersion=$(CLI_VERSION)' \
-		    -X 'github.com/cilium/cilium/cilium-cli/defaults.Version=$(CILIUM_VERSION)'
+		    -X 'github.com/cilium/cilium/cilium-cli/defaults.CLIVersion=$(CLI_VERSION)'
 
 TEST_TIMEOUT ?= 5s
 RELEASE_UID ?= $(shell id -u)
