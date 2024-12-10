@@ -3,26 +3,41 @@
 # Copyright Authors of Cilium
 # SPDX-License-Identifier: Apache-2.0
 
-FROM docker.io/library/golang:1.23.4-alpine3.19@sha256:5f3336882ad15d10ac1b59fbaba7cb84c35d4623774198b36ae60edeba45fd84 AS builder
+FROM --platform=${BUILDPLATFORM} docker.io/library/golang:1.23.4-alpine3.19@sha256:5f3336882ad15d10ac1b59fbaba7cb84c35d4623774198b36ae60edeba45fd84 AS base
+RUN apk add --no-cache --update ca-certificates git make 
 WORKDIR /go/src/github.com/cilium/cilium-cli
-RUN apk add --no-cache curl git make ca-certificates
+COPY go.* .
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
-RUN make
+
+# xx is a helper for cross-compilation
+FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.5.0@sha256:0c6a569797744e45955f39d4f7538ac344bfb7ebf0a54006a0a4297b153ccf0f AS xx
+
+FROM --platform=${BUILDPLATFORM} base AS builder
+ARG TARGETPLATFORM
+ARG TARGETARCH
+COPY --link --from=xx / /
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    xx-go --wrap && \
+    make && \
+    xx-verify --static /go/src/github.com/cilium/cilium-cli/cilium
 
 # cilium-cli is from scratch only including cilium binaries
-FROM scratch AS cilium-cli
-ENTRYPOINT ["cilium"]
+FROM --platform=${BUILDPLATFORM} scratch AS cilium-cli
+ENTRYPOINT [""]
+USER 1000:1000
 LABEL maintainer="maintainer@cilium.io"
 WORKDIR /root/app
-COPY --from=builder --chown=root:root --chmod=755 /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /go/src/github.com/cilium/cilium-cli/cilium /usr/local/bin/cilium
+COPY --link --from=builder --chown=root:root --chmod=755 /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --link --from=builder --chown=1000:1000 --chmod=755 /go/src/github.com/cilium/cilium-cli/cilium /usr/local/bin/cilium
 
 # cilium-cli-ci is based on ubuntu with cloud CLIs
 FROM ubuntu:24.04@sha256:80dd3c3b9c6cecb9f1667e9290b3bc61b78c2678c02cbdae5f0fea92cc6734ab AS cilium-cli-ci
 ENTRYPOINT []
 LABEL maintainer="maintainer@cilium.io"
 WORKDIR /root/app
-COPY --from=builder /go/src/github.com/cilium/cilium-cli/cilium /usr/local/bin/cilium
+COPY --link --from=builder /go/src/github.com/cilium/cilium-cli/cilium /usr/local/bin/cilium
 
 # Install cloud CLIs. Based on these instructions:
 # - https://cloud.google.com/sdk/docs/install#deb
