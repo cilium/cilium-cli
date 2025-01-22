@@ -153,14 +153,6 @@
       ]
     },
     {
-      "matchPackageNames": [
-        "docker.io/library/busybox"
-      ],
-      "matchPaths": [
-        "Dockerfile"
-      ],
-    },
-    {
       "groupName": "Go",
       "matchDepNames": [
         "go",
