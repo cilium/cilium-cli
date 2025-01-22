@@ -1,177 +1,182 @@
 {
-  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: [
     "config:base",
     ":gitSignOff",
-    "helpers:pinGitHubActionDigests"
+    "helpers:pinGitHubActionDigests",
   ],
+
   // This ensures that the gitAuthor and gitSignOff fields match
-  "gitAuthor": "renovate[bot] <bot@renovateapp.com>",
-  "includePaths": [
+  gitAuthor: "renovate[bot] <bot@renovateapp.com>",
+  includePaths: [
     ".github/workflows/**",
     "action.yaml",
     "defaults/defaults.go",
     "go.mod",
     "go.sum",
     "Dockerfile",
-    "Makefile"
+    "Makefile",
   ],
   postUpdateOptions: [
-    "gomodTidy"
+    "gomodTidy",
   ],
-  "pinDigests": true,
-  "ignorePresets": [":prHourlyLimit2"],
-  "separateMajorMinor": true,
-  "separateMultipleMajor": true,
-  "separateMinorPatch": true,
-  "pruneStaleBranches": true,
-  "baseBranches": [
-    "main"
+  pinDigests: true,
+  ignorePresets: [
+    ":prHourlyLimit2",
   ],
-  "vulnerabilityAlerts": {
-    "enabled": true
+  separateMajorMinor: true,
+  separateMultipleMajor: true,
+  separateMinorPatch: true,
+  pruneStaleBranches: true,
+  baseBranches: [
+    "main",
+  ],
+  vulnerabilityAlerts: {
+    enabled: true,
   },
-  "labels": [
+  labels: [
     "renovate/stop-updating",
     "kind/enhancement",
-    "priority/release-blocker"
+    "priority/release-blocker",
   ],
-  "stopUpdatingLabel": "renovate/stop-updating",
-  "packageRules": [
+  stopUpdatingLabel: "renovate/stop-updating",
+  packageRules: [
     {
-      "groupName": "all github action dependencies",
-      "groupSlug": "all-github-action",
-      "matchPaths": [
+      groupName: "all github action dependencies",
+      groupSlug: "all-github-action",
+      matchPaths: [
         ".github/workflows/**",
-        "action.yaml"
+        "action.yaml",
       ],
-      "matchUpdateTypes": [
+      matchUpdateTypes: [
         "major",
         "minor",
         "digest",
         "patch",
         "pin",
-        "pinDigest"
-      ]
+        "pinDigest",
+      ],
     },
     {
-      "groupName": "all go dependencies main",
-      "groupSlug": "all-go-deps-main",
-      "matchFiles": [
+      groupName: "all go dependencies main",
+      groupSlug: "all-go-deps-main",
+      matchFiles: [
         "go.mod",
-        "go.sum"
+        "go.sum",
       ],
-      "postUpdateOptions": [
+      postUpdateOptions: [
         // update source import paths on major updates
         "gomodUpdateImportPaths",
       ],
-      "matchUpdateTypes": [
+      matchUpdateTypes: [
         "major",
         "minor",
         "digest",
         "patch",
         "pin",
-        "pinDigest"
+        "pinDigest",
       ],
       matchBaseBranches: [
-        "main"
+        "main",
       ],
-      "schedule": [
-        "on friday"
+      schedule: [
+        "on friday",
       ],
     },
     {
       // Avoid updating patch releases of golang in go.mod
-      "enabled": "false",
-      "matchFiles": [
+      enabled: "false",
+      matchFiles: [
         "go.mod",
       ],
-      "matchDepNames": [
-        "go"
+      matchDepNames: [
+        "go",
       ],
-      "matchDatasources": [
-        "golang-version"
+      matchDatasources: [
+        "golang-version",
       ],
-      "matchUpdateTypes": [
-        "patch"
+      matchUpdateTypes: [
+        "patch",
       ],
       matchBaseBranches: [
         "main",
-      ]
+      ],
     },
     {
       // Allow github.com/cilium/cilium to upgrade to prerelease versions.
-      "ignoreUnstable": false,
-      "matchPackageNames": [
+      ignoreUnstable: false,
+      matchPackageNames: [
         "github.com/cilium/cilium",
       ],
     },
     {
       // Images that directly use docker.io/library/golang for building.
-      "groupName": "golang-images",
-      "matchFiles": [
+      groupName: "golang-images",
+      matchFiles: [
         "Dockerfile",
-        "Makefile"
-      ]
+        "Makefile",
+      ],
     },
     {
-      "groupName": "Go",
-      "matchDepNames": [
+      groupName: "Go",
+      matchDepNames: [
         "go",
-        "docker.io/library/golang"
+        "docker.io/library/golang",
       ],
-      "schedule": [
-        "on friday"
-      ]
+      schedule: [
+        "on friday",
+      ],
     },
     {
       // Group golangci-lint updates to overrule grouping of version updates in the GHA files.
       // Without this, golangci-lint updates are not in sync for GHA files and other usages.
-      "groupName": "golangci-lint",
-      "matchDepNames": [
-        "golangci/golangci-lint"
-      ]
+      groupName: "golangci-lint",
+      matchDepNames: [
+        "golangci/golangci-lint",
+      ],
     },
     {
       // Group cilium updates to overrule grouping of version updates in the GHA files.
       // Without this, cilium updates are not in sync for GHA files and other usages.
-      "groupName": "cilium",
-      "matchDepNames": [
-        "cilium/cilium"
-      ]
-    }
-  ],
-  "regexManagers": [
-    {
-      "fileMatch": [
-        "^\\.github/workflows/[^/]+\\.yaml$",
-	"^action.yaml$"
+      groupName: "cilium",
+      matchDepNames: [
+        "cilium/cilium",
       ],
+    },
+  ],
+  regexManagers: [
+    {
+      fileMatch: [
+        "^\\.github/workflows/[^/]+\\.yaml$",
+        "^action.yaml$",
+      ],
+
       // This regex manages version strings in GitHub actions workflow files,
       // similar to the examples shown here:
       //   https://docs.renovatebot.com/modules/manager/regex/#advanced-capture
-      "matchStrings": [
-        "# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s+.+version: (?<currentValue>.*)"
-      ]
+      matchStrings: [
+        "# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s+.+version: (?<currentValue>.*)",
+      ],
     },
     {
-      "fileMatch": [
-        "^Makefile$"
+      fileMatch: [
+        "^Makefile$",
       ],
+
       // This regex manages version strings in the Makefile,
       // similar to the examples shown here:
       //   https://docs.renovatebot.com/modules/manager/regex/#advanced-capture
-      "matchStrings": [
-        "# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s+.+_VERSION = (?<currentValue>.*)\\s+.+_SHA = (?<currentDigest>sha256:[a-f0-9]+)"
-      ]
+      matchStrings: [
+        "# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s+.+_VERSION = (?<currentValue>.*)\\s+.+_SHA = (?<currentDigest>sha256:[a-f0-9]+)",
+      ],
     },
     {
-      "fileMatch": [
-        "^go\\.mod$"
+      fileMatch: [
+        "^go\\.mod$",
       ],
-      "matchStrings": [
-        "// renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s+go (?<currentValue>.*)"
-      ]
+      matchStrings: [
+        "// renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s+go (?<currentValue>.*)",
+      ],
     },
-  ]
+  ],
 }
