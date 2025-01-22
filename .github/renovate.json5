@@ -1,7 +1,7 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: [
-    "config:base",
+    "config:recommended",
     ":gitSignOff",
     "helpers:pinGitHubActionDigests",
   ],
@@ -44,7 +44,7 @@
     {
       groupName: "all github action dependencies",
       groupSlug: "all-github-action",
-      matchPaths: [
+      matchFileNames: [
         ".github/workflows/**",
         "action.yaml",
       ],
@@ -86,7 +86,7 @@
     {
       // Avoid updating patch releases of golang in go.mod
       enabled: "false",
-      matchFiles: [
+      matchFileNames: [
         "go.mod",
       ],
       matchDepNames: [
@@ -112,7 +112,7 @@
     {
       // Images that directly use docker.io/library/golang for building.
       groupName: "golang-images",
-      matchFiles: [
+      matchFileNames: [
         "Dockerfile",
         "Makefile",
       ],
@@ -144,8 +144,9 @@
       ],
     },
   ],
-  regexManagers: [
+  customManagers: [
     {
+      customType: "regex",
       fileMatch: [
         "^\\.github/workflows/[^/]+\\.yaml$",
         "^action.yaml$",
@@ -159,6 +160,7 @@
       ],
     },
     {
+      customType: "regex",
       fileMatch: [
         "^Makefile$",
       ],
@@ -171,6 +173,7 @@
       ],
     },
     {
+      customType: "regex",
       fileMatch: [
         "^go\\.mod$",
       ],
