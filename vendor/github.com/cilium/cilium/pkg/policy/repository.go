@@ -4,12 +4,10 @@
 package policy
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"maps"
-	"slices"
 	"sync/atomic"
 
 	cilium "github.com/cilium/proxy/go/cilium/api"
@@ -119,7 +117,7 @@ type PolicyRepository interface {
 	// This is used to skip policy calculation when a certain revision delta is
 	// known to not affect the given identity. Pass a skipRevision of 0 to force
 	// calculation.
-	GetSelectorPolicy(id *identity.Identity, skipRevision uint64, stats GetPolicyStatistics) (SelectorPolicy, uint64)
+	GetSelectorPolicy(id *identity.Identity, skipRevision uint64, stats GetPolicyStatistics) (SelectorPolicy, uint64, error)
 
 	GetRevision() uint64
 	GetRulesList() *models.Policy
@@ -169,26 +167,6 @@ type Repository struct {
 	getEnvoyHTTPRules func(certificatemanager.SecretManager, *api.L7Rules, string, string) (*cilium.HttpNetworkPolicyRules, bool)
 
 	metricsManager api.PolicyMetrics
-}
-
-// Lock acquiers the lock of the whole policy tree.
-func (p *Repository) Lock() {
-	p.mutex.Lock()
-}
-
-// Unlock releases the lock of the whole policy tree.
-func (p *Repository) Unlock() {
-	p.mutex.Unlock()
-}
-
-// RLock acquiers the read lock of the whole policy tree.
-func (p *Repository) RLock() {
-	p.mutex.RLock()
-}
-
-// RUnlock releases the read lock of the whole policy tree.
-func (p *Repository) RUnlock() {
-	p.mutex.RUnlock()
 }
 
 // GetSelectorCache() returns the selector cache used by the Repository
@@ -273,135 +251,6 @@ func (state *traceState) trace(rules int, ctx *SearchContext) {
 	}
 }
 
-// ResolveL4IngressPolicy resolves the L4 ingress policy for a set of endpoints
-// by searching the policy repository for `PortRule` rules that are attached to
-// a `Rule` where the EndpointSelector matches `ctx.To`. `ctx.From` takes no effect and
-// is ignored in the search.  If multiple `PortRule` rules are found, all rules
-// are merged together. If rules contains overlapping port definitions, the first
-// rule found in the repository takes precedence.
-//
-// TODO: Coalesce l7 rules?
-//
-// Caller must release resources by calling Detach() on the returned map!
-//
-// NOTE: This is only called from unit tests, but from multiple packages.
-func (p *Repository) ResolveL4IngressPolicy(ctx *SearchContext) (L4PolicyMap, error) {
-	policyCtx := policyContext{
-		repo: p,
-		ns:   ctx.To.Get(labels.LabelSourceK8sKeyPrefix + k8sConst.PodNamespaceLabel),
-	}
-	rules := make(ruleSlice, 0, len(p.rules))
-	for _, rule := range p.rules {
-		rules = append(rules, rule)
-	}
-	// Sort for unit tests
-	slices.SortFunc[ruleSlice](rules, func(a, b *rule) int {
-		return cmp.Compare(a.key.idx, b.key.idx)
-	})
-	result, err := rules.resolveL4IngressPolicy(&policyCtx, ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
-}
-
-// ResolveL4EgressPolicy resolves the L4 egress policy for a set of endpoints
-// by searching the policy repository for `PortRule` rules that are attached to
-// a `Rule` where the EndpointSelector matches `ctx.From`. `ctx.To` takes no effect and
-// is ignored in the search.  If multiple `PortRule` rules are found, all rules
-// are merged together. If rules contains overlapping port definitions, the first
-// rule found in the repository takes precedence.
-//
-// Caller must release resources by calling Detach() on the returned map!
-//
-// NOTE: This is only called from unit tests, but from multiple packages.
-func (p *Repository) ResolveL4EgressPolicy(ctx *SearchContext) (L4PolicyMap, error) {
-	policyCtx := policyContext{
-		repo: p,
-		ns:   ctx.From.Get(labels.LabelSourceK8sKeyPrefix + k8sConst.PodNamespaceLabel),
-	}
-	rules := make(ruleSlice, 0, len(p.rules))
-	for _, rule := range p.rules {
-		rules = append(rules, rule)
-	}
-	slices.SortFunc[ruleSlice](rules, func(a, b *rule) int {
-		return cmp.Compare(a.key.idx, b.key.idx)
-	})
-	result, err := rules.resolveL4EgressPolicy(&policyCtx, ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
-}
-
-// AllowsIngressRLocked evaluates the policy repository for the provided search
-// context and returns the verdict for ingress. If no matching policy allows for
-// the  connection, the request will be denied. The policy repository mutex must
-// be held.
-//
-// NOTE: This is only called from unit tests, but from multiple packages.
-func (p *Repository) AllowsIngressRLocked(ctx *SearchContext) api.Decision {
-	// Lack of DPorts in the SearchContext means L3-only search
-	if len(ctx.DPorts) == 0 {
-		newCtx := *ctx
-		newCtx.DPorts = []*models.Port{{
-			Port:     0,
-			Protocol: models.PortProtocolANY,
-		}}
-		ctx = &newCtx
-	}
-
-	ctx.PolicyTrace("Tracing %s", ctx.String())
-	ingressPolicy, err := p.ResolveL4IngressPolicy(ctx)
-	if err != nil {
-		log.WithError(err).Warn("Evaluation error while resolving L4 ingress policy")
-	}
-
-	verdict := api.Denied
-	if err == nil && ingressPolicy.Len() > 0 {
-		verdict = ingressPolicy.IngressCoversContext(ctx)
-	}
-
-	ctx.PolicyTrace("Ingress verdict: %s", verdict.String())
-	ingressPolicy.Detach(p.GetSelectorCache())
-
-	return verdict
-}
-
-// AllowsEgressRLocked evaluates the policy repository for the provided search
-// context and returns the verdict. If no matching policy allows for the
-// connection, the request will be denied. The policy repository mutex must be
-// held.
-//
-// NOTE: This is only called from unit tests, but from multiple packages.
-func (p *Repository) AllowsEgressRLocked(ctx *SearchContext) api.Decision {
-	// Lack of DPorts in the SearchContext means L3-only search
-	if len(ctx.DPorts) == 0 {
-		newCtx := *ctx
-		newCtx.DPorts = []*models.Port{{
-			Port:     0,
-			Protocol: models.PortProtocolANY,
-		}}
-		ctx = &newCtx
-	}
-
-	ctx.PolicyTrace("Tracing %s\n", ctx.String())
-	egressPolicy, err := p.ResolveL4EgressPolicy(ctx)
-	if err != nil {
-		log.WithError(err).Warn("Evaluation error while resolving L4 egress policy")
-	}
-	verdict := api.Denied
-	if err == nil && egressPolicy.Len() > 0 {
-		verdict = egressPolicy.EgressCoversContext(ctx)
-	}
-
-	ctx.PolicyTrace("Egress verdict: %s", verdict.String())
-	egressPolicy.Detach(p.GetSelectorCache())
-	return verdict
-}
-
 func (p *Repository) Search(lbls labels.LabelArray) (api.Rules, uint64) {
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
@@ -484,7 +333,7 @@ func (p *Repository) newRule(apiRule api.Rule, key ruleKey) *rule {
 		Rule: apiRule,
 		key:  key,
 	}
-	r.subjectSelector, _ = p.selectorCache.AddIdentitySelector(r, r.Labels, *r.getSelector())
+	r.subjectSelector, _ = p.selectorCache.AddIdentitySelector(r, makeStringLabels(r.Labels), *r.getSelector())
 	return r
 }
 
@@ -519,36 +368,6 @@ func (p *Repository) Iterate(f func(rule *api.Rule)) {
 	}
 }
 
-// deleteByLabelsLocked deletes all rules in the policy repository which
-// contain the specified labels. Returns the revision of the policy repository
-// after deleting the rules, as well as now many rules were deleted.
-func (p *Repository) deleteByLabelsLocked(lbls labels.LabelArray) (ruleSlice, uint64, int) {
-	deletedRules := ruleSlice{}
-
-	for key, r := range p.rules {
-		if r.Labels.Contains(lbls) {
-			deletedRules = append(deletedRules, r)
-			p.del(key)
-		}
-	}
-	l := len(deletedRules)
-
-	if l > 0 {
-		p.BumpRevision()
-	}
-
-	return deletedRules, p.GetRevision(), l
-}
-
-// deleteByLabels deletes all rules in the policy repository which contain the
-// specified labels
-func (p *Repository) deleteByLabels(lbls labels.LabelArray) (uint64, int) {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
-	_, rev, numDeleted := p.deleteByLabelsLocked(lbls)
-	return rev, numDeleted
-}
-
 // JSONMarshalRules returns a slice of policy rules as string in JSON
 // representation
 func JSONMarshalRules(rules api.Rules) string {
@@ -557,37 +376,6 @@ func JSONMarshalRules(rules api.Rules) string {
 		return err.Error()
 	}
 	return string(b)
-}
-
-// GetRulesMatching returns whether any of the rules in a repository contain a
-// rule with labels matching the labels in the provided LabelArray.
-//
-// Must be called with p.mutex held
-func (p *Repository) GetRulesMatching(lbls labels.LabelArray) (ingressMatch bool, egressMatch bool) {
-	ingressMatch = false
-	egressMatch = false
-	for _, r := range p.rules {
-		rulesMatch := r.getSelector().Matches(lbls)
-		if rulesMatch {
-			if len(r.Ingress) > 0 {
-				ingressMatch = true
-			}
-			if len(r.IngressDeny) > 0 {
-				ingressMatch = true
-			}
-			if len(r.Egress) > 0 {
-				egressMatch = true
-			}
-			if len(r.EgressDeny) > 0 {
-				egressMatch = true
-			}
-		}
-
-		if ingressMatch && egressMatch {
-			return
-		}
-	}
-	return
 }
 
 // GetRevision returns the revision of the policy repository
@@ -826,10 +614,10 @@ func wildcardRule(lbls labels.LabelArray, ingress bool) *rule {
 // This is used to skip policy calculation when a certain revision delta is
 // known to not affect the given identity. Pass a skipRevision of 0 to force
 // calculation.
-func (r *Repository) GetSelectorPolicy(id *identity.Identity, skipRevision uint64, stats GetPolicyStatistics) (SelectorPolicy, uint64) {
+func (r *Repository) GetSelectorPolicy(id *identity.Identity, skipRevision uint64, stats GetPolicyStatistics) (SelectorPolicy, uint64, error) {
 	stats.WaitingForPolicyRepository().Start()
-	r.RLock()
-	defer r.RUnlock()
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
 	stats.WaitingForPolicyRepository().End(true)
 
 	rev := r.GetRevision()
@@ -837,7 +625,7 @@ func (r *Repository) GetSelectorPolicy(id *identity.Identity, skipRevision uint6
 	// Do we already have a given revision?
 	// If so, skip calculation.
 	if skipRevision >= rev {
-		return nil, rev
+		return nil, rev, nil
 	}
 
 	stats.SelectorPolicyCalculation().Start()
@@ -851,7 +639,7 @@ func (r *Repository) GetSelectorPolicy(id *identity.Identity, skipRevision uint6
 		stats.SelectorPolicyCalculation().Reset()
 	}
 
-	return sp, rev
+	return sp, rev, err
 }
 
 // ReplaceByResource replaces all rules by resource, returning the complete set of affected endpoints.
@@ -863,8 +651,8 @@ func (p *Repository) ReplaceByResource(rules api.Rules, resource ipcachetypes.Re
 		return
 	}
 
-	p.Lock()
-	defer p.Unlock()
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
 
 	affectedIDs = &set.Set[identity.NumericIdentity]{}
 	oldRules := maps.Clone(p.rulesByResource[resource]) // need to clone as `p.del()` mutates this
@@ -901,8 +689,8 @@ func (p *Repository) ReplaceByResource(rules api.Rules, resource ipcachetypes.Re
 // where the "key" is a list of labels, possibly multiple, that should be removed before
 // installing the new rules.
 func (p *Repository) ReplaceByLabels(rules api.Rules, searchLabelsList []labels.LabelArray) (affectedIDs *set.Set[identity.NumericIdentity], rev uint64, oldRuleCnt int) {
-	p.Lock()
-	defer p.Unlock()
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
 
 	var oldRules []*rule
 	affectedIDs = &set.Set[identity.NumericIdentity]{}
