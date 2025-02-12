@@ -190,7 +190,8 @@ jobs:
             --version "${{ env.cilium_version }}" \
             --context "${{ steps.contexts.outputs.cluster1 }}" \
             --set loadBalancer.l7.backend=envoy \
-            --set tls.secretsBackend=k8s \
+            --set=tls.readSecretsOnlyFromSecretsNamespace=true \
+            --set=tls.secretSync.enabled=true \
             --set cluster.name="${{ env.clusterName1 }}" \
             --set cluster.id=1 \
             --set bpf.monitorAggregation=none \
@@ -209,7 +210,8 @@ jobs:
             --version "${{ env.cilium_version }}" \
             --context "${{ steps.contexts.outputs.cluster2 }}" \
             --set loadBalancer.l7.backend=envoy \
-            --set tls.secretsBackend=k8s \
+            --set=tls.readSecretsOnlyFromSecretsNamespace=true \
+            --set=tls.secretSync.enabled=true \
             --set cluster.name="${{ env.clusterName2 }}" \
             --set cluster.id=2 \
             --set bpf.monitorAggregation=none \

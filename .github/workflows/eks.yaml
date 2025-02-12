@@ -141,7 +141,8 @@ jobs:
             --set cluster.name="${{ env.clusterName }}" \
             --wait=false \
             --set loadBalancer.l7.backend=envoy \
-            --set tls.secretsBackend=k8s \
+            --set=tls.readSecretsOnlyFromSecretsNamespace=true \
+            --set=tls.secretSync.enabled=true \
             --set bpf.monitorAggregation=none
 
           # Enable Relay

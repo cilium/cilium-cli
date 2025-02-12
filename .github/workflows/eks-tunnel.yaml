@@ -142,7 +142,8 @@ jobs:
             --set bpf.monitorAggregation=none \
             --datapath-mode=tunnel \
             --set loadBalancer.l7.backend=envoy \
-            --set tls.secretsBackend=k8s \
+            --set=tls.readSecretsOnlyFromSecretsNamespace=true \
+            --set=tls.secretSync.enabled=true \
             --set ipam.mode=cluster-pool
 
           # Enable Relay
