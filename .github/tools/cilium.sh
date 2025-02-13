@@ -12,4 +12,5 @@ docker run \
   -v ~/.aws:/root/.aws \
   -v ~/.azure:/root/.azure \
   -v ~/.config/gcloud:/root/.config/gcloud \
+  -e GITHUB_WORKFLOW_REF="$GITHUB_WORKFLOW_REF" \
   "$CILIUM_CLI_IMAGE_REPO":"$CILIUM_CLI_IMAGE_TAG" cilium "$@"
