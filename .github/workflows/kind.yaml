@@ -278,6 +278,7 @@ jobs:
         run: |
           cilium upgrade --reuse-values --context $CLUSTER1 \
             --wait=true \
+            --version=${{ env.cilium_version }} \
             --set clustermesh.useAPIServer=true \
             --set clustermesh.apiserver.service.type=NodePort \
             --set clustermesh.apiserver.tls.server.extraDnsNames={"$CLUSTER1.mesh.cilium.io,$CLUSTER2.mesh.cilium.io"}
@@ -294,6 +295,7 @@ jobs:
         run: |
           cilium upgrade --reuse-values --context $CLUSTER2 \
             --wait=true \
+            --version=${{ env.cilium_version }} \
             --set clustermesh.useAPIServer=true \
             --set clustermesh.apiserver.service.type=NodePort \
             --set clustermesh.apiserver.tls.server.extraDnsNames={"$CLUSTER1.mesh.cilium.io,$CLUSTER2.mesh.cilium.io"}
