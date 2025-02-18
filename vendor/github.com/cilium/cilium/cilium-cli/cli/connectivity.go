@@ -13,9 +13,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hmarr/codeowners"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	assets "github.com/cilium/cilium"
 	"github.com/cilium/cilium/cilium-cli/api"
 	"github.com/cilium/cilium/cilium-cli/connectivity"
 	"github.com/cilium/cilium/cilium-cli/connectivity/check"
@@ -76,8 +78,12 @@ func RunE(hooks api.Hooks) func(cmd *cobra.Command, args []string) error {
 		}
 
 		logger := check.NewConcurrentLogger(params.Writer, params.TestConcurrency)
+		owners, err := codeowners.ParseFile(strings.NewReader(assets.CodeOwnersRaw))
+		if err != nil {
+			return fmt.Errorf("🐛 Failed to parse CODEOWNERS. Developer BUG? %w", err)
+		}
 
-		connTests, err := newConnectivityTests(params, hooks, logger)
+		connTests, err := newConnectivityTests(params, hooks, logger, owners)
 		if err != nil {
 			return err
 		}
@@ -171,6 +177,7 @@ func newCmdConnectivityTest(hooks api.Hooks) *cobra.Command {
 	sysdump.InitSysdumpFlags(cmd, &params.SysdumpOptions, "sysdump-", hooks)
 
 	cmd.Flags().BoolVar(&params.IncludeConnDisruptTest, "include-conn-disrupt-test", false, "Include conn disrupt test")
+	cmd.Flags().BoolVar(&params.IncludeConnDisruptTestNSTraffic, "include-conn-disrupt-test-ns-traffic", false, "Include conn disrupt test for NS traffic")
 	cmd.Flags().BoolVar(&params.ConnDisruptTestSetup, "conn-disrupt-test-setup", false, "Set up conn disrupt test dependencies")
 	cmd.Flags().StringVar(&params.ConnDisruptTestRestartsPath, "conn-disrupt-test-restarts-path", "/tmp/cilium-conn-disrupt-restarts", "Conn disrupt test temporary result file (used internally)")
 	cmd.Flags().StringVar(&params.ConnDisruptTestXfrmErrorsPath, "conn-disrupt-test-xfrm-errors-path", "/tmp/cilium-conn-disrupt-xfrm-errors", "Conn disrupt test temporary result file (used internally)")
@@ -181,6 +188,8 @@ func newCmdConnectivityTest(hooks api.Hooks) *cobra.Command {
 	cmd.Flags().StringSliceVar(&params.ExpectedXFRMErrors, "expected-xfrm-errors", defaults.ExpectedXFRMErrors, "List of expected XFRM errors")
 	cmd.Flags().MarkHidden("expected-xfrm-errors")
 
+	cmd.Flags().BoolVar(&params.LogCodeOwners, "log-code-owners", defaults.LogCodeOwners, "Log code owners for tests that fail")
+	cmd.Flags().MarkHidden("log-code-owners")
 	cmd.Flags().StringSliceVar(&params.LogCheckLevels, "log-check-levels", defaults.LogCheckLevels, "Log levels to check for in log messages")
 	cmd.Flags().MarkHidden("log-check-levels")
 
@@ -246,6 +255,7 @@ func newConnectivityTests(
 	params check.Parameters,
 	hooks api.Hooks,
 	logger *check.ConcurrentLogger,
+	owners codeowners.Ruleset,
 ) ([]*check.ConnectivityTest, error) {
 	if params.TestConcurrency < 1 {
 		fmt.Printf("--test-concurrency parameter value is invalid [%d], using 1 instead\n", params.TestConcurrency)
@@ -262,7 +272,7 @@ func newConnectivityTests(
 		}
 		params.ExternalDeploymentPort += i
 		params.EchoServerHostPort += i
-		cc, err := check.NewConnectivityTest(k8sClient, params, hooks, logger)
+		cc, err := check.NewConnectivityTest(k8sClient, params, hooks, logger, owners)
 		if err != nil {
 			return nil, err
 		}

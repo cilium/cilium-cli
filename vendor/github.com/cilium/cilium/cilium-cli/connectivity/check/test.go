@@ -199,13 +199,13 @@ func (t *Test) setup(ctx context.Context) error {
 
 	// Apply Secrets to the cluster.
 	if err := t.applySecrets(ctx); err != nil {
-		t.CiliumLogs(ctx)
+		t.ContainerLogs(ctx)
 		return fmt.Errorf("applying Secrets: %w", err)
 	}
 
 	// Apply CNPs & KNPs to the cluster.
 	if err := t.applyResources(ctx); err != nil {
-		t.CiliumLogs(ctx)
+		t.ContainerLogs(ctx)
 		return fmt.Errorf("applying network policies: %w", err)
 	}
 
@@ -837,31 +837,7 @@ func (t *Test) collectSysdump() {
 }
 
 func (t *Test) ForEachIPFamily(do func(features.IPFamily)) {
-	ipFams := features.GetIPFamilies(t.ctx.Params().IPFamilies)
-
-	// The per-endpoint routes feature is broken with IPv6 on < v1.14 when there
-	// are any netpols installed (https://github.com/cilium/cilium/issues/23852
-	// and https://github.com/cilium/cilium/issues/23910).
-	if f, ok := t.Context().Feature(features.EndpointRoutes); ok &&
-		f.Enabled && t.HasNetworkPolicies() &&
-		versioncheck.MustCompile("<1.14.0")(t.Context().CiliumVersion) {
-
-		ipFams = []features.IPFamily{features.IPFamilyV4}
-	}
-
-	for _, ipFam := range ipFams {
-		switch ipFam {
-		case features.IPFamilyV4:
-			if f, ok := t.ctx.Features[features.IPv4]; ok && f.Enabled {
-				do(ipFam)
-			}
-
-		case features.IPFamilyV6:
-			if f, ok := t.ctx.Features[features.IPv6]; ok && f.Enabled {
-				do(ipFam)
-			}
-		}
-	}
+	t.ctx.ForEachIPFamily(t.HasNetworkPolicies(), do)
 }
 
 // CertificateCAs returns the CAs used to sign the certificates within the test.

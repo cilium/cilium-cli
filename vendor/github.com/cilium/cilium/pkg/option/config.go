@@ -192,10 +192,6 @@ const (
 	// K8sRequireIPv6PodCIDRName is the name of the K8sRequireIPv6PodCIDR option
 	K8sRequireIPv6PodCIDRName = "k8s-require-ipv6-pod-cidr"
 
-	// K8sWatcherEndpointSelector specifies the k8s endpoints that Cilium
-	// should watch for.
-	K8sWatcherEndpointSelector = "k8s-watcher-endpoint-selector"
-
 	// EnableK8s operation of Kubernetes-related services/controllers.
 	// Intended for operating cilium with CNI-compatible orchestrators other than Kubernetes. (default is true)
 	EnableK8s = "enable-k8s"
@@ -667,9 +663,6 @@ const (
 	// AgentNotReadyNodeTaintKeyName is the name of the option to set
 	// AgentNotReadyNodeTaintKey
 	AgentNotReadyNodeTaintKeyName = "agent-not-ready-taint-key"
-
-	// JoinClusterName is the name of the JoinCluster Option
-	JoinClusterName = "join-cluster"
 
 	// EnableIPv4Name is the name of the option to enable IPv4 support
 	EnableIPv4Name = "enable-ipv4"
@@ -1149,6 +1142,9 @@ const (
 	// EnableEndpointLockdownOnPolicyOverflow enables endpoint lockdown when an endpoint's
 	// policy map overflows.
 	EnableEndpointLockdownOnPolicyOverflow = "enable-endpoint-lockdown-on-policy-overflow"
+
+	// ConnectivityProbeFrequencyRatio is the name of the option to specify the connectivity probe frequency
+	ConnectivityProbeFrequencyRatio = "connectivity-probe-frequency-ratio"
 )
 
 // Default string arguments
@@ -1199,9 +1195,6 @@ const (
 
 	// IdentityManagementMode controls whether CiliumIdentities are managed by cilium-agent, cilium-operator, or both.
 	IdentityManagementMode = "identity-management-mode"
-
-	// EnableExternalWorkloads enables the support for external workloads.
-	EnableExternalWorkloads = "enable-external-workloads"
 
 	// EnableSourceIPVerification enables the source ip verification, defaults to true
 	EnableSourceIPVerification = "enable-source-ip-verification"
@@ -1528,10 +1521,6 @@ type DaemonConfig struct {
 	// pods.
 	AgentNotReadyNodeTaintKey string
 
-	// JoinCluster is 'true' if the agent should join a Cilium cluster via kvstore
-	// registration
-	JoinCluster bool
-
 	// EnableIPv4 is true when IPv4 is enabled
 	EnableIPv4 bool
 
@@ -1651,7 +1640,6 @@ type DaemonConfig struct {
 	IPv6ServiceRange              string
 	K8sSyncTimeout                time.Duration
 	AllocatorListTimeout          time.Duration
-	K8sWatcherEndpointSelector    string
 	KVStore                       string
 	KVStoreOpt                    map[string]string
 	LabelPrefixFile               string
@@ -2259,6 +2247,9 @@ type DaemonConfig struct {
 	// EnableEndpointLockdownOnPolicyOverflow enables endpoint lockdown when an endpoint's
 	// policy map overflows.
 	EnableEndpointLockdownOnPolicyOverflow bool
+
+	// ConnectivityProbeFrequencyRatio is the ratio of the connectivity probe frequency vs resource consumption
+	ConnectivityProbeFrequencyRatio float64
 }
 
 var (
@@ -2322,6 +2313,8 @@ var (
 		EnableNonDefaultDenyPolicies: defaults.EnableNonDefaultDenyPolicies,
 
 		EnableSourceIPVerification: defaults.EnableSourceIPVerification,
+
+		ConnectivityProbeFrequencyRatio: defaults.ConnectivityProbeFrequencyRatio,
 	}
 )
 
@@ -2905,13 +2898,11 @@ func (c *DaemonConfig) Populate(vp *viper.Viper) {
 	c.IPv6NodeAddr = vp.GetString(IPv6NodeAddr)
 	c.IPv6Range = vp.GetString(IPv6Range)
 	c.IPv6ServiceRange = vp.GetString(IPv6ServiceRange)
-	c.JoinCluster = vp.GetBool(JoinClusterName)
 	c.K8sRequireIPv4PodCIDR = vp.GetBool(K8sRequireIPv4PodCIDRName)
 	c.K8sRequireIPv6PodCIDR = vp.GetBool(K8sRequireIPv6PodCIDRName)
 	c.K8sServiceCacheSize = uint(vp.GetInt(K8sServiceCacheSize))
 	c.K8sSyncTimeout = vp.GetDuration(K8sSyncTimeoutName)
 	c.AllocatorListTimeout = vp.GetDuration(AllocatorListTimeoutName)
-	c.K8sWatcherEndpointSelector = vp.GetString(K8sWatcherEndpointSelector)
 	c.KeepConfig = vp.GetBool(KeepConfig)
 	c.KVStore = vp.GetString(KVStore)
 	c.KVstoreLeaseTTL = vp.GetDuration(KVstoreLeaseTTL)
@@ -3333,6 +3324,15 @@ func (c *DaemonConfig) Populate(vp *viper.Viper) {
 	c.LoadBalancerOnly = vp.GetBool(LoadBalancerOnly)
 	c.EnableInternalTrafficPolicy = vp.GetBool(EnableInternalTrafficPolicy)
 	c.EnableSourceIPVerification = vp.GetBool(EnableSourceIPVerification)
+
+	// Allow the range [0.0, 1.0].
+	connectivityFreqRatio := vp.GetFloat64(ConnectivityProbeFrequencyRatio)
+	if 0.0 <= connectivityFreqRatio && connectivityFreqRatio <= 1.0 {
+		c.ConnectivityProbeFrequencyRatio = connectivityFreqRatio
+	} else {
+		log.Warningf("specified connectivity probe frequency ratio %f must be in the range [0.0, 1.0], using default", connectivityFreqRatio)
+		c.ConnectivityProbeFrequencyRatio = defaults.ConnectivityProbeFrequencyRatio
+	}
 }
 
 func (c *DaemonConfig) populateLoadBalancerSettings(vp *viper.Viper) {
