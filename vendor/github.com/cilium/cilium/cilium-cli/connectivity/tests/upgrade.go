@@ -31,10 +31,14 @@ import (
 // counters, and compares them against the previously stored ones. A mismatch
 // indicates that a connection was interrupted.
 func NoInterruptedConnections() check.Scenario {
-	return &noInterruptedConnections{}
+	return &noInterruptedConnections{
+		ScenarioBase: check.NewScenarioBase(),
+	}
 }
 
-type noInterruptedConnections struct{}
+type noInterruptedConnections struct {
+	check.ScenarioBase
+}
 
 func (n *noInterruptedConnections) Name() string {
 	return "no-interrupted-connections"
@@ -55,6 +59,22 @@ func (n *noInterruptedConnections) Run(ctx context.Context, t *check.Test) {
 
 		for _, pod := range pods.Items {
 			restartCount[pod.GetObjectMeta().GetName()] = strconv.Itoa(int(pod.Status.ContainerStatuses[0].RestartCount))
+		}
+
+		if ct.ShouldRunConnDisruptNSTraffic() {
+			pods, err = client.ListPods(ctx, ct.Params().TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + check.KindTestConnDisruptNSTraffic})
+			if err != nil {
+				t.Fatalf("Unable to list test-conn-disrupt-ns-traffic pods: %s", err)
+			}
+			if len(pods.Items) == 0 {
+				t.Fatal("No test-conn-disrupt-{client,server} for NS traffic pods found")
+			}
+
+			for _, pod := range pods.Items {
+				restartCount[pod.GetObjectMeta().GetName()] = strconv.Itoa(int(pod.Status.ContainerStatuses[0].RestartCount))
+			}
+		} else {
+			ct.Info("Skipping conn-disrupt-test for NS traffic")
 		}
 	}
 
