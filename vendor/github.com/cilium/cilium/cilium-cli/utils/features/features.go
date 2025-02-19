@@ -26,14 +26,15 @@ const (
 	Tunnel             Feature = "tunnel"
 	EndpointRoutes     Feature = "endpoint-routes"
 
-	KPRMode                Feature = "kpr-mode"
-	KPRExternalIPs         Feature = "kpr-external-ips"
-	KPRGracefulTermination Feature = "kpr-graceful-termination"
-	KPRHostPort            Feature = "kpr-hostport"
-	KPRSocketLB            Feature = "kpr-socket-lb"
-	KPRSocketLBHostnsOnly  Feature = "kpr-socket-lb-hostns-only"
-	KPRNodePort            Feature = "kpr-nodeport"
-	KPRSessionAffinity     Feature = "kpr-session-affinity"
+	KPRMode                 Feature = "kpr-mode"
+	KPRExternalIPs          Feature = "kpr-external-ips"
+	KPRGracefulTermination  Feature = "kpr-graceful-termination"
+	KPRHostPort             Feature = "kpr-hostport"
+	KPRSocketLB             Feature = "kpr-socket-lb"
+	KPRSocketLBHostnsOnly   Feature = "kpr-socket-lb-hostns-only"
+	KPRNodePort             Feature = "kpr-nodeport"
+	KPRNodePortAcceleration Feature = "kpr-nodeport-acceleration"
+	KPRSessionAffinity      Feature = "kpr-session-affinity"
 
 	BPFLBExternalClusterIP Feature = "bpf-lb-external-clusterip"
 
@@ -381,6 +382,10 @@ func (fs Set) ExtractFromConfigMap(cm *v1.ConfigMap) {
 		fs[PolicySecretBackendK8s] = Status{
 			Enabled: cm.Data[string(PolicySecretSync)] == "true",
 		}
+	}
+
+	fs[PolicySecretSync] = Status{
+		Enabled: cm.Data[string(PolicySecretSync)] == "true",
 	}
 }
 

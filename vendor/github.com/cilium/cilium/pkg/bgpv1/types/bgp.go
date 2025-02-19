@@ -11,7 +11,6 @@ import (
 	"github.com/osrg/gobgp/v3/pkg/packet/bgp"
 
 	"github.com/cilium/cilium/api/v1/models"
-	v2alpha1api "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2alpha1"
 )
 
 // BGP metric labels
@@ -57,18 +56,45 @@ type Path struct {
 	UUID           []byte // path identifier in underlying implementation
 }
 
-// NeighborRequest contains neighbor parameters used when enabling or disabling peer
-type NeighborRequest struct {
-	// Deprecated: field kept for backward compatibility.
-	//
-	// Both Neighbor and Peer should not be used at the same time.
-	// Neighbor field is used in BGPv1 and Peer, PeerConfig fields are used in BGPv2.
-	Neighbor *v2alpha1api.CiliumBGPNeighbor
+// Neighbor is an object representing a single BGP neighbor. It is an analogue
+// of GoBGP's Peer object, but only contains minimal fields required for Cilium
+// usecases.
+type Neighbor struct {
+	Address         netip.Addr
+	ASN             uint32
+	AuthPassword    string
+	EbgpMultihop    *NeighborEbgpMultihop
+	RouteReflector  *NeighborRouteReflector
+	Timers          *NeighborTimers
+	Transport       *NeighborTransport
+	GracefulRestart *NeighborGracefulRestart
+	AfiSafis        []*Family
+}
 
-	Peer       *v2alpha1api.CiliumBGPNodePeer
-	PeerConfig *v2alpha1api.CiliumBGPPeerConfigSpec
-	// Password is the "AuthSecret" in the Neighbor, fetched from a secret
-	Password string
+type NeighborTransport struct {
+	LocalAddress string
+	LocalPort    uint32
+	RemotePort   uint32
+}
+
+type NeighborEbgpMultihop struct {
+	TTL uint32
+}
+
+type NeighborTimers struct {
+	ConnectRetry      uint64
+	HoldTime          uint64
+	KeepaliveInterval uint64
+}
+
+type NeighborGracefulRestart struct {
+	Enabled     bool
+	RestartTime uint32
+}
+
+type NeighborRouteReflector struct {
+	Client    bool
+	ClusterID string
 }
 
 // SoftResetDirection defines the direction in which a BGP soft reset should be performed
@@ -303,13 +329,13 @@ type Router interface {
 	Stop()
 
 	// AddNeighbor configures BGP peer
-	AddNeighbor(ctx context.Context, n NeighborRequest) error
+	AddNeighbor(ctx context.Context, n *Neighbor) error
 
 	// UpdateNeighbor updates BGP peer
-	UpdateNeighbor(ctx context.Context, n NeighborRequest) error
+	UpdateNeighbor(ctx context.Context, n *Neighbor) error
 
 	// RemoveNeighbor removes BGP peer
-	RemoveNeighbor(ctx context.Context, n NeighborRequest) error
+	RemoveNeighbor(ctx context.Context, n *Neighbor) error
 
 	// ResetNeighbor resets BGP peering with the provided neighbor address
 	ResetNeighbor(ctx context.Context, r ResetNeighborRequest) error

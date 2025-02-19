@@ -72,6 +72,9 @@ var (
 	//go:embed manifests/client-egress-tls-sni.yaml
 	clientEgressTLSSNIPolicyYAML string
 
+	//go:embed manifests/client-egress-tls-sni-other.yaml
+	clientEgressTLSSNIOtherPolicyYAML string
+
 	//go:embed manifests/client-egress-l7-tls-sni.yaml
 	clientEgressL7TLSSNIPolicyYAML string
 
@@ -242,6 +245,7 @@ func concurrentTests(connTests []*check.ConnectivityTest) error {
 		health{},
 		northSouthLoadbalancing{},
 		podToPodEncryption{},
+		podToPodEncryptionV2{},
 		nodeToNodeEncryption{},
 		egressGateway{},
 		egressGatewayExcludedCidrs{},
@@ -311,6 +315,7 @@ func renderTemplates(clusterName string, param check.Parameters) (map[string]str
 		"clientEgressL7HTTPNamedPortPolicyYAML":              clientEgressL7HTTPNamedPortPolicyYAML,
 		"clientEgressToFQDNsPolicyYAML":                      clientEgressToFQDNsPolicyYAML,
 		"clientEgressTLSSNIPolicyYAML":                       clientEgressTLSSNIPolicyYAML,
+		"clientEgressTLSSNIOtherPolicyYAML":                  clientEgressTLSSNIOtherPolicyYAML,
 		"clientEgressL7TLSSNIPolicyYAML":                     clientEgressL7TLSSNIPolicyYAML,
 		"clientEgressL7TLSPolicyYAML":                        clientEgressL7TLSPolicyYAML,
 		"clientEgressL7TLSPolicyPortRangeYAML":               clientEgressL7TLSPolicyPortRangeYAML,

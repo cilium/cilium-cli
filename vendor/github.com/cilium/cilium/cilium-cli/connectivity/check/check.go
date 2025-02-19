@@ -92,15 +92,17 @@ type Parameters struct {
 	ImpersonateGroups      []string
 	IPFamilies             []string
 
-	IncludeConnDisruptTest        bool
-	ConnDisruptTestSetup          bool
-	ConnDisruptTestRestartsPath   string
-	ConnDisruptTestXfrmErrorsPath string
-	ConnDisruptDispatchInterval   time.Duration
+	IncludeConnDisruptTest          bool
+	IncludeConnDisruptTestNSTraffic bool
+	ConnDisruptTestSetup            bool
+	ConnDisruptTestRestartsPath     string
+	ConnDisruptTestXfrmErrorsPath   string
+	ConnDisruptDispatchInterval     time.Duration
 
 	ExpectedDropReasons []string
 	ExpectedXFRMErrors  []string
 
+	LogCodeOwners  bool
 	LogCheckLevels []string
 
 	FlushCT               bool
