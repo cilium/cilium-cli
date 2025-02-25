@@ -58,32 +58,6 @@
       ],
     },
     {
-      groupName: 'all go dependencies main',
-      groupSlug: 'all-go-deps-main',
-      matchFiles: [
-        'go.mod',
-        'go.sum',
-      ],
-      postUpdateOptions: [
-        // update source import paths on major updates
-        'gomodUpdateImportPaths',
-      ],
-      matchUpdateTypes: [
-        'major',
-        'minor',
-        'digest',
-        'patch',
-        'pin',
-        'pinDigest',
-      ],
-      matchBaseBranches: [
-        'main',
-      ],
-      schedule: [
-        'on friday',
-      ],
-    },
-    {
       // Avoid updating patch releases of golang in go.mod
       enabled: 'false',
       matchFileNames: [
@@ -100,13 +74,6 @@
       ],
       matchBaseBranches: [
         'main',
-      ],
-    },
-    {
-      // Allow github.com/cilium/cilium to upgrade to prerelease versions.
-      ignoreUnstable: false,
-      matchPackageNames: [
-        'github.com/cilium/cilium',
       ],
     },
     {
