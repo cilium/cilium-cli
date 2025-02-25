@@ -21,28 +21,37 @@ used in the commands throughout the documenat to allow copy-pasting.
 
     export RELEASE=v0.17.1
 
-## Update local checkout
+## Create release preparation branch and PR
 
 Update your local checkout to the latest state:
 
     git checkout main
     git pull origin main
 
-### Update the README.md
+Create the release branch:
+
+    git checkout -b pr/prepare-$RELEASE
+
+Update `github.com/cilium/cilium` to the latest version:
+
+    go get github.com/cilium/cilium@main
+    go mod tidy && go mod vendor
+    git add go.mod go.sum vendor
 
 Update the *Releases* section of the `README.md` which lists all currently
 supported releases in a table. The version in this table needs to be updated to
 match the new release `$RELEASE`. Also bump `$RELEASE` in the section above, so
 it can be copy-pasted when preparing the next release.
 
-### Create release preparation branch and open PR
-
-    git checkout -b pr/prepare-$RELEASE
     git add README.md RELEASE.md
     git commit -s -m "Prepare for $RELEASE release"
+
+Push the branch to the upstream repository:
+
     git push origin pr/prepare-$RELEASE
 
-Then open a pull request against `main` branch. Wait for the PR to be reviewed and merged.
+Then open a pull request against `main` branch. Wait for the PR to be reviewed
+and merged.
 
 ## Tag a release
 
