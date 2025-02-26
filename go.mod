@@ -10,7 +10,7 @@ go 1.23.0
 // as to why we are using a private fork.
 replace sigs.k8s.io/controller-tools => github.com/cilium/controller-tools v0.16.5-1
 
-require github.com/cilium/cilium v1.17.0-pre.3.0.20250219193210-bbf73fb4b71e
+require github.com/cilium/cilium v1.17.1
 
 require (
 	cel.dev/expr v0.19.1 // indirect
