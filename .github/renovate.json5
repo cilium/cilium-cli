@@ -11,14 +11,8 @@
   includePaths: [
     '.github/workflows/**',
     'action.yaml',
-    'defaults/defaults.go',
-    'go.mod',
-    'go.sum',
     'Dockerfile',
     'Makefile',
-  ],
-  postUpdateOptions: [
-    'gomodTidy',
   ],
   pinDigests: true,
   ignorePresets: [
@@ -55,25 +49,6 @@
         'patch',
         'pin',
         'pinDigest',
-      ],
-    },
-    {
-      // Avoid updating patch releases of golang in go.mod
-      enabled: 'false',
-      matchFileNames: [
-        'go.mod',
-      ],
-      matchDepNames: [
-        'go',
-      ],
-      matchDatasources: [
-        'golang-version',
-      ],
-      matchUpdateTypes: [
-        'patch',
-      ],
-      matchBaseBranches: [
-        'main',
       ],
     },
     {
@@ -137,15 +112,6 @@
       //   https://docs.renovatebot.com/modules/manager/regex/#advanced-capture
       matchStrings: [
         '# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s+.+_VERSION = (?<currentValue>.*)\\s+.+_SHA = (?<currentDigest>sha256:[a-f0-9]+)',
-      ],
-    },
-    {
-      customType: 'regex',
-      fileMatch: [
-        '^go\\.mod$',
-      ],
-      matchStrings: [
-        '// renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s+go (?<currentValue>.*)',
       ],
     },
   ],
