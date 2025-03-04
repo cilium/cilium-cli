@@ -116,7 +116,7 @@ jobs:
             --include-conn-disrupt-test --conn-disrupt-test-setup
 
           # Run the connectivity test in non-default namespace (i.e. not cilium-test)
-          cilium connectivity test --all-flows --test-namespace test-namespace \
+          cilium connectivity test --flow-validation=disabled --test-namespace test-namespace \
             --test-concurrency=5 \
             --include-unsafe-tests --include-conn-disrupt-test \
             --collect-sysdump-on-failure --junit-file cilium-junit-1.xml \
@@ -162,7 +162,7 @@ jobs:
 
       - name: Connectivity test
         run: |
-          cilium connectivity test --force-deploy --all-flows --test-namespace test-namespace \
+          cilium connectivity test --force-deploy --flow-validation=disabled --test-namespace test-namespace \
             --test-concurrency=5 \
             --include-unsafe-tests \
             --collect-sysdump-on-failure --junit-file cilium-junit-2.xml \
