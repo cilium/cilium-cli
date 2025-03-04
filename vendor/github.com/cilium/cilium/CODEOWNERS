@@ -238,6 +238,7 @@
 /.github/ariane-config.yaml @cilium/github-sec @cilium/ci-structure
 /.github/renovate.json5 @cilium/github-sec @cilium/ci-structure
 /.github/actions/ @cilium/github-sec @cilium/ci-structure
+/.github/actions/bpftrace/ @cilium/sig-encryption @cilium/github-sec @cilium/ci-structure
 /.github/actions/ipsec* @cilium/ipsec @cilium/github-sec @cilium/ci-structure
 /.github/actions/kvstore/ @cilium/sig-clustermesh @cilium/kvstore @cilium/github-sec @cilium/ci-structure
 /.github/workflows/ @cilium/github-sec @cilium/ci-structure
@@ -252,6 +253,9 @@
 /.github/actions/cl2-modules/ @cilium/sig-scalability
 /.github/workflows/*scale*.yaml @cilium/sig-scalability @cilium/github-sec @cilium/ci-structure
 /.github/workflows/*perf*.yaml @cilium/sig-scalability @cilium/github-sec @cilium/ci-structure
+/.github/workflows/conformance-aks.yaml @cilium/azure @cilium/ipsec @cilium/github-sec @cilium/ci-structure
+/.github/workflows/conformance-aws-cni.yaml @cilium/aws @cilium/github-sec @cilium/ci-structure
+/.github/workflows/conformance-eks.yaml @cilium/aws @cilium/ipsec @cilium/github-sec @cilium/ci-structure
 /.github/workflows/tests-ces-migrate.yaml @cilium/sig-scalability @cilium/github-sec @cilium/ci-structure
 /.gitignore @cilium/contributing
 /.golangci.yaml @cilium/ci-structure
@@ -282,6 +286,7 @@ Makefile* @cilium/build
 /bpf/lib/ids.h @cilium/loader
 /bpf/lib/proxy.h @cilium/proxy @cilium/sig-datapath
 /bpf/include/bpf/tailcall.h @cilium/loader
+/bpf/include/bpf/config @cilium/loader
 /bugtool/ @cilium/cli
 /cilium-dbg/ @cilium/cli
 /cilium-dbg/cmd/encrypt* @cilium/ipsec @cilium/cli
@@ -345,6 +350,7 @@ Makefile* @cilium/build
 /contrib/containerlab/ @cilium/sig-bgp
 /contrib/coccinelle/ @cilium/sig-datapath
 /contrib/scripts/portgen.py @cilium/sig-datapath
+/contrib/scripts/check-datapathconfig.sh @cilium/loader
 /daemon/ @cilium/sig-agent
 /daemon/cmd/datapath.go @cilium/sig-datapath
 /daemon/cmd/endpoint* @cilium/endpoint
@@ -397,6 +403,7 @@ Makefile* @cilium/build
 /Documentation/Makefile @cilium/docs-structure
 /Documentation/network/bgp* @cilium/sig-bgp @cilium/docs-structure
 /Documentation/network/clustermesh/ @cilium/sig-clustermesh @cilium/docs-structure
+/Documentation/network/concepts/fragmentation.rst @cilium/sig-datapath @cilium/docs-structure
 /Documentation/network/concepts/ipam/ @cilium/sig-ipam @cilium/docs-structure
 /Documentation/network/concepts/ipam/azure* @cilium/sig-ipam @cilium/azure @cilium/docs-structure
 /Documentation/network/concepts/ipam/eni* @cilium/sig-ipam @cilium/aws @cilium/docs-structure
@@ -655,6 +662,7 @@ Makefile* @cilium/build
 # Misc. tests
 /test/runtime/kvstore.go @cilium/kvstore @cilium/ci-structure
 /test/runtime/chaos_agent.go @cilium/sig-agent @cilium/ci-structure
+/tools/dpgen @cilium/loader
 /tools/ @cilium/contributing
 /USERS.md @cilium/community
 /go.sum @cilium/vendor
