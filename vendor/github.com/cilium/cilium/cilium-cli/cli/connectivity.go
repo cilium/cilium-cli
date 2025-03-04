@@ -51,6 +51,10 @@ var params = check.Parameters{
 		LargeSysdumpThreshold:    sysdump.DefaultLargeSysdumpThreshold,
 		Writer:                   os.Stdout,
 	},
+	PerfParameters: check.PerfParameters{
+		NodeSelectorServer: make(map[string]string),
+		NodeSelectorClient: make(map[string]string),
+	},
 }
 
 var tests []string
@@ -77,6 +81,20 @@ func RunE(hooks api.Hooks) func(cmd *cobra.Command, args []string) error {
 			}
 		}
 
+		if params.PrintImageArtifacts {
+			if cmd.Use == "test" {
+				fmt.Fprintln(params.Writer, params.CurlImage)
+				fmt.Fprintln(params.Writer, params.JSONMockImage)
+				fmt.Fprintln(params.Writer, params.DNSTestServerImage)
+				fmt.Fprintln(params.Writer, params.TestConnDisruptImage)
+				fmt.Fprintln(params.Writer, params.FRRImage)
+				fmt.Fprintln(params.Writer, params.SocatImage)
+			} else if cmd.Use == "perf" {
+				fmt.Fprintln(params.Writer, params.PerfParameters.Image)
+			}
+			return nil
+		}
+
 		logger := check.NewConcurrentLogger(params.Writer, params.TestConcurrency)
 		owners, err := codeowners.ParseFile(strings.NewReader(assets.CodeOwnersRaw))
 		if err != nil {
@@ -101,7 +119,7 @@ func RunE(hooks api.Hooks) func(cmd *cobra.Command, args []string) error {
 			connTests[0].Logf("Cancellation request (%s) received, cancelling tests...", context.Cause(ctx))
 		}()
 
-		logger.Start(ctx)
+		logger.Start()
 		defer logger.Stop()
 		return connectivity.Run(ctx, connTests, hooks)
 	}
@@ -124,6 +142,7 @@ func newCmdConnectivityTest(hooks api.Hooks) *cobra.Command {
 	cmd.Flags().StringVar(&params.AgentDaemonSetName, "agent-daemonset-name", defaults.AgentDaemonSetName, "Name of cilium agent daemonset")
 	cmd.Flags().StringVar(&params.AgentPodSelector, "agent-pod-selector", defaults.AgentPodSelector, "Label on cilium-agent pods to select with")
 	cmd.Flags().StringVar(&params.CiliumPodSelector, "cilium-pod-selector", defaults.CiliumPodSelector, "Label selector matching all cilium-related pods")
+	cmd.Flags().Var(option.NewNamedMapOptions("node-selector", &params.NodeSelector, nil), "node-selector", "Restrict connectivity pods to nodes matching this label")
 	cmd.Flags().Var(&params.NamespaceAnnotations, "namespace-annotations", "Add annotations to the connectivity test namespace, e.g. '{\"foo\":\"bar\"}'")
 	cmd.Flags().MarkHidden("namespace-annotations")
 	cmd.Flags().MarkHidden("deployment-pod-annotations")
@@ -157,12 +176,12 @@ func newCmdConnectivityTest(hooks api.Hooks) *cobra.Command {
 	cmd.Flags().StringVar(&params.HelmChartDirectory, "chart-directory", "", "Helm chart directory")
 	cmd.Flags().StringVar(&params.HelmValuesSecretName, "helm-values-secret-name", defaults.HelmValuesSecretName, "Secret name to store the auto-generated helm values file. The namespace is the same as where Cilium will be installed")
 
-	cmd.Flags().StringVar(&params.CurlImage, "curl-image", defaults.ConnectivityCheckAlpineCurlImage, "Image path to use for curl")
-	cmd.Flags().StringVar(&params.JSONMockImage, "json-mock-image", defaults.ConnectivityCheckJSONMockImage, "Image path to use for json mock")
-	cmd.Flags().StringVar(&params.DNSTestServerImage, "dns-test-server-image", defaults.ConnectivityDNSTestServerImage, "Image path to use for CoreDNS")
-	cmd.Flags().StringVar(&params.TestConnDisruptImage, "test-conn-disrupt-image", defaults.ConnectivityTestConnDisruptImage, "Image path to use for connection disruption tests")
-	cmd.Flags().StringVar(&params.FRRImage, "frr-image", defaults.ConnectivityTestFRRImage, "Image path to use for FRR")
-	cmd.Flags().StringVar(&params.SocatImage, "socat-image", defaults.ConnectivityTestSocatImage, "Image path to use for multicast tests")
+	cmd.Flags().StringVar(&params.CurlImage, "curl-image", defaults.ConnectivityCheckImagesTest["ConnectivityCheckAlpineCurlImage"], "Image path to use for curl")
+	cmd.Flags().StringVar(&params.JSONMockImage, "json-mock-image", defaults.ConnectivityCheckImagesTest["ConnectivityCheckJSONMockImage"], "Image path to use for json mock")
+	cmd.Flags().StringVar(&params.DNSTestServerImage, "dns-test-server-image", defaults.ConnectivityCheckImagesTest["ConnectivityDNSTestServerImage"], "Image path to use for CoreDNS")
+	cmd.Flags().StringVar(&params.TestConnDisruptImage, "test-conn-disrupt-image", defaults.ConnectivityCheckImagesTest["ConnectivityTestConnDisruptImage"], "Image path to use for connection disruption tests")
+	cmd.Flags().StringVar(&params.FRRImage, "frr-image", defaults.ConnectivityCheckImagesTest["ConnectivityTestFRRImage"], "Image path to use for FRR")
+	cmd.Flags().StringVar(&params.SocatImage, "socat-image", defaults.ConnectivityCheckImagesTest["ConnectivityTestSocatImage"], "Image path to use for multicast tests")
 
 	cmd.Flags().UintVar(&params.Retry, "retry", defaults.ConnectRetry, "Number of retries on connection failure to external targets")
 	cmd.Flags().DurationVar(&params.RetryDelay, "retry-delay", defaults.ConnectRetryDelay, "Delay between retries for external targets")
@@ -190,6 +209,8 @@ func newCmdConnectivityTest(hooks api.Hooks) *cobra.Command {
 
 	cmd.Flags().BoolVar(&params.LogCodeOwners, "log-code-owners", defaults.LogCodeOwners, "Log code owners for tests that fail")
 	cmd.Flags().MarkHidden("log-code-owners")
+	cmd.Flags().StringSliceVar(&params.ExcludeCodeOwners, "exclude-code-owners", []string{}, "Exclude specific code owners from --log-code-owners")
+	cmd.Flags().MarkHidden("exclude-code-owners")
 	cmd.Flags().StringSliceVar(&params.LogCheckLevels, "log-check-levels", defaults.LogCheckLevels, "Log levels to check for in log messages")
 	cmd.Flags().MarkHidden("log-check-levels")
 
@@ -221,23 +242,34 @@ func newCmdConnectivityPerf(hooks api.Hooks) *cobra.Command {
 			// and both of these commands share the same RunE for now.
 			params.Perf = true
 			params.ForceDeploy = true
+			params.Hubble = false
 		},
 		RunE: RunE(hooks),
 	}
 
 	cmd.Flags().DurationVar(&params.PerfParameters.Duration, "duration", 10*time.Second, "Duration for the Performance test to run")
+	cmd.Flags().DurationVar(&params.PerfParameters.SetupDelay, "setup-delay", 0, "Extra delay before starting the performance tests")
 	cmd.Flags().IntVar(&params.PerfParameters.MessageSize, "msg-size", 1024, "Size of message to use in UDP test")
 	cmd.Flags().BoolVar(&params.PerfParameters.CRR, "crr", false, "Run CRR test")
 	cmd.Flags().BoolVar(&params.PerfParameters.RR, "rr", true, "Run RR test")
 	cmd.Flags().BoolVar(&params.PerfParameters.UDP, "udp", false, "Run UDP tests")
 	cmd.Flags().BoolVar(&params.PerfParameters.Throughput, "throughput", true, "Run throughput test")
-	cmd.Flags().BoolVar(&params.PerfParameters.Mixed, "mixed", false, "Run pod-to-host and host-to-pod tests (only works if both host-net=true and pod-net=true)")
 	cmd.Flags().IntVar(&params.PerfParameters.Samples, "samples", 1, "Number of Performance samples to capture (how many times to run each test)")
 	cmd.Flags().BoolVar(&params.PerfParameters.HostNet, "host-net", true, "Test host network")
 	cmd.Flags().BoolVar(&params.PerfParameters.PodNet, "pod-net", true, "Test pod network")
+	cmd.Flags().BoolVar(&params.PerfParameters.PodToHost, "pod-to-host", false, "Test pod-to-host traffic")
+	cmd.Flags().BoolVar(&params.PerfParameters.HostToPod, "host-to-pod", false, "Test host-to-pod traffic")
+	cmd.Flags().BoolVar(&params.PerfParameters.SameNode, "same-node", true, "Run tests in which the client and the server are hosted on the same node")
+	cmd.Flags().BoolVar(&params.PerfParameters.OtherNode, "other-node", true, "Run tests in which the client and the server are hosted on difference nodes")
 	cmd.Flags().BoolVar(&params.PerfParameters.NetQos, "net-qos", false, "Test pod network Quality of Service")
 
-	cmd.Flags().StringVar(&params.PerfParameters.Image, "performance-image", defaults.ConnectivityPerformanceImage, "Image path to use for performance")
+	cmd.Flags().Var(option.NewNamedMapOptions("node-selector-server", &params.PerfParameters.NodeSelectorServer, nil),
+		"node-selector-server", "Node selector for the server pod (and client same-node)")
+	cmd.Flags().Var(option.NewNamedMapOptions("node-selector-client", &params.PerfParameters.NodeSelectorClient, nil),
+		"node-selector-client", "Node selector for the other-node client pod")
+	cmd.Flags().StringSliceVar(&params.PerfParameters.Tolerations, "tolerations", nil, "Extra NoSchedule tolerations added to test pods")
+
+	cmd.Flags().StringVar(&params.PerfParameters.Image, "performance-image", defaults.ConnectivityCheckImagesPerf["ConnectivityPerformanceImage"], "Image path to use for performance")
 	cmd.Flags().StringVar(&params.PerfParameters.ReportDir, "report-dir", "", "Directory to save perf results in json format")
 	registerCommonFlags(cmd.Flags())
 
@@ -246,9 +278,9 @@ func newCmdConnectivityPerf(hooks api.Hooks) *cobra.Command {
 
 func registerCommonFlags(flags *pflag.FlagSet) {
 	flags.BoolVarP(&params.Debug, "debug", "d", false, "Show debug messages")
-	flags.Var(option.NewNamedMapOptions("node-selector", &params.NodeSelector, nil), "node-selector", "Restrict connectivity pods to nodes matching this label")
 	flags.StringVar(&params.TestNamespace, "test-namespace", defaults.ConnectivityCheckNamespace, "Namespace to perform the connectivity in (always suffixed with a sequence number to be compliant with test-concurrency param, e.g.: cilium-test-1)")
 	flags.Var(&params.DeploymentAnnotations, "deployment-pod-annotations", "Add annotations to the connectivity pods, e.g. '{\"client\":{\"foo\":\"bar\"}}'")
+	flags.BoolVar(&params.PrintImageArtifacts, "print-image-artifacts", false, "Prints the used image artifacts")
 }
 
 func newConnectivityTests(

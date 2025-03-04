@@ -54,17 +54,18 @@ func (s *podToService) Run(ctx context.Context, t *check.Test) {
 				continue
 			}
 
-			t.NewAction(s, fmt.Sprintf("curl-%d", i), &pod, svc, features.IPFamilyAny).Run(func(a *check.Action) {
-				a.ExecInPod(ctx, ct.CurlCommand(svc, features.IPFamilyAny))
+			t.ForEachIPFamily(func(ipFamily features.IPFamily) {
+				t.NewAction(s, fmt.Sprintf("curl-%s-%d", ipFamily, i), &pod, svc, ipFamily).Run(func(a *check.Action) {
+					a.ExecInPod(ctx, a.CurlCommand(svc))
 
-				a.ValidateFlows(ctx, pod, a.GetEgressRequirements(check.FlowParameters{
-					DNSRequired: true,
-					AltDstPort:  svc.Port(),
-				}))
+					a.ValidateFlows(ctx, pod, a.GetEgressRequirements(check.FlowParameters{
+						DNSRequired: true,
+						AltDstPort:  svc.Port(),
+					}))
 
-				a.ValidateMetrics(ctx, pod, a.GetEgressMetricsRequirements())
+					a.ValidateMetrics(ctx, pod, a.GetEgressMetricsRequirements())
+				})
 			})
-
 			i++
 		}
 	}
@@ -110,7 +111,7 @@ func (s *podToIngress) Run(ctx context.Context, t *check.Test) {
 			}
 
 			t.NewAction(s, fmt.Sprintf("curl-%d", i), &pod, svc, features.IPFamilyAny).Run(func(a *check.Action) {
-				a.ExecInPod(ctx, ct.CurlCommand(svc, features.IPFamilyAny))
+				a.ExecInPod(ctx, a.CurlCommand(svc))
 
 				a.ValidateFlows(ctx, pod, a.GetEgressRequirements(check.FlowParameters{
 					DNSRequired: true,
@@ -256,7 +257,7 @@ func curlNodePort(ctx context.Context, s check.Scenario, t *check.Test,
 			// Create the Action with the original svc as this will influence what the
 			// flow matcher looks for in the flow logs.
 			t.NewAction(s, name, pod, svc, features.IPFamilyAny).Run(func(a *check.Action) {
-				a.ExecInPod(ctx, t.Context().CurlCommand(ep, features.IPFamilyAny))
+				a.ExecInPod(ctx, a.CurlCommand(ep))
 
 				if validateFlows {
 					a.ValidateFlows(ctx, pod, a.GetEgressRequirements(check.FlowParameters{
@@ -328,7 +329,7 @@ func (s *outsideToIngressService) Run(ctx context.Context, t *check.Test) {
 	for _, svc := range t.Context().IngressService() {
 		t.NewAction(s, fmt.Sprintf("curl-ingress-service-%d", i), &clientPod, svc, features.IPFamilyAny).Run(func(a *check.Action) {
 			for _, node := range t.Context().Nodes() {
-				a.ExecInPod(ctx, t.Context().CurlCommand(svc.ToNodeportService(node), features.IPFamilyAny))
+				a.ExecInPod(ctx, a.CurlCommand(svc.ToNodeportService(node)))
 
 				a.ValidateFlows(ctx, clientPod, a.GetEgressRequirements(check.FlowParameters{
 					DNSRequired: true,

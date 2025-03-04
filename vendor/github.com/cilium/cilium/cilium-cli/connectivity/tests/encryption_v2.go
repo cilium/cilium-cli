@@ -5,9 +5,9 @@ package tests
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/netip"
-	"strings"
 
 	"github.com/cilium/cilium/cilium-cli/connectivity/check"
 	"github.com/cilium/cilium/cilium-cli/connectivity/sniff"
@@ -114,52 +114,57 @@ func (s *podToPodEncryptionV2) Name() string {
 
 // resolveEgressDevice resolves the egress device used in the provided host
 // network namespace used to send traffic to dst.
-func (s *podToPodEncryptionV2) resolveEgressDevice(ctx context.Context, srcHostNS *check.Pod, dst *check.Pod) (string, error) {
+func (s *podToPodEncryptionV2) resolveEgressDevice(ctx context.Context, srcHostNS *check.Pod, src, dst *check.Pod) (string, error) {
 	// if tunnel encap is used, the packet will be encapsulated before
 	// leaving the host, thus, use the tunnel endpoint IP rather then the
 	// pod IP for route lookup.
-	var dstIP string
+	var srcIP, dstIP string
 	if s.tunnelMode.Enabled {
+		srcIP = src.Pod.Status.HostIP
 		dstIP = dst.Pod.Status.HostIP
 	} else {
+		srcIP = src.Pod.Status.PodIP
 		dstIP = dst.Pod.Status.PodIP
 	}
 
-	// issue ip route get for destination in provided host network namespace
-	// and extract device.
+	// issue `ip route get dstIP from srcIP iif cilium_host` for destination in provided
+	// host network namespace and extract device.
+
+	// the `from srcIP` part is needed to tackle cases such as awscni, where there is a
+	// dedicated routing table (using != egress device) for traffic with that srcIP.
+	// the `from srcIP` is ignored in case it doesn't match any non-default route.
+	// the `iif cilium_host` parameter is needed to return anything useful from the command,
+	// but it is ignored if `ip rules` do not have an interface specified in the rule.
 	//
-	// example string output:
-	// "172.18.0.2 dev eth0 src 172.18.0.4 uid 0 \n    cache \n"
+	// example json output:
+	// [{"dst":"192.168.109.96","gateway":"192.168.128.1","dev":"ens5","prefsrc":"192.168.159.49","flags":[],"uid":0,"cache":[]}]
 	out, err := srcHostNS.K8sClient.ExecInPod(ctx,
 		srcHostNS.Pod.Namespace,
 		srcHostNS.Pod.Name,
 		"",
-		[]string{"ip", "route", "get", dstIP})
+		[]string{"ip", "-j", "route", "get", dstIP, "from", srcIP, "iif", "cilium_host"})
 
 	if err != nil {
 		return "", fmt.Errorf("Failed to resolve egress device for: %w", err)
 	}
 
-	// search for dev key in ip route output, next token will be the device name
-	// itself.
-	var dev string
-	outArray := strings.Split(out.String(), " ")
-	for i, val := range outArray {
-		if val == "dev" {
-			if i+1 > len(outArray)-1 {
-				// should never really happen...
-				return "", fmt.Errorf("Failed to find egress device")
-			}
-			dev = outArray[i+1]
-			break
+	routes := []struct {
+		Dev string `json:"dev,omitempty"`
+	}{}
+
+	err = json.Unmarshal(out.Bytes(), &routes)
+	if err != nil {
+		return "", fmt.Errorf("Failed to parse ip route to json: %w", err)
+	}
+
+	// search for dev key in ip route output.
+	for _, route := range routes {
+		if route.Dev != "" {
+			return route.Dev, nil
 		}
 	}
 
-	if dev == "" {
-		return "", fmt.Errorf("Failed to find egress device")
-	}
-
-	return dev, nil
+	return "", fmt.Errorf("Failed to find egress device")
 }
 
 // resolveClientEgressDevice determines the ultimate egress device used to
@@ -174,7 +179,7 @@ func (s *podToPodEncryptionV2) resolveClientEgressDevice(ctx context.Context) (s
 		return "", fmt.Errorf("Context already cancelled")
 	}
 
-	return s.resolveEgressDevice(ctx, s.clientHostNS, s.server)
+	return s.resolveEgressDevice(ctx, s.clientHostNS, s.client, s.server)
 }
 
 // resolveServerEgressDevice is the similar to resolveClientEgressDevice but
@@ -184,7 +189,7 @@ func (s *podToPodEncryptionV2) resolveServerEgressDevice(ctx context.Context) (s
 	if ctx.Err() != nil {
 		return "", fmt.Errorf("Context already cancelled")
 	}
-	return s.resolveEgressDevice(ctx, s.serverHostNS, s.client)
+	return s.resolveEgressDevice(ctx, s.serverHostNS, s.server, s.client)
 }
 
 // tunnelTCPDumpFilters4 will generate the required TCPDump filters for leak
@@ -480,7 +485,7 @@ func (s *podToPodEncryptionV2) clientToServerTest(ctx context.Context, t *check.
 		t.Debugf("performing client->server curl: [client: %s] [server: %s] [family: ipv4]", s.client.Pod.Name, s.server.Pod.Name)
 		action := t.NewAction(s, fmt.Sprintf("curl-%s", features.IPFamilyV4), s.client, s.server, features.IPFamilyV4)
 		action.Run(func(a *check.Action) {
-			a.ExecInPod(ctx, t.Context().CurlCommand(s.server, features.IPFamilyV4))
+			a.ExecInPod(ctx, a.CurlCommand(s.server))
 			s.clientSniffer4.Validate(ctx, a)
 			s.serverSniffer4.Validate(ctx, a)
 		})
@@ -490,7 +495,7 @@ func (s *podToPodEncryptionV2) clientToServerTest(ctx context.Context, t *check.
 		t.Debugf("performing client->server curl: [client: %s] [server: %s] [family: ipv6]", s.client.Pod.Name, s.server.Pod.Name)
 		action := t.NewAction(s, fmt.Sprintf("curl-%s", features.IPFamilyV6), s.client, s.server, features.IPFamilyV6)
 		action.Run(func(a *check.Action) {
-			a.ExecInPod(ctx, t.Context().CurlCommand(s.server, features.IPFamilyV6))
+			a.ExecInPod(ctx, a.CurlCommand(s.server))
 			s.clientSniffer6.Validate(ctx, a)
 			s.serverSniffer6.Validate(ctx, a)
 		})

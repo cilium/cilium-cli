@@ -504,6 +504,10 @@ const (
 	// TunnelProtocol is the default tunneling protocol
 	TunnelProtocol = "vxlan"
 
+	// TunnelSourcePortRange specifies the default tunnel source port range. Both
+	// zero means that we rely on the kernel driver defaults.
+	TunnelSourcePortRange = "0-0"
+
 	// ServiceNoBackendResponse is the default response for services without backends
 	ServiceNoBackendResponse = "reject"
 
@@ -544,6 +548,9 @@ const (
 
 	// EnableNodeSelectorLabels is the default value for option.EnableNodeSelectorLabels
 	EnableNodeSelectorLabels = false
+
+	// BPFDistributedLRU enables per-CPU distributed backend memory
+	BPFDistributedLRU = false
 
 	// BPFEventsDropEnabled controls whether the Cilium datapath exposes "drop" events to Cilium monitor and Hubble.
 	BPFEventsDropEnabled = true
