@@ -55,8 +55,8 @@ github.com/chai2010/gettext-go/po
 # github.com/cilium/charts v0.0.0-20250204154402-8a35f8210901
 ## explicit; go 1.17
 github.com/cilium/charts
-# github.com/cilium/cilium v1.17.0-pre.3.0.20250219193210-bbf73fb4b71e
-## explicit; go 1.23.0
+# github.com/cilium/cilium v1.18.0-pre.0.0.20250307211928-06901cc99eca
+## explicit; go 1.24.0
 github.com/cilium/cilium
 github.com/cilium/cilium/api/v1/client
 github.com/cilium/cilium/api/v1/client/bgp
@@ -110,6 +110,7 @@ github.com/cilium/cilium/cilium-cli/utils/runner
 github.com/cilium/cilium/cilium-cli/utils/wait
 github.com/cilium/cilium/daemon/k8s
 github.com/cilium/cilium/hubble/pkg/printer
+github.com/cilium/cilium/operator/option
 github.com/cilium/cilium/pkg/alibabacloud/eni/types
 github.com/cilium/cilium/pkg/allocator
 github.com/cilium/cilium/pkg/annotation
@@ -136,17 +137,26 @@ github.com/cilium/cilium/pkg/container/cache
 github.com/cilium/cilium/pkg/container/set
 github.com/cilium/cilium/pkg/container/versioned
 github.com/cilium/cilium/pkg/controller
+github.com/cilium/cilium/pkg/counter
 github.com/cilium/cilium/pkg/crypto/certificatemanager
+github.com/cilium/cilium/pkg/datapath/linux/config/defines
 github.com/cilium/cilium/pkg/datapath/linux/probes
 github.com/cilium/cilium/pkg/datapath/linux/safenetlink
+github.com/cilium/cilium/pkg/datapath/loader/metrics
 github.com/cilium/cilium/pkg/datapath/tables
+github.com/cilium/cilium/pkg/datapath/tunnel
+github.com/cilium/cilium/pkg/datapath/types
+github.com/cilium/cilium/pkg/datapath/xdp
 github.com/cilium/cilium/pkg/debug
 github.com/cilium/cilium/pkg/defaults
 github.com/cilium/cilium/pkg/endpoint/id
+github.com/cilium/cilium/pkg/endpoint/regeneration
 github.com/cilium/cilium/pkg/envoy/resource
 github.com/cilium/cilium/pkg/fqdn/dns
 github.com/cilium/cilium/pkg/fqdn/matchpattern
 github.com/cilium/cilium/pkg/fqdn/re
+github.com/cilium/cilium/pkg/fqdn/restore
+github.com/cilium/cilium/pkg/fswatcher
 github.com/cilium/cilium/pkg/health/client
 github.com/cilium/cilium/pkg/health/defaults
 github.com/cilium/cilium/pkg/hive
@@ -178,6 +188,7 @@ github.com/cilium/cilium/pkg/k8s/client/clientset/versioned/typed/cilium.io/v2al
 github.com/cilium/cilium/pkg/k8s/constants
 github.com/cilium/cilium/pkg/k8s/informer
 github.com/cilium/cilium/pkg/k8s/metrics
+github.com/cilium/cilium/pkg/k8s/portforward
 github.com/cilium/cilium/pkg/k8s/resource
 github.com/cilium/cilium/pkg/k8s/slim/k8s/api/core/v1
 github.com/cilium/cilium/pkg/k8s/slim/k8s/api/discovery/v1
@@ -542,7 +553,6 @@ github.com/cilium/proxy/go/envoy/service/runtime/v3
 github.com/cilium/proxy/go/envoy/service/secret/v3
 github.com/cilium/proxy/go/envoy/service/status/v3
 github.com/cilium/proxy/go/envoy/service/tap/v3
-github.com/cilium/proxy/go/envoy/service/trace/v3
 github.com/cilium/proxy/go/envoy/type
 github.com/cilium/proxy/go/envoy/type/http/v3
 github.com/cilium/proxy/go/envoy/type/matcher
@@ -1092,7 +1102,7 @@ github.com/spf13/viper/internal/features
 # github.com/subosito/gotenv v1.6.0
 ## explicit; go 1.18
 github.com/subosito/gotenv
-# github.com/vishvananda/netlink v1.3.1-0.20250209162617-655392bc778a
+# github.com/vishvananda/netlink v1.3.1-0.20250303224720-0e7078ed04c8
 ## explicit; go 1.12
 github.com/vishvananda/netlink
 github.com/vishvananda/netlink/nl

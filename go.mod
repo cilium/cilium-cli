@@ -1,15 +1,15 @@
 module github.com/cilium/cilium-cli
 
-go 1.23.0
+go 1.24.0
 
 // Replace directives from github.com/cilium/cilium. Keep in sync when updating Cilium!
-// Copied from https://github.com/cilium/cilium/blob/bbf73fb4b71e8ecdda2caab631114c7f1aa4bba3/go.mod#L320-L322
+// Copied from https://github.com/cilium/cilium/blob/06901cc99ecaef33e6174be4cbfefe15b0ffc307/go.mod#L320-L322
 
 // Using private fork of controller-tools. See commit msg for more context
 // as to why we are using a private fork.
 replace sigs.k8s.io/controller-tools => github.com/cilium/controller-tools v0.16.5-1
 
-require github.com/cilium/cilium v1.17.0-pre.3.0.20250219193210-bbf73fb4b71e
+require github.com/cilium/cilium v1.18.0-pre.0.0.20250307211928-06901cc99eca
 
 require (
 	cel.dev/expr v0.19.1 // indirect
@@ -156,7 +156,7 @@ require (
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/spf13/viper v1.19.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
-	github.com/vishvananda/netlink v1.3.1-0.20250209162617-655392bc778a // indirect
+	github.com/vishvananda/netlink v1.3.1-0.20250303224720-0e7078ed04c8 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	github.com/weppos/publicsuffix-go v0.30.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect

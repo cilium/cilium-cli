@@ -93,6 +93,9 @@ const (
 	// discovery.
 	EnableL2NeighDiscovery = "enable-l2-neigh-discovery"
 
+	// BPFDistributedLRU enables per-CPU distributed backend memory
+	BPFDistributedLRU = "bpf-distributed-lru"
+
 	// BPFRoot is the Path to BPF filesystem
 	BPFRoot = "bpf-root"
 
@@ -198,6 +201,9 @@ const (
 
 	// K8sAPIServer is the kubernetes api address server (for https use --k8s-kubeconfig-path instead)
 	K8sAPIServer = "k8s-api-server"
+
+	// K8sAPIServerURLs is the kubernetes api address server url
+	K8sAPIServerURLs = "k8s-api-server-urls"
 
 	// K8sKubeConfigPath is the absolute path of the kubernetes kubeconfig file
 	K8sKubeConfigPath = "k8s-kubeconfig-path"
@@ -633,9 +639,6 @@ const (
 	// NeighMapEntriesGlobalName configures max entries for BPF neighbor table
 	NeighMapEntriesGlobalName = "bpf-neigh-global-max"
 
-	// PolicyMapEntriesName configures max entries for BPF policymap.
-	PolicyMapEntriesName = "bpf-policy-map-max"
-
 	// PolicyMapFullReconciliationInterval sets the interval for performing the full
 	// reconciliation of the endpoint policy map.
 	PolicyMapFullReconciliationIntervalName = "bpf-policy-map-full-reconciliation-interval"
@@ -1014,10 +1017,6 @@ const (
 
 	// LBMaglevMapMaxEntries configures max entries of bpf map for Maglev.
 	LBMaglevMapMaxEntries = "bpf-lb-maglev-map-max"
-
-	// CRDWaitTimeout is the timeout in which Cilium will exit if CRDs are not
-	// available.
-	CRDWaitTimeout = "crd-wait-timeout"
 
 	// EgressMultiHomeIPRuleCompat instructs Cilium to use a new scheme to
 	// store rules and routes under ENI and Azure IPAM modes, if false.
@@ -1488,10 +1487,6 @@ type DaemonConfig struct {
 
 	// AuthMapEntries is the maximum number of entries in the auth map.
 	AuthMapEntries int
-
-	// PolicyMapEntries is the maximum number of peer identities that an
-	// endpoint may allow traffic to exchange traffic with.
-	PolicyMapEntries int
 
 	// PolicyMapFullReconciliationInterval is the interval at which to perform
 	// the full reconciliation of the endpoint policy map.
@@ -2082,10 +2077,6 @@ type DaemonConfig struct {
 	// LBMaglevMapEntries is the maximum number of entries allowed in BPF lbmap for maglev.
 	LBMaglevMapEntries int
 
-	// CRDWaitTimeout is the timeout in which Cilium will exit if CRDs are not
-	// available.
-	CRDWaitTimeout time.Duration
-
 	// EgressMultiHomeIPRuleCompat instructs Cilium to use a new scheme to
 	// store rules and routes under ENI and Azure IPAM modes, if false.
 	// Otherwise, it will use the old scheme.
@@ -2181,6 +2172,9 @@ type DaemonConfig struct {
 	BPFMapEventBuffers          map[string]string
 	BPFMapEventBuffersValidator func(val string) (string, error) `json:"-"`
 	bpfMapEventConfigs          BPFEventBufferConfigs
+
+	// BPFDistributedLRU enables per-CPU distributed backend memory
+	BPFDistributedLRU bool
 
 	// BPFEventsDropEnabled controls whether the Cilium datapath exposes "drop" events to Cilium monitor and Hubble.
 	BPFEventsDropEnabled bool
@@ -2306,6 +2300,7 @@ var (
 		PolicyCIDRMatchMode:                  defaults.PolicyCIDRMatchMode,
 		MaxConnectedClusters:                 defaults.MaxConnectedClusters,
 
+		BPFDistributedLRU:             defaults.BPFDistributedLRU,
 		BPFEventsDropEnabled:          defaults.BPFEventsDropEnabled,
 		BPFEventsPolicyVerdictEnabled: defaults.BPFEventsPolicyVerdictEnabled,
 		BPFEventsTraceEnabled:         defaults.BPFEventsTraceEnabled,
@@ -2955,7 +2950,6 @@ func (c *DaemonConfig) Populate(vp *viper.Viper) {
 	c.PolicyAccounting = vp.GetBool(PolicyAccountingArg)
 	c.EnableIPv4FragmentsTracking = vp.GetBool(EnableIPv4FragmentsTrackingName)
 	c.FragmentsMapEntries = vp.GetInt(FragmentsMapEntriesName)
-	c.CRDWaitTimeout = vp.GetDuration(CRDWaitTimeout)
 	c.LoadBalancerDSRDispatch = vp.GetString(LoadBalancerDSRDispatch)
 	c.LoadBalancerRSSv4CIDR = vp.GetString(LoadBalancerRSSv4CIDR)
 	c.LoadBalancerRSSv6CIDR = vp.GetString(LoadBalancerRSSv6CIDR)
@@ -2973,6 +2967,7 @@ func (c *DaemonConfig) Populate(vp *viper.Viper) {
 	c.EnablePMTUDiscovery = vp.GetBool(EnablePMTUDiscovery)
 	c.IPv6NAT46x64CIDR = defaults.IPv6NAT46x64CIDR
 	c.IPAMCiliumNodeUpdateRate = vp.GetDuration(IPAMCiliumNodeUpdateRate)
+	c.BPFDistributedLRU = vp.GetBool(BPFDistributedLRU)
 	c.BPFEventsDropEnabled = vp.GetBool(BPFEventsDropEnabled)
 	c.BPFEventsPolicyVerdictEnabled = vp.GetBool(BPFEventsPolicyVerdictEnabled)
 	c.BPFEventsTraceEnabled = vp.GetBool(BPFEventsTraceEnabled)
@@ -3408,14 +3403,14 @@ func (c *DaemonConfig) populateNodePortRange(vp *viper.Viper) error {
 
 func (c *DaemonConfig) checkMapSizeLimits() error {
 	if c.AuthMapEntries < AuthMapEntriesMin {
-		return fmt.Errorf("specified AuthMap max entries %d must exceed minimum %d", c.AuthMapEntries, AuthMapEntriesMin)
+		return fmt.Errorf("specified AuthMap max entries %d must be greater or equal to %d", c.AuthMapEntries, AuthMapEntriesMin)
 	}
 	if c.AuthMapEntries > AuthMapEntriesMax {
 		return fmt.Errorf("specified AuthMap max entries %d must not exceed maximum %d", c.AuthMapEntries, AuthMapEntriesMax)
 	}
 
 	if c.CTMapEntriesGlobalTCP < LimitTableMin || c.CTMapEntriesGlobalAny < LimitTableMin {
-		return fmt.Errorf("specified CT tables values %d/%d must exceed minimum %d",
+		return fmt.Errorf("specified CT tables values %d/%d must be greater or equal to %d",
 			c.CTMapEntriesGlobalTCP, c.CTMapEntriesGlobalAny, LimitTableMin)
 	}
 	if c.CTMapEntriesGlobalTCP > LimitTableMax || c.CTMapEntriesGlobalAny > LimitTableMax {
@@ -3424,7 +3419,7 @@ func (c *DaemonConfig) checkMapSizeLimits() error {
 	}
 
 	if c.NATMapEntriesGlobal < LimitTableMin {
-		return fmt.Errorf("specified NAT table size %d must exceed minimum %d",
+		return fmt.Errorf("specified NAT table size %d must be greater or equal to %d",
 			c.NATMapEntriesGlobal, LimitTableMin)
 	}
 	if c.NATMapEntriesGlobal > LimitTableMax {
@@ -3442,7 +3437,7 @@ func (c *DaemonConfig) checkMapSizeLimits() error {
 	}
 
 	if c.SockRevNatEntries < LimitTableMin {
-		return fmt.Errorf("specified Socket Reverse NAT table size %d must exceed minimum %d",
+		return fmt.Errorf("specified Socket Reverse NAT table size %d must be greater or equal to %d",
 			c.SockRevNatEntries, LimitTableMin)
 	}
 	if c.SockRevNatEntries > LimitTableMax {
@@ -3450,18 +3445,8 @@ func (c *DaemonConfig) checkMapSizeLimits() error {
 			c.SockRevNatEntries, LimitTableMax)
 	}
 
-	if c.PolicyMapEntries < PolicyMapMin {
-		return fmt.Errorf("specified PolicyMap max entries %d must exceed minimum %d",
-			c.PolicyMapEntries, PolicyMapMin)
-	}
-	if c.PolicyMapEntries > PolicyMapMax {
-		log.Warnf("specified PolicyMap max entries %d must not exceed maximum %d, lowering it to the maximum value",
-			c.PolicyMapEntries, PolicyMapMax)
-		c.PolicyMapEntries = PolicyMapMax
-	}
-
 	if c.FragmentsMapEntries < FragmentsMapMin {
-		return fmt.Errorf("specified max entries %d for fragment-tracking map must exceed minimum %d",
+		return fmt.Errorf("specified max entries %d for fragment-tracking map must be greater or equal to %d",
 			c.FragmentsMapEntries, FragmentsMapMin)
 	}
 	if c.FragmentsMapEntries > FragmentsMapMax {
@@ -3573,7 +3558,6 @@ func (c *DaemonConfig) calculateBPFMapSizes(vp *viper.Viper) error {
 	c.CTMapEntriesGlobalAny = vp.GetInt(CTMapEntriesGlobalAnyName)
 	c.NATMapEntriesGlobal = vp.GetInt(NATMapEntriesGlobalName)
 	c.NeighMapEntriesGlobal = vp.GetInt(NeighMapEntriesGlobalName)
-	c.PolicyMapEntries = vp.GetInt(PolicyMapEntriesName)
 	c.PolicyMapFullReconciliationInterval = vp.GetDuration(PolicyMapFullReconciliationIntervalName)
 	c.SockRevNatEntries = vp.GetInt(SockRevNatEntriesName)
 	c.LBMapEntries = vp.GetInt(LBMapEntriesName)
