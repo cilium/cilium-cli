@@ -65,7 +65,7 @@ func NoErrorsInLogs(ciliumVersion semver.Version, checkLevels []string, external
 		endpointMapDeleteFailed, etcdReconnection, epRestoreMissingState, mutationDetectorKlog,
 		hubbleFailedCreatePeer, fqdnDpUpdatesTimeout, longNetpolUpdate, failedToGetEpLabels,
 		failedCreategRPCClient, unableReallocateIngressIP, fqdnMaxIPPerHostname, failedGetMetricsAPI, envoyTLSWarning,
-		ciliumNodeConfigDeprecation, hubbleUIEnvVarFallback}
+		ciliumNodeConfigDeprecation, hubbleUIEnvVarFallback, k8sClientNetworkStatusError}
 	// The list is adopted from cilium/cilium/test/helper/utils.go
 	var errorMsgsWithExceptions = map[string][]logMatcher{
 		panicMessage:         nil,
@@ -83,6 +83,8 @@ func NoErrorsInLogs(ciliumVersion semver.Version, checkLevels []string, external
 		"DATA RACE":          nil,
 		envoyErrorMessage:    nil,
 		envoyCriticalMessage: nil,
+		// Slog's badkey
+		"!BADKEY": nil,
 	}
 	if slices.Contains(checkLevels, defaults.LogLevelError) {
 		errorMsgsWithExceptions["level=error"] = errorLogExceptions
@@ -93,6 +95,7 @@ func NoErrorsInLogs(ciliumVersion semver.Version, checkLevels []string, external
 	return &noErrorsInLogs{
 		errorMsgsWithExceptions: errorMsgsWithExceptions,
 		ScenarioBase:            check.NewScenarioBase(),
+		ciliumVersion:           ciliumVersion,
 	}
 }
 
@@ -100,6 +103,7 @@ type noErrorsInLogs struct {
 	check.ScenarioBase
 
 	errorMsgsWithExceptions map[string][]logMatcher
+	ciliumVersion           semver.Version
 }
 
 func (n *noErrorsInLogs) Name() string {
@@ -125,10 +129,13 @@ func (n *noErrorsInLogs) Run(ctx context.Context, t *check.Test) {
 		for container, restarts := range info.containers {
 			id := fmt.Sprintf("%s/%s/%s (%s)", pod.Cluster, pod.Namespace, pod.Name, container)
 			t.NewGenericAction(n, id).Run(func(a *check.Action) {
+				// Do not check for container restarts for Cilium v1.16 and earlier.
+				ignore := n.ciliumVersion.LT(semver.MustParse("1.17.0"))
+
 				// Ignore Cilium operator restarts for the moment, as they can
 				// legitimately happen in case it loses the leader election due
 				// to temporary control plane blips.
-				ignore := container == "cilium-operator"
+				ignore = ignore || container == "cilium-operator"
 
 				// The hubble relay container can currently be restarted by the
 				// startup probe if it fails to connect to Cilium. However, this
@@ -358,6 +365,7 @@ const (
 	failedGetMetricsAPI         stringMatcher = "retrieve the complete list of server APIs: metrics.k8s.io/v1beta1"      // cf. https://github.com/cilium/cilium/issues/36085
 	ciliumNodeConfigDeprecation stringMatcher = "cilium.io/v2alpha1 CiliumNodeConfig will be deprecated in cilium v1.16" // cf. https://github.com/cilium/cilium/issues/37249
 	hubbleUIEnvVarFallback      stringMatcher = "using fallback value for env var"                                       // cf. https://github.com/cilium/hubble-ui/pull/940
+	k8sClientNetworkStatusError stringMatcher = "Network status error received, restarting client connections"           // cf. https://github.com/cilium/cilium/issues/37712
 
 	// Logs messages that should not be in the cilium-envoy DS logs
 	envoyErrorMessage    = "[error]"
