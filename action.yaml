@@ -37,6 +37,10 @@ inputs:
       Container image tag to use. If this input parameter is specified, this
       action downloads the container image and sets up Cilium CLI to be executed
       inside a container.
+  kubeconfig:
+    description: >
+      Kubeconfig to be used by cilium-cli in docker
+    default: '~/.kube/config'
 runs:
   using: "composite"
   steps:
@@ -103,6 +107,7 @@ runs:
         done
         export CILIUM_CLI_IMAGE_REPO=${{ inputs.image-repo }}
         export CILIUM_CLI_IMAGE_TAG=${{ inputs.image-tag }}
+        export KUBECONFIG=${{ inputs.kubeconfig }}
         cat ${{ github.action_path }}/.github/tools/cilium.sh | envsubst > /tmp/cilium
         sudo install /tmp/cilium ${{ inputs.binary-dir }}/${{ inputs.binary-name }}
 
