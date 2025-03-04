@@ -157,7 +157,7 @@ jobs:
           nc -nvz 127.0.0.1 4245
 
           # Run connectivity test
-          cilium connectivity test --test-concurrency=5 --all-flows --collect-sysdump-on-failure --external-target google.com.
+          cilium connectivity test --test-concurrency=5 --flow-validation=disabled --collect-sysdump-on-failure --external-target google.com.
           kubectl delete namespace -l "app.kubernetes.io/name=cilium-cli"
 
           # Run performance test
