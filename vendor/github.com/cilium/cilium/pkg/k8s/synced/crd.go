@@ -17,6 +17,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 
+	operatorOption "github.com/cilium/cilium/operator/option"
 	v2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	"github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2alpha1"
 	"github.com/cilium/cilium/pkg/k8s/client"
@@ -106,22 +107,31 @@ func ClusterMeshAPIServerResourceNames() []string {
 	}
 }
 
+func GatewayAPIResourceNames() []string {
+	if !operatorOption.Config.EnableGatewayAPI {
+		return nil
+	}
+	return []string{
+		CRDResourceName(v2alpha1.CGCCName),
+	}
+}
+
 // AllCiliumCRDResourceNames returns a list of all Cilium CRD resource names
 // that the cilium operator or testsuite may register.
 func AllCiliumCRDResourceNames() []string {
-	return append(
-		AgentCRDResourceNames(),
+	res := append(AgentCRDResourceNames(), GatewayAPIResourceNames()...)
+	res = append(res,
 		CRDResourceName(v2.CNCName),
 		CRDResourceName(v2alpha1.CNCName), // TODO depreciate CNC on v2alpha1 https://github.com/cilium/cilium/issues/31982
-		CRDResourceName(v2alpha1.CGCCName),
 	)
+	return res
 }
 
 // SyncCRDs will sync Cilium CRDs to ensure that they have all been
 // installed inside the K8s cluster. These CRDs are added by the
 // Cilium Operator. This function will block until it finds all the
 // CRDs or if a timeout occurs.
-func SyncCRDs(ctx context.Context, clientset client.Clientset, crdNames []string, rs *Resources, ag *APIGroups) error {
+func SyncCRDs(ctx context.Context, clientset client.Clientset, crdNames []string, rs *Resources, ag *APIGroups, cfg CRDSyncConfig) error {
 	crds := newCRDState(crdNames)
 
 	listerWatcher := newListWatchFromClient(
@@ -141,7 +151,7 @@ func SyncCRDs(ctx context.Context, clientset client.Clientset, crdNames []string
 
 	// Create a context so that we can timeout after the configured CRD wait
 	// peroid.
-	ctx, cancel := context.WithTimeout(ctx, option.Config.CRDWaitTimeout)
+	ctx, cancel := context.WithTimeout(ctx, cfg.CRDWaitTimeout)
 	defer cancel()
 
 	crds.Lock()
@@ -198,7 +208,7 @@ func SyncCRDs(ctx context.Context, clientset client.Clientset, crdNames []string
 						"%v timeout. Please ensure that Cilium Operator is "+
 						"running, as it's responsible for registering all "+
 						"the Cilium CRDs. The following CRDs were not found: %v",
-						option.Config.CRDWaitTimeout, crds.unSynced())
+						cfg.CRDWaitTimeout, crds.unSynced())
 			}
 			// If the context was canceled it means the daemon is being stopped
 			// so we can return the context's error.

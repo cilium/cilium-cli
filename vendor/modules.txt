@@ -55,7 +55,7 @@ github.com/chai2010/gettext-go/po
 # github.com/cilium/charts v0.0.0-20250204154402-8a35f8210901
 ## explicit; go 1.17
 github.com/cilium/charts
-# github.com/cilium/cilium v1.17.0-pre.3.0.20250219193210-bbf73fb4b71e
+# github.com/cilium/cilium v1.17.0-pre.3.0.20250226122951-0fea866395d2
 ## explicit; go 1.23.0
 github.com/cilium/cilium
 github.com/cilium/cilium/api/v1/client
@@ -110,6 +110,7 @@ github.com/cilium/cilium/cilium-cli/utils/runner
 github.com/cilium/cilium/cilium-cli/utils/wait
 github.com/cilium/cilium/daemon/k8s
 github.com/cilium/cilium/hubble/pkg/printer
+github.com/cilium/cilium/operator/option
 github.com/cilium/cilium/pkg/alibabacloud/eni/types
 github.com/cilium/cilium/pkg/allocator
 github.com/cilium/cilium/pkg/annotation
@@ -542,7 +543,6 @@ github.com/cilium/proxy/go/envoy/service/runtime/v3
 github.com/cilium/proxy/go/envoy/service/secret/v3
 github.com/cilium/proxy/go/envoy/service/status/v3
 github.com/cilium/proxy/go/envoy/service/tap/v3
-github.com/cilium/proxy/go/envoy/service/trace/v3
 github.com/cilium/proxy/go/envoy/type
 github.com/cilium/proxy/go/envoy/type/http/v3
 github.com/cilium/proxy/go/envoy/type/matcher
@@ -1092,7 +1092,7 @@ github.com/spf13/viper/internal/features
 # github.com/subosito/gotenv v1.6.0
 ## explicit; go 1.18
 github.com/subosito/gotenv
-# github.com/vishvananda/netlink v1.3.1-0.20250209162617-655392bc778a
+# github.com/vishvananda/netlink v1.3.1-0.20250221194427-0af32151e72b
 ## explicit; go 1.12
 github.com/vishvananda/netlink
 github.com/vishvananda/netlink/nl
