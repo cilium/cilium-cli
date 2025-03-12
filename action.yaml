@@ -53,16 +53,33 @@ runs:
         echo path="${CLI_PATH}" >> $GITHUB_OUTPUT
         echo go-mod-path="${{ inputs.go-mod-directory }}/go.mod" >> $GITHUB_OUTPUT
 
+    - name: Pick a version to install
+      id: target
+      shell: bash
+      run: |
+        if [[ -n "${{ inputs.release-version }}" ]]; then
+          echo release="true" >> $GITHUB_OUTPUT
+        elif [[ -n "${{ steps.build-cli.outputs.path }}" ]]; then
+          echo build="true" >> $GITHUB_OUTPUT
+        elif [[ -n "${{ inputs.image-tag }}" ]]; then
+          echo image="true" >> $GITHUB_OUTPUT
+        elif [[ -n "${{ inputs.ci-version }}" ]]; then
+          echo ci_image="true" >> $GITHUB_OUTPUT
+        else
+          echo "One of 'release-version', 'ci-version', or 'image-tag' has to be specified!"
+          exit 42
+        fi
+
     - name: Setup Go
       uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
-      if: ${{ steps.build-cli.outputs.path != '' }}
+      if: ${{ steps.target.outputs.build != '' }}
       with:
         go-version-file: '${{ steps.build-cli.outputs.go-mod-path }}'
         cache: true
         cache-dependency-path: '**/go.sum'
 
     - name: Build Cilium CLI from source
-      if: ${{ steps.build-cli.outputs.path != '' }}
+      if: ${{ steps.target.outputs.build != '' }}
       shell: bash
       run: |
         TARGET=/tmp/cilium
@@ -71,15 +88,8 @@ runs:
         # to avoid building the binary as root, which would cause issues with caching.
         sudo mv ${TARGET} ${{ inputs.binary-dir }}/${{ inputs.binary-name }}
 
-    - name: Check Required Version
-      if: ${{ steps.build-cli.outputs.path == '' && inputs.release-version == '' && inputs.ci-version == '' && inputs.image-tag == '' }}
-      shell: bash
-      run: |
-        echo "One of 'release-version', 'ci-version', or 'image-tag' has to be specified!"
-        exit 42
-
     - name: Install Released Cilium CLI
-      if: ${{ steps.build-cli.outputs.path == '' && inputs.release-version != '' && inputs.ci-version == '' }}
+      if: ${{ steps.target.outputs.release != '' }}
       shell: bash
       run: |
         curl -sSL --remote-name-all https://github.com/${{ inputs.repository }}/releases/download/${{ inputs.release-version }}/cilium-linux-amd64.tar.gz{,.sha256sum}
@@ -89,7 +99,7 @@ runs:
         rm cilium-linux-amd64.tar.gz{,.sha256sum}
 
     - name: Install Cilium CLI from CI
-      if: ${{ steps.build-cli.outputs.path == '' && inputs.ci-version != '' }}
+      if: ${{ steps.target.outputs.ci_image != '' }}
       shell: bash
       run: |
         cid=$(docker create ${{ inputs.image-repo }}:${{ inputs.ci-version }} ls)
@@ -97,7 +107,7 @@ runs:
         docker rm $cid
 
     - name: Set up Cilium CLI to be executed inside a container
-      if: ${{ steps.build-cli.outputs.path == '' && inputs.image-tag != '' }}
+      if: ${{ steps.target.outputs.image != '' && inputs.image-tag != '' }}
       shell: bash
       run: |
         until docker pull ${{ inputs.image-repo }}:${{ inputs.image-tag }} &> /dev/null
