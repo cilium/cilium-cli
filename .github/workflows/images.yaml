@@ -20,20 +20,23 @@ concurrency:
 jobs:
   build-and-push-prs:
     if: ${{ github.repository == 'cilium/cilium-cli' }}
-    environment: ci
+    environment: ${{ github.ref_type == 'tag' && 'release' || 'ci' }}
     runs-on: ubuntu-24.04
-    strategy:
-      matrix:
-        include:
-          - name: cilium-cli-ci
-            dockerfile: ./Dockerfile
-            platforms: linux/amd64
 
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
 
+      - name: Login to quay.io for release
+        if: ${{ github.ref_type == 'tag' }}
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_RELEASE_USERNAME }}
+          password: ${{ secrets.QUAY_RELEASE_TOKEN }}
+
       - name: Login to quay.io for CI
+        if: ${{ github.ref_type != 'tag' }}
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
           registry: quay.io
@@ -45,10 +48,14 @@ jobs:
         run: |
           if [ ${{ github.event.pull_request.head.sha }} != "" ]; then
             echo "tag=${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
+            echo "repo_tags=quay.io/${{ github.repository_owner }}/cilium-cli-ci:${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
           elif [ "${{ github.ref_type }}" == "tag" ]; then
             echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "repo_tags=quay.io/${{ github.repository_owner }}/cilium-cli:latest,quay.io/${{ github.repository_owner }}/cilium-cli:${{ github.ref_name }}" >> $GITHUB_OUTPUT
           else
             echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+            echo "repo=cilium-cli-ci" >> $GITHUB_OUTPUT
+            echo "repo_tags=quay.io/${{ github.repository_owner }}/cilium-cli-ci:latest,quay.io/${{ github.repository_owner }}/cilium-cli-ci:${{ github.sha }}" >> $GITHUB_OUTPUT
           fi
 
       - name: Checkout Source Code
@@ -56,77 +63,11 @@ jobs:
         with:
           ref: ${{ steps.tag.outputs.tag }}
 
-      # main branch or tag pushes
-      - name: CI Build ${{ matrix.name }}
-        if: ${{ github.event_name != 'pull_request_target' }}
+      - name: Docker Build
         uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
-        id: docker_build_ci_main
+        id: docker_build
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
-          target: ${{ matrix.name }}
-          platforms: ${{ matrix.platforms }}
+          platforms: linux/arm64,linux/amd64
           push: true
-          tags: |
-            quay.io/${{ github.repository_owner }}/${{ matrix.name }}:latest
-            quay.io/${{ github.repository_owner }}/${{ matrix.name }}:${{ steps.tag.outputs.tag }}
-
-      - name: CI Image Releases digests
-        if: ${{ github.event_name != 'pull_request_target' }}
-        shell: bash
-        run: |
-          mkdir -p image-digest/
-          echo "quay.io/${{ github.repository_owner }}/${{ matrix.name }}:latest@${{ steps.docker_build_ci_main.outputs.digest }}" > image-digest/${{ matrix.name }}.txt
-          echo "quay.io/${{ github.repository_owner }}/${{ matrix.name }}:${{ steps.tag.outputs.tag }}@${{ steps.docker_build_ci_main.outputs.digest }}" >> image-digest/${{ matrix.name }}.txt
-
-      # PR updates
-      - name: CI Build ${{ matrix.name }}
-        if: ${{ github.event_name == 'pull_request_target' }}
-        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
-        id: docker_build_ci_pr
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          target: ${{ matrix.name }}
-          platforms: ${{ matrix.platforms }}
-          push: true
-          tags: |
-            quay.io/${{ github.repository_owner }}/${{ matrix.name }}:${{ steps.tag.outputs.tag }}
-
-      - name: CI Image Releases digests
-        if: ${{ github.event_name == 'pull_request_target' }}
-        shell: bash
-        run: |
-          mkdir -p image-digest/
-          echo "quay.io/${{ github.repository_owner }}/${{ matrix.name }}:${{ steps.tag.outputs.tag }}@${{ steps.docker_build_ci_pr.outputs.digest }}" > image-digest/${{ matrix.name }}.txt
-
-      # Upload artifact digests
-      - name: Upload artifact digests
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: image-digest ${{ matrix.name }}
-          path: image-digest
-          retention-days: 1
-
-  image-digests:
-    if: ${{ github.repository == 'cilium/cilium-cli' }}
-    name: Display Digests
-    runs-on: ubuntu-24.04
-    needs: [build-and-push-prs]
-    steps:
-      - name: Downloading Image Digests
-        shell: bash
-        run: |
-          mkdir -p image-digest/
-
-      - name: Download digests of all images built
-        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
-        with:
-          path: image-digest/
-          pattern: "*image-digest *"
-
-      - name: Image Digests Output
-        shell: bash
-        run: |
-          cd image-digest/
-          find -type f | sort | xargs -d '\n' cat
+          tags: ${{ steps.tag.outputs.repo_tags }}

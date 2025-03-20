@@ -37,7 +37,6 @@ env:
   zone: us-west2-a
   # renovate: datasource=github-releases depName=cilium/cilium
   cilium_version: v1.16.8
-  kubectl_version: v1.23.6
   USE_GKE_GCLOUD_AUTH_PLUGIN: True
 
 jobs:
@@ -53,14 +52,6 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Install kubectl
-        run: |
-          curl -sLO "https://dl.k8s.io/release/${{ env.kubectl_version }}/bin/linux/amd64/kubectl"
-          curl -sLO "https://dl.k8s.io/${{ env.kubectl_version }}/bin/linux/amd64/kubectl.sha256"
-          echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
-          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-          kubectl version --client
 
       - name: Set up gcloud credentials
         id: 'auth'
@@ -127,11 +118,18 @@ jobs:
         run: |
           gcloud container clusters get-credentials ${{ env.clusterName }} --zone ${{ env.zone }}
 
+      - name: Generate cilium-cli kubeconfig
+        id: gen-kubeconfig
+        uses: cilium/cilium/.github/actions/get-cloud-kubeconfig@0abd5b89da23b808820baea119314b9b416bdf2a
+        with:
+          kubeconfig: "~/.kube/config"
+
       - name: Install Cilium CLI
         uses: ./
         with:
           skip-build: 'true'
           image-tag: ${{ steps.vars.outputs.sha }}
+          kubeconfig: ${{ steps.gen-kubeconfig.outputs.kubeconfig_path }}
 
       - name: Run test
         run: |
@@ -142,7 +140,8 @@ jobs:
           --set loadBalancer.l7.backend=envoy \
           --set=tls.readSecretsOnlyFromSecretsNamespace=true \
           --set=tls.secretSync.enabled=true \
-          --set hubble.eventQueueSize=65536
+          --set hubble.eventQueueSize=65536 \
+          --set ipv4NativeRoutingCIDR=${{ steps.cluster.outputs.cluster_cidr }}
 
           # Enable Relay
           cilium hubble enable
