@@ -313,10 +313,6 @@ const (
 	// a kvstore path for too long.
 	KVStoreStaleLockTimeout = 30 * time.Second
 
-	// KVstorePodNetworkSupport represents whether to enable the support for
-	// running the Cilium KVstore in pod network.
-	KVstorePodNetworkSupport = false
-
 	// KVstoreQPS is default rate limit for kv store operations
 	KVstoreQPS = 20
 
@@ -413,6 +409,9 @@ const (
 	// ENIGarbageCollectionMaxPerInterval is the maximum number of ENIs which might be garbage collected
 	// per GC interval
 	ENIGarbageCollectionMaxPerInterval = 25
+
+	// ENIMaxResultsPerApiCall is the maximum number of ENI objects to fetch per DescribeNetworkInterfaces API call
+	ENIMaxResultsPerApiCall = 1000
 
 	// ParallelAllocWorkers is the default max number of parallel workers doing allocation in the operator
 	ParallelAllocWorkers = 50

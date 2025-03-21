@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"slices"
 	"time"
 
 	"github.com/blang/semver/v4"
@@ -68,6 +69,7 @@ func NewTest(name string, verbose bool, debug bool) *Test {
 		clrps:       make(map[string]*ciliumv2.CiliumLocalRedirectPolicy),
 		logBuf:      &bytes.Buffer{}, // maintain internal buffer by default
 		conditionFn: nil,
+		verbose:     verbose,
 	}
 	// Setting the internal buffer to nil causes the logger to
 	// write directly to stdout in verbose or debug mode.
@@ -140,8 +142,9 @@ type Test struct {
 
 	// Buffer to store output until it's flushed by a failure.
 	// Unused when run in verbose or debug mode.
-	logMu  lock.RWMutex
-	logBuf io.ReadWriter
+	logMu   lock.RWMutex
+	logBuf  io.ReadWriter
+	verbose bool
 
 	// conditionFn is a function that returns true if the test needs to run,
 	// and false otherwise. By default, it's set to a function that returns
@@ -299,7 +302,10 @@ func (t *Test) willRun() (bool, string) {
 func (t *Test) finalize() {
 	t.Debug("Finalizing Test", t.Name())
 
-	for _, f := range t.finalizers {
+	// Iterate finalizers in backward order.
+	// As an example, first we create secrets that are referenced in policies.
+	// When performing cleanup, we want to first delete policies and then secrets.
+	for _, f := range slices.Backward(t.finalizers) {
 		// Use a detached context to make sure this call is not affected by
 		// context cancellation. Usually, finalization (e.g., netpol removal)
 		// needs to happen even when the user interrupted the program.
@@ -855,10 +861,5 @@ func (t *Test) CiliumLocalRedirectPolicies() map[string]*ciliumv2.CiliumLocalRed
 }
 
 func (t *Test) HasNetworkPolicies() bool {
-	for _, obj := range t.resources {
-		if isPolicy(obj) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(t.resources, isPolicy)
 }

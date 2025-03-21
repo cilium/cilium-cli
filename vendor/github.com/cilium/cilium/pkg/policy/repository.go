@@ -7,7 +7,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"maps"
+	"slices"
 	"sync/atomic"
 
 	cilium "github.com/cilium/proxy/go/cilium/api"
@@ -16,6 +18,7 @@ import (
 	"github.com/cilium/cilium/api/v1/models"
 	"github.com/cilium/cilium/pkg/container/set"
 	"github.com/cilium/cilium/pkg/crypto/certificatemanager"
+	envoypolicy "github.com/cilium/cilium/pkg/envoy/policy"
 	"github.com/cilium/cilium/pkg/identity"
 	"github.com/cilium/cilium/pkg/identity/identitymanager"
 	ipcachetypes "github.com/cilium/cilium/pkg/ipcache/types"
@@ -126,7 +129,6 @@ type PolicyRepository interface {
 	ReplaceByResource(rules api.Rules, resource ipcachetypes.ResourceID) (affectedIDs *set.Set[identity.NumericIdentity], rev uint64, oldRevCnt int)
 	ReplaceByLabels(rules api.Rules, searchLabelsList []labels.LabelArray) (affectedIDs *set.Set[identity.NumericIdentity], rev uint64, oldRevCnt int)
 	Search(lbls labels.LabelArray) (api.Rules, uint64)
-	SetEnvoyRulesFunc(f func(certificatemanager.SecretManager, *api.L7Rules, string, string) (*cilium.HttpNetworkPolicyRules, bool))
 }
 
 type GetPolicyStatistics interface {
@@ -137,6 +139,7 @@ type GetPolicyStatistics interface {
 // Repository is a list of policy rules which in combination form the security
 // policy. A policy repository can be
 type Repository struct {
+	logger *slog.Logger
 	// mutex protects the whole policy tree
 	mutex lock.RWMutex
 
@@ -161,12 +164,14 @@ type Repository struct {
 	// PolicyCache tracks the selector policies created from this repo
 	policyCache *policyCache
 
-	certManager   certificatemanager.CertificateManager
-	secretManager certificatemanager.SecretManager
+	certManager certificatemanager.CertificateManager
 
-	getEnvoyHTTPRules func(certificatemanager.SecretManager, *api.L7Rules, string, string) (*cilium.HttpNetworkPolicyRules, bool)
+	metricsManager    api.PolicyMetrics
+	l7RulesTranslator envoypolicy.EnvoyL7RulesTranslator
+}
 
-	metricsManager api.PolicyMetrics
+func (p *Repository) GetEnvoyHTTPRules(l7Rules *api.L7Rules, ns string) (*cilium.HttpNetworkPolicyRules, bool) {
+	return p.l7RulesTranslator.GetEnvoyHTTPRules(l7Rules, ns)
 }
 
 // GetSelectorCache() returns the selector cache used by the Repository
@@ -179,34 +184,25 @@ func (p *Repository) GetAuthTypes(localID, remoteID identity.NumericIdentity) Au
 	return p.policyCache.getAuthTypes(localID, remoteID)
 }
 
-func (p *Repository) SetEnvoyRulesFunc(f func(certificatemanager.SecretManager, *api.L7Rules, string, string) (*cilium.HttpNetworkPolicyRules, bool)) {
-	p.getEnvoyHTTPRules = f
-}
-
-func (p *Repository) GetEnvoyHTTPRules(l7Rules *api.L7Rules, ns string) (*cilium.HttpNetworkPolicyRules, bool) {
-	if p.getEnvoyHTTPRules == nil {
-		return nil, true
-	}
-	return p.getEnvoyHTTPRules(p.secretManager, l7Rules, ns, p.secretManager.GetSecretSyncNamespace())
-}
-
 // NewPolicyRepository creates a new policy repository.
 func NewPolicyRepository(
+	logger *slog.Logger,
 	initialIDs identity.IdentityMap,
 	certManager certificatemanager.CertificateManager,
-	secretManager certificatemanager.SecretManager,
+	l7RulesTranslator envoypolicy.EnvoyL7RulesTranslator,
 	idmgr identitymanager.IDManager,
 	metricsManager api.PolicyMetrics,
 ) *Repository {
-	selectorCache := NewSelectorCache(initialIDs)
+	selectorCache := NewSelectorCache(logger, initialIDs)
 	repo := &Repository{
-		rules:            make(map[ruleKey]*rule),
-		rulesByNamespace: make(map[string]sets.Set[ruleKey]),
-		rulesByResource:  make(map[ipcachetypes.ResourceID]map[ruleKey]*rule),
-		selectorCache:    selectorCache,
-		certManager:      certManager,
-		secretManager:    secretManager,
-		metricsManager:   metricsManager,
+		logger:            logger,
+		rules:             make(map[ruleKey]*rule),
+		rulesByNamespace:  make(map[string]sets.Set[ruleKey]),
+		rulesByResource:   make(map[ipcachetypes.ResourceID]map[ruleKey]*rule),
+		selectorCache:     selectorCache,
+		certManager:       certManager,
+		metricsManager:    metricsManager,
+		l7RulesTranslator: l7RulesTranslator,
 	}
 	repo.revision.Store(1)
 	repo.policyCache = newPolicyCache(repo, idmgr)
@@ -447,7 +443,7 @@ func (p *Repository) resolvePolicyLocked(securityIdentity *identity.Identity) (*
 	}
 
 	if ingressEnabled {
-		newL4IngressPolicy, err := matchingRules.resolveL4IngressPolicy(&policyCtx, &ingressCtx)
+		newL4IngressPolicy, err := matchingRules.resolveL4IngressPolicy(p.logger, &policyCtx, &ingressCtx)
 		if err != nil {
 			return nil, err
 		}
@@ -455,7 +451,7 @@ func (p *Repository) resolvePolicyLocked(securityIdentity *identity.Identity) (*
 	}
 
 	if egressEnabled {
-		newL4EgressPolicy, err := matchingRules.resolveL4EgressPolicy(&policyCtx, &egressCtx)
+		newL4EgressPolicy, err := matchingRules.resolveL4EgressPolicy(p.logger, &policyCtx, &egressCtx)
 		if err != nil {
 			return nil, err
 		}
@@ -562,13 +558,13 @@ func (p *Repository) computePolicyEnforcementAndRules(securityIdentity *identity
 
 	// If there only ingress default-allow rules, then insert a wildcard rule
 	if !hasIngressDefaultDeny && ingress {
-		log.WithField(logfields.Identity, securityIdentity).Debug("Only default-allow policies, synthesizing ingress wildcard-allow rule")
+		p.logger.Debug("Only default-allow policies, synthesizing ingress wildcard-allow rule", logfields.Identity, securityIdentity)
 		matchingRules = append(matchingRules, wildcardRule(securityIdentity.LabelArray, true /*ingress*/))
 	}
 
 	// Same for egress -- synthesize a wildcard rule
 	if !hasEgressDefaultDeny && egress {
-		log.WithField(logfields.Identity, securityIdentity).Debug("Only default-allow policies, synthesizing egress wildcard-allow rule")
+		p.logger.Debug("Only default-allow policies, synthesizing egress wildcard-allow rule", logfields.Identity, securityIdentity)
 		matchingRules = append(matchingRules, wildcardRule(securityIdentity.LabelArray, false /*egress*/))
 	}
 
@@ -647,7 +643,7 @@ func (p *Repository) ReplaceByResource(rules api.Rules, resource ipcachetypes.Re
 	if len(resource) == 0 {
 		// This should never ever be hit, as the caller should have already validated the resource.
 		// Out of paranoia, do nothing.
-		log.Error("Attempt to replace rules by resource with an empty resource.")
+		p.logger.Error("Attempt to replace rules by resource with an empty resource.")
 		return
 	}
 
@@ -697,12 +693,9 @@ func (p *Repository) ReplaceByLabels(rules api.Rules, searchLabelsList []labels.
 
 	// determine outgoing rules
 	for ruleKey, rule := range p.rules {
-		for _, searchLabels := range searchLabelsList {
-			if rule.Labels.Contains(searchLabels) {
-				p.del(ruleKey)
-				oldRules = append(oldRules, rule)
-				break
-			}
+		if slices.ContainsFunc(searchLabelsList, rule.Labels.Contains) {
+			p.del(ruleKey)
+			oldRules = append(oldRules, rule)
 		}
 	}
 

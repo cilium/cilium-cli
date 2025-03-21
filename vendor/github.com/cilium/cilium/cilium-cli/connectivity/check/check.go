@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"regexp"
 	"strings"
 	"time"
@@ -21,23 +22,25 @@ import (
 )
 
 type PerfParameters struct {
-	ReportDir   string
-	Duration    time.Duration
-	SetupDelay  time.Duration
-	HostNet     bool
-	PodNet      bool
-	PodToHost   bool
-	HostToPod   bool
-	SameNode    bool
-	OtherNode   bool
-	Samples     int
-	MessageSize int
-	Throughput  bool
-	CRR         bool
-	RR          bool
-	UDP         bool
-	Image       string
-	NetQos      bool
+	ReportDir       string
+	Duration        time.Duration
+	SetupDelay      time.Duration
+	HostNet         bool
+	PodNet          bool
+	PodToHost       bool
+	HostToPod       bool
+	SameNode        bool
+	OtherNode       bool
+	Samples         int
+	MessageSize     int
+	Streams         uint
+	Throughput      bool
+	ThroughputMulti bool
+	CRR             bool
+	RR              bool
+	UDP             bool
+	Image           string
+	NetQos          bool
 
 	NodeSelectorServer map[string]string
 	NodeSelectorClient map[string]string
@@ -91,7 +94,8 @@ type Parameters struct {
 	CiliumPodSelector      string
 	NodeSelector           map[string]string
 	DeploymentAnnotations  annotationsMap
-	NamespaceAnnotations   annotations
+	NamespaceLabels        map[string]string
+	NamespaceAnnotations   map[string]string
 	ExternalTarget         string
 	ExternalOtherTarget    string
 	ExternalCIDR           string
@@ -111,16 +115,18 @@ type Parameters struct {
 	ImpersonateGroups      []string
 	IPFamilies             []string
 
-	IncludeConnDisruptTest          bool
-	IncludeConnDisruptTestNSTraffic bool
-	ConnDisruptTestSetup            bool
-	ConnDisruptTestRestartsPath     string
-	ConnDisruptTestXfrmErrorsPath   string
-	ConnDisruptDispatchInterval     time.Duration
+	IncludeConnDisruptTest              bool
+	IncludeConnDisruptTestNSTraffic     bool
+	IncludeConnDisruptTestEgressGateway bool
+	ConnDisruptTestSetup                bool
+	ConnDisruptTestRestartsPath         string
+	ConnDisruptTestXfrmErrorsPath       string
+	ConnDisruptDispatchInterval         time.Duration
 
 	ExpectedDropReasons []string
 	ExpectedXFRMErrors  []string
 
+	CodeOwners        []string
 	LogCodeOwners     bool
 	ExcludeCodeOwners []string
 	LogCheckLevels    []string
@@ -308,9 +314,7 @@ func (r *FlowRequirementResults) Merge(from *FlowRequirementResults) {
 	if r.Matched == nil {
 		r.Matched = from.Matched
 	} else {
-		for k, v := range from.Matched {
-			r.Matched[k] = v
-		}
+		maps.Copy(r.Matched, from.Matched)
 	}
 	r.Failures += from.Failures
 	r.NeedMoreFlows = r.NeedMoreFlows || from.NeedMoreFlows
