@@ -78,6 +78,9 @@ var (
 	//go:embed manifests/client-egress-l7-tls-sni.yaml
 	clientEgressL7TLSSNIPolicyYAML string
 
+	//go:embed manifests/client-egress-l7-tls-other-sni.yaml
+	clientEgressL7TLSOtherSNIPolicyYAML string
+
 	//go:embed manifests/client-egress-l7-tls.yaml
 	clientEgressL7TLSPolicyYAML string
 
@@ -262,14 +265,7 @@ func concurrentTests(connTests []*check.ConnectivityTest) error {
 		echoIngressAuthAlwaysFail{},
 		echoIngressMutualAuthSpiffe{},
 		podToIngressService{},
-		podToIngressServiceDenyAll{},
-		podToIngressServiceDenyIngressIdentity{},
-		podToIngressServiceDenyBackendService{},
-		podToIngressServiceAllowIngressIdentity{},
 		outsideToIngressService{},
-		outsideToIngressServiceDenyWorldIdentity{},
-		outsideToIngressServiceDenyCidr{},
-		outsideToIngressServiceDenyAllIngress{},
 		dnsOnly{},
 		toFqdns{},
 		podToControlplaneHost{},
@@ -317,6 +313,7 @@ func renderTemplates(clusterName string, param check.Parameters) (map[string]str
 		"clientEgressTLSSNIPolicyYAML":                       clientEgressTLSSNIPolicyYAML,
 		"clientEgressTLSSNIOtherPolicyYAML":                  clientEgressTLSSNIOtherPolicyYAML,
 		"clientEgressL7TLSSNIPolicyYAML":                     clientEgressL7TLSSNIPolicyYAML,
+		"clientEgressL7TLSOtherSNIPolicyYAML":                clientEgressL7TLSOtherSNIPolicyYAML,
 		"clientEgressL7TLSPolicyYAML":                        clientEgressL7TLSPolicyYAML,
 		"clientEgressL7TLSPolicyPortRangeYAML":               clientEgressL7TLSPolicyPortRangeYAML,
 		"clientEgressL7HTTPMatchheaderSecretYAML":            clientEgressL7HTTPMatchheaderSecretYAML,

@@ -62,6 +62,7 @@ const (
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:resource:categories={cilium,ciliumbgp},singular="ciliumbgpadvertisement",path="ciliumbgpadvertisements",scope="Cluster",shortName={cbgpadvert}
 // +kubebuilder:printcolumn:JSONPath=".metadata.creationTimestamp",name="Age",type=date
+// +kubebuilder:deprecatedversion
 
 // CiliumBGPAdvertisement is the Schema for the ciliumbgpadvertisements API
 type CiliumBGPAdvertisement struct {
@@ -121,6 +122,16 @@ type BGPAdvertisement struct {
 
 // BGPServiceOptions defines the configuration for Service advertisement type.
 type BGPServiceOptions struct {
+	// IPv4 mask to aggregate BGP route advertisements of service
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=31
+	// +kubebuilder:validation:Optional
+	AggregationLengthIPv4 *int16 `json:"aggregationLengthIPv4,omitempty"`
+	// IPv6 mask to aggregate BGP route advertisements of service
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=127
+	// +kubebuilder:validation:Optional
+	AggregationLengthIPv6 *int16 `json:"aggregationLengthIPv6,omitempty"`
 	// Addresses is a list of service address types which needs to be advertised via BGP.
 	//
 	// +kubebuilder:validation:Required
