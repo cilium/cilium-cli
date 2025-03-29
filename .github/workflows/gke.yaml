@@ -36,7 +36,7 @@ concurrency:
 env:
   zone: us-west2-a
   # renovate: datasource=github-releases depName=cilium/cilium
-  cilium_version: v1.16.8
+  cilium_version: v1.17.2
   USE_GKE_GCLOUD_AUTH_PLUGIN: True
 
 jobs:
@@ -120,7 +120,7 @@ jobs:
 
       - name: Generate cilium-cli kubeconfig
         id: gen-kubeconfig
-        uses: cilium/cilium/.github/actions/get-cloud-kubeconfig@0abd5b89da23b808820baea119314b9b416bdf2a
+        uses: cilium/cilium/.github/actions/get-cloud-kubeconfig@d1ffac03430fea6039162ae95992c42dd55c06a0
         with:
           kubeconfig: "~/.kube/config"
 
