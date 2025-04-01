@@ -28,7 +28,6 @@ const (
 
 	KPRMode                 Feature = "kpr-mode"
 	KPRExternalIPs          Feature = "kpr-external-ips"
-	KPRGracefulTermination  Feature = "kpr-graceful-termination"
 	KPRHostPort             Feature = "kpr-hostport"
 	KPRSocketLB             Feature = "kpr-socket-lb"
 	KPRSocketLBHostnsOnly   Feature = "kpr-socket-lb-hostns-only"
@@ -407,9 +406,9 @@ func (fs Set) ExtractFromConfigMap(cm *v1.ConfigMap) {
 	}
 }
 
-func (fs Set) ExtractFromNodes(perf bool, nodesWithoutCilium map[string]struct{}) {
+func (fs Set) ExtractFromNodes(nodesWithoutCilium map[string]struct{}) {
 	fs[NodeWithoutCilium] = Status{
-		Enabled: !perf && len(nodesWithoutCilium) != 0,
+		Enabled: len(nodesWithoutCilium) != 0,
 		Mode:    strings.Join(slices.Collect(maps.Keys(nodesWithoutCilium)), ","),
 	}
 }

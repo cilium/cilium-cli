@@ -8,6 +8,8 @@ package synced
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,6 +26,8 @@ import (
 	"github.com/cilium/cilium/pkg/k8s/informer"
 	slim_metav1 "github.com/cilium/cilium/pkg/k8s/slim/k8s/apis/meta/v1"
 	"github.com/cilium/cilium/pkg/lock"
+	"github.com/cilium/cilium/pkg/logging"
+	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/option"
 	"github.com/cilium/cilium/pkg/time"
 )
@@ -131,8 +135,8 @@ func AllCiliumCRDResourceNames() []string {
 // installed inside the K8s cluster. These CRDs are added by the
 // Cilium Operator. This function will block until it finds all the
 // CRDs or if a timeout occurs.
-func SyncCRDs(ctx context.Context, clientset client.Clientset, crdNames []string, rs *Resources, ag *APIGroups, cfg CRDSyncConfig) error {
-	crds := newCRDState(crdNames)
+func SyncCRDs(ctx context.Context, logger *slog.Logger, clientset client.Clientset, crdNames []string, rs *Resources, ag *APIGroups, cfg CRDSyncConfig) error {
+	crds := newCRDState(logger, crdNames)
 
 	listerWatcher := newListWatchFromClient(
 		newCRDGetter(clientset),
@@ -194,7 +198,7 @@ func SyncCRDs(ctx context.Context, clientset client.Clientset, crdNames []string
 	// controller will exit after this function.
 	defer ag.RemoveAPI(k8sAPIGroupCRD)
 
-	log.Info("Waiting until all Cilium CRDs are available")
+	logger.Info("Waiting until all Cilium CRDs are available")
 
 	ticker := time.NewTicker(50 * time.Millisecond)
 	count := 0
@@ -203,12 +207,15 @@ func SyncCRDs(ctx context.Context, clientset client.Clientset, crdNames []string
 		case <-ctx.Done():
 			err := ctx.Err()
 			if err != nil && !errors.Is(err, context.Canceled) {
-				log.WithError(err).
-					Fatalf("Unable to find all Cilium CRDs necessary within "+
+				logging.Fatal(
+					logger,
+					fmt.Sprintf("Unable to find all Cilium CRDs necessary within "+
 						"%v timeout. Please ensure that Cilium Operator is "+
 						"running, as it's responsible for registering all "+
 						"the Cilium CRDs. The following CRDs were not found: %v",
-						cfg.CRDWaitTimeout, crds.unSynced())
+						cfg.CRDWaitTimeout, crds.unSynced()),
+					logfields.Error, err,
+				)
 			}
 			// If the context was canceled it means the daemon is being stopped
 			// so we can return the context's error.
@@ -216,20 +223,23 @@ func SyncCRDs(ctx context.Context, clientset client.Clientset, crdNames []string
 		case <-ticker.C:
 			if crds.isSynced() {
 				ticker.Stop()
-				log.Info("All Cilium CRDs have been found and are available")
+				logger.Info("All Cilium CRDs have been found and are available")
 				return nil
 			}
 			count++
 			if count == 20 {
 				count = 0
-				log.Infof("Still waiting for Cilium Operator to register the following CRDs: %v", crds.unSynced())
+				logger.Info(
+					"Still waiting for Cilium Operator to register CRDs",
+					logfields.CRDs, crds.unSynced(),
+				)
 			}
 		}
 	}
 }
 
 func (s *crdState) add(obj interface{}) {
-	if pom := informer.CastInformerEvent[slim_metav1.PartialObjectMetadata](obj); pom != nil {
+	if pom := informer.CastInformerEvent[slim_metav1.PartialObjectMetadata](s.logger, obj); pom != nil {
 		s.Lock()
 		s.m[CRDResourceName(pom.GetName())] = true
 		s.Unlock()
@@ -237,7 +247,7 @@ func (s *crdState) add(obj interface{}) {
 }
 
 func (s *crdState) remove(obj interface{}) {
-	if pom := informer.CastInformerEvent[slim_metav1.PartialObjectMetadata](obj); pom != nil {
+	if pom := informer.CastInformerEvent[slim_metav1.PartialObjectMetadata](s.logger, obj); pom != nil {
 		s.Lock()
 		s.m[CRDResourceName(pom.GetName())] = false
 		s.Unlock()
@@ -273,6 +283,7 @@ func (s *crdState) unSynced() []string {
 
 // crdState contains the state of the CRDs inside the cluster.
 type crdState struct {
+	logger *slog.Logger
 	lock.Mutex
 
 	// m is a map which maps the CRD name to its synced state in the cluster.
@@ -280,13 +291,14 @@ type crdState struct {
 	m map[string]bool
 }
 
-func newCRDState(crds []string) crdState {
+func newCRDState(logger *slog.Logger, crds []string) crdState {
 	m := make(map[string]bool, len(crds))
 	for _, name := range crds {
 		m[name] = false
 	}
 	return crdState{
-		m: m,
+		logger: logger,
+		m:      m,
 	}
 }
 

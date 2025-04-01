@@ -1319,10 +1319,8 @@ func (k *K8sClusterMesh) checkConnectionMode() error {
 		defaults.ClusterMeshConnectionModeUnicast,
 	}
 
-	for _, mode := range validModes {
-		if k.params.ConnectionMode == mode {
-			return nil
-		}
+	if slices.Contains(validModes, k.params.ConnectionMode) {
+		return nil
 	}
 
 	k.Log("❌ %s is not a correct connection mode.", k.params.ConnectionMode)
@@ -1497,7 +1495,7 @@ func (k *K8sClusterMesh) retrieveRemoteHelmValues(ctx context.Context, remoteCli
 }
 
 func removeStringFromSlice(name string, names []string) []string {
-	namesCopy := append([]string{}, names...)
+	namesCopy := slices.Clone(names)
 	namesCopy = slices.DeleteFunc(namesCopy, func(n string) bool {
 		return n == name
 	})
@@ -1531,6 +1529,11 @@ func (k *K8sClusterMesh) disconnectRemoteWithHelm(ctx context.Context, clusterNa
 }
 
 func (k *K8sClusterMesh) DisconnectWithHelm(ctx context.Context) error {
+	// Check if destination context is provided
+	if len(k.params.DestinationContext) == 0 {
+		return fmt.Errorf("no destination context specified, use --destination-context to specify which cluster to disconnect from")
+	}
+
 	localClient := k.client.(*k8s.Client)
 	err := k.checkConnectionMode()
 	if err != nil {
