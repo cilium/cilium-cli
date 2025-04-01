@@ -74,6 +74,7 @@ type ConnectivityTest struct {
 	clientCPPods         map[string]Pod
 	perfClientPods       []Pod
 	perfServerPod        []Pod
+	perfProfilingPods    map[string]Pod
 	PerfResults          []common.PerfSummary
 	echoServices         map[string]Service
 	echoExternalServices map[string]Service
@@ -227,6 +228,7 @@ func NewConnectivityTest(
 		clientCPPods:             make(map[string]Pod),
 		lrpClientPods:            make(map[string]Pod),
 		lrpBackendPods:           make(map[string]Pod),
+		perfProfilingPods:        make(map[string]Pod),
 		socatServerPods:          []Pod{},
 		socatClientPods:          []Pod{},
 		perfClientPods:           []Pod{},
@@ -303,6 +305,21 @@ func (ct *ConnectivityTest) SetupAndValidate(ctx context.Context, extra SetupHoo
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+
+	setupAndValidate := ct.setupAndValidate
+	if ct.Params().Perf {
+		setupAndValidate = ct.setupAndValidatePerf
+	}
+
+	if err := setupAndValidate(ctx, extra); err != nil {
+		return err
+	}
+
+	// Setup and validate all the extras coming from extended functionalities.
+	return extra.SetupAndValidate(ctx, ct)
+}
+
+func (ct *ConnectivityTest) setupAndValidate(ctx context.Context, extra SetupHooks) error {
 	if err := ct.detectSingleNode(ctx); err != nil {
 		return err
 	}
@@ -375,8 +392,23 @@ func (ct *ConnectivityTest) SetupAndValidate(ctx context.Context, extra SetupHoo
 		}
 	}
 
-	// Setup and validate all the extras coming from extended functionalities.
-	return extra.SetupAndValidate(ctx, ct)
+	return nil
+}
+
+func (ct *ConnectivityTest) setupAndValidatePerf(ctx context.Context, _ SetupHooks) error {
+	if err := ct.initClients(ctx); err != nil {
+		return err
+	}
+
+	if err := ct.deployPerf(ctx); err != nil {
+		return err
+	}
+
+	if err := ct.validateDeploymentPerf(ctx); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // PrintTestInfo prints connectivity test names and count.
@@ -561,12 +593,12 @@ func (ct *ConnectivityTest) report() error {
 			}
 		}
 		ct.Logf("%s", strings.Repeat("-", 200))
-		ct.Logf("%s", strings.Repeat("-", 85))
-		ct.Logf("📋 %-15s | %-10s | %-15s | %-15s | %-15s ", "Scenario", "Node", "Test", "Duration", "Throughput Mb/s")
-		ct.Logf("%s", strings.Repeat("-", 85))
+		ct.Logf("%s", strings.Repeat("-", 88))
+		ct.Logf("📋 %-15s | %-10s | %-18s | %-15s | %-15s ", "Scenario", "Node", "Test", "Duration", "Throughput Mb/s")
+		ct.Logf("%s", strings.Repeat("-", 88))
 		for _, result := range ct.PerfResults {
 			if result.Result.ThroughputMetric != nil {
-				ct.Logf("📋 %-15s | %-10s | %-15s | %-15s | %-12.2f ",
+				ct.Logf("📋 %-15s | %-10s | %-18s | %-15s | %-12.2f ",
 					result.PerfTest.Scenario,
 					nodeString(result.PerfTest.SameNode),
 					result.PerfTest.Test,
@@ -575,7 +607,7 @@ func (ct *ConnectivityTest) report() error {
 				)
 			}
 		}
-		ct.Logf("%s", strings.Repeat("-", 85))
+		ct.Logf("%s", strings.Repeat("-", 88))
 		if ct.Params().PerfParameters.ReportDir != "" {
 			common.ExportPerfSummaries(ct.PerfResults, ct.Params().PerfParameters.ReportDir)
 		}
@@ -1088,6 +1120,10 @@ func (ct *ConnectivityTest) PerfClientPods() []Pod {
 	return ct.perfClientPods
 }
 
+func (ct *ConnectivityTest) PerfProfilingPods() map[string]Pod {
+	return ct.perfProfilingPods
+}
+
 func (ct *ConnectivityTest) SocatServerPods() []Pod {
 	return ct.socatServerPods
 }
@@ -1284,4 +1320,13 @@ func (ct *ConnectivityTest) ShouldRunConnDisruptNSTraffic() bool {
 		(ct.Params().MultiCluster == "" || ct.Features[features.KPRNodePort].Enabled) &&
 		!ct.Features[features.KPRNodePortAcceleration].Enabled &&
 		(!ct.Features[features.IPsecEnabled].Enabled || !ct.Features[features.KPRNodePort].Enabled)
+}
+
+func (ct *ConnectivityTest) ShouldRunConnDisruptEgressGateway() bool {
+	return ct.params.IncludeUnsafeTests &&
+		ct.params.IncludeConnDisruptTestEgressGateway &&
+		ct.Features[features.EgressGateway].Enabled &&
+		ct.Features[features.NodeWithoutCilium].Enabled &&
+		!ct.Features[features.KPRNodePortAcceleration].Enabled &&
+		ct.params.MultiCluster == ""
 }

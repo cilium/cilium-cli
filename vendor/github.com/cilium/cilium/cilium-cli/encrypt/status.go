@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -154,8 +154,7 @@ func nodeStatusFromText(str string) (models.EncryptionStatus, error) {
 			Interfaces: make([]*models.WireguardInterface, 0),
 		},
 	}
-	lines := strings.Split(str, "\n")
-	for _, line := range lines {
+	for line := range strings.SplitSeq(str, "\n") {
 		parts := strings.Split(line, ":")
 		if len(parts) < 2 {
 			continue
@@ -312,9 +311,7 @@ func printClusterStatus(cs clusterStatus, format string) error {
 			for k := range cs.IPsecKeysInUseNodeCount {
 				keys = append(keys, k)
 			}
-			sort.Slice(keys, func(i, j int) bool {
-				return keys[i] < keys[j]
-			})
+			slices.Sort(keys)
 			keyStrs := make([]string, 0, len(keys))
 			for _, k := range keys {
 				keyStrs = append(keyStrs, fmt.Sprintf("%d on %d/%d", k, cs.IPsecKeysInUseNodeCount[k], cs.TotalNodeCount))

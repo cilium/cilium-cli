@@ -6,6 +6,7 @@ package option
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -60,13 +61,7 @@ const (
 
 // RequiresOption returns true if the option requires the specified option `name`.
 func (o Option) RequiresOption(name string) bool {
-	for _, o := range o.Requires {
-		if o == name {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(o.Requires, name)
 }
 
 type OptionLibrary map[string]*Option
@@ -141,11 +136,7 @@ func (l OptionLibrary) Validate(name string, value string) error {
 type OptionMap map[string]OptionSetting
 
 func (om OptionMap) DeepCopy() OptionMap {
-	cpy := make(OptionMap, len(om))
-	for k, v := range om {
-		cpy[k] = v
-	}
-	return cpy
+	return maps.Clone(om)
 }
 
 // IntOptions member functions with external access do not require

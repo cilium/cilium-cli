@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"net"
 	"net/netip"
@@ -59,9 +60,6 @@ const (
 
 	// ClusterMeshHealthPort is the TCP port for ClusterMesh apiserver health API
 	ClusterMeshHealthPort = "clustermesh-health-port"
-
-	// AgentLabels are additional labels to identify this agent
-	AgentLabels = "agent-labels"
 
 	// AllowICMPFragNeeded allows ICMP Fragmentation Needed type packets in policy.
 	AllowICMPFragNeeded = "allow-icmp-frag-needed"
@@ -652,7 +650,7 @@ const (
 	EgressGatewayPolicyMapEntriesName = "egress-gateway-policy-map-max"
 
 	// LogSystemLoadConfigName is the name of the option to enable system
-	// load loggging
+	// load logging
 	LogSystemLoadConfigName = "log-system-load"
 
 	// DisableCiliumEndpointCRDName is the name of the option to disable
@@ -763,7 +761,7 @@ const (
 	// IPSecKeyFileName is the name of the option for ipsec key file
 	IPSecKeyFileName = "ipsec-key-file"
 
-	// EnableIPSecEncrytpedOverlay is the name of the option which enables
+	// EnableIPSecEncryptedOverlay is the name of the option which enables
 	// the EncryptedOverlay feature.
 	//
 	// This feature will encrypt overlay traffic before it leaves the cluster.
@@ -795,7 +793,7 @@ const (
 	// EnableEncryptionStrictMode is the name of the option to enable strict encryption mode.
 	EnableEncryptionStrictMode = "enable-encryption-strict-mode"
 
-	// EncryptionStrictModeCIDR is the CIDR in which the strict ecryption mode should be enforced.
+	// EncryptionStrictModeCIDR is the CIDR in which the strict encryption mode should be enforced.
 	EncryptionStrictModeCIDR = "encryption-strict-mode-cidr"
 
 	// EncryptionStrictModeAllowRemoteNodeIdentities allows dynamic lookup of remote node identities.
@@ -803,7 +801,7 @@ const (
 	// or direct routing is used and the node CIDR and pod CIDR overlap.
 	EncryptionStrictModeAllowRemoteNodeIdentities = "encryption-strict-mode-allow-remote-node-identities"
 
-	// WireguardPersistentKeepalivee controls Wireguard PersistentKeepalive option. Set 0 to disable.
+	// WireguardPersistentKeepalive controls Wireguard PersistentKeepalive option. Set 0 to disable.
 	WireguardPersistentKeepalive = "wireguard-persistent-keepalive"
 
 	// NodeEncryptionOptOutLabels is the name of the option for the node-to-node encryption opt-out labels
@@ -822,10 +820,6 @@ const (
 
 	// KVstoreConnectivityTimeout is the timeout when performing kvstore operations
 	KVstoreConnectivityTimeout = "kvstore-connectivity-timeout"
-
-	// KVstorePodNetworkSupport enables the support for running the Cilium KVstore
-	// in pod network.
-	KVstorePodNetworkSupport = "kvstore-pod-network-support"
 
 	// IdentityChangeGracePeriod is the name of the
 	// IdentityChangeGracePeriod option
@@ -1099,7 +1093,7 @@ const (
 	// and the max size and TTL of events in the buffers should be.
 	BPFMapEventBuffers = "bpf-map-event-buffers"
 
-	// IPAMCiliumnodeUpdateRate is the maximum rate at which the CiliumNode custom
+	// IPAMCiliumNodeUpdateRate is the maximum rate at which the CiliumNode custom
 	// resource is updated.
 	IPAMCiliumNodeUpdateRate = "ipam-cilium-node-update-rate"
 
@@ -1301,6 +1295,27 @@ func BindEnvWithLegacyEnvFallback(vp *viper.Viper, optName, legacyEnvName string
 	vp.BindEnv(optName, envName)
 }
 
+// LogRegisteredSlogOptions logs all options that where bound to viper.
+func LogRegisteredSlogOptions(vp *viper.Viper, entry *slog.Logger) {
+	keys := vp.AllKeys()
+	slices.Sort(keys)
+	for _, k := range keys {
+		ss := vp.GetStringSlice(k)
+		if len(ss) == 0 {
+			sm := vp.GetStringMap(k)
+			for k, v := range sm {
+				ss = append(ss, fmt.Sprintf("%s=%s", k, v))
+			}
+		}
+
+		if len(ss) > 0 {
+			entry.Info(fmt.Sprintf("  --%s='%s'", k, strings.Join(ss, ",")))
+		} else {
+			entry.Info(fmt.Sprintf("  --%s='%s'", k, vp.GetString(k)))
+		}
+	}
+}
+
 // LogRegisteredOptions logs all options that where bound to viper.
 func LogRegisteredOptions(vp *viper.Viper, entry *logrus.Entry) {
 	keys := vp.AllKeys()
@@ -1379,9 +1394,6 @@ type DaemonConfig struct {
 	// ClusterMeshHealthPort is the TCP port for ClusterMesh apiserver health API
 	ClusterMeshHealthPort int
 
-	// AgentLabels contains additional labels to identify this agent in monitor events.
-	AgentLabels []string
-
 	// IPv6ClusterAllocCIDR is the base CIDR used to allocate IPv6 node
 	// CIDRs if allocation is not performed by an orchestration system
 	IPv6ClusterAllocCIDR string
@@ -1451,7 +1463,7 @@ type DaemonConfig struct {
 	MonitorAggregationInterval time.Duration
 
 	// MonitorAggregationFlags determines which TCP flags that the monitor
-	// aggregation ensures reports are generated for when monitor-aggragation
+	// aggregation ensures reports are generated for when monitor-aggregation
 	// is enabled. Network byte-order.
 	MonitorAggregationFlags uint16
 
@@ -1794,10 +1806,6 @@ type DaemonConfig struct {
 	// KVstoreConnectivityTimeout is the timeout when performing kvstore operations
 	KVstoreConnectivityTimeout time.Duration
 
-	// KVstorePodNetworkSupport enables the support for running the Cilium KVstore
-	// in pod network.
-	KVstorePodNetworkSupport bool
-
 	// IdentityChangeGracePeriod is the grace period that needs to pass
 	// before an endpoint that has changed its identity will start using
 	// that new identity. During the grace period, the new identity has
@@ -1840,7 +1848,7 @@ type DaemonConfig struct {
 	// EnableEndpointRoutes enables use of per endpoint routes
 	EnableEndpointRoutes bool
 
-	// Specifies wheather to annotate the kubernetes nodes or not
+	// Specifies whether to annotate the kubernetes nodes or not
 	AnnotateK8sNode bool
 
 	// EnableNodePort enables k8s NodePort service implementation in BPF
@@ -2015,7 +2023,7 @@ type DaemonConfig struct {
 
 	// PolicyAuditMode enables non-drop mode for installed policies. In
 	// audit mode packets affected by policies will not be dropped.
-	// Policy related decisions can be checked via the poicy verdict messages.
+	// Policy related decisions can be checked via the policy verdict messages.
 	PolicyAuditMode bool
 
 	// PolicyAccounting enable policy accounting
@@ -2272,7 +2280,6 @@ var (
 		ToFQDNsMaxIPsPerHost:            defaults.ToFQDNsMaxIPsPerHost,
 		KVstorePeriodicSync:             defaults.KVstorePeriodicSync,
 		KVstoreConnectivityTimeout:      defaults.KVstoreConnectivityTimeout,
-		KVstorePodNetworkSupport:        defaults.KVstorePodNetworkSupport,
 		IdentityChangeGracePeriod:       defaults.IdentityChangeGracePeriod,
 		IdentityRestoreGracePeriod:      defaults.IdentityRestoreGracePeriodK8s,
 		FixedIdentityMapping:            make(map[string]string),
@@ -2377,7 +2384,7 @@ func (c *DaemonConfig) AreDevicesRequired() bool {
 }
 
 // NeedBPFHostOnWireGuardDevice returns true if the agent needs to attach
-// a BPF program on the Ingress of Cilium's WireGuard device
+// cil_from_netdev on the Ingress of Cilium's WireGuard device
 func (c *DaemonConfig) NeedBPFHostOnWireGuardDevice() bool {
 	if !c.EnableWireguard {
 		return false
@@ -2399,6 +2406,27 @@ func (c *DaemonConfig) NeedBPFHostOnWireGuardDevice() bool {
 	// netdev (otherwise, the WG netdev after decrypting the reply will pass
 	// it to the stack which drops the packet).
 	if c.EnableNodePort && c.EncryptNode {
+		return true
+	}
+
+	return false
+}
+
+// NeedEgressOnWireGuardDevice returns true if the agent needs to attach
+// cil_to_wireguard on the Egress of Cilium's WireGuard device
+func (c *DaemonConfig) NeedEgressOnWireGuardDevice() bool {
+	if !c.EnableWireguard {
+		return false
+	}
+
+	// No need to handle rev-NAT xlations in wireguard with tunneling enabled.
+	if c.TunnelingEnabled() {
+		return false
+	}
+
+	// Attaching cil_to_wireguard to cilium_wg0 egress is required for handling
+	// the rev-NAT xlations when encrypting KPR traffic.
+	if c.EnableNodePort && c.EnableL7Proxy && c.KubeProxyReplacement == KubeProxyReplacementTrue {
 		return true
 	}
 
@@ -2512,12 +2540,7 @@ func (c *DaemonConfig) K8sNetworkPolicyEnabled() bool {
 }
 
 func (c *DaemonConfig) PolicyCIDRMatchesNodes() bool {
-	for _, mode := range c.PolicyCIDRMatchMode {
-		if mode == "nodes" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.PolicyCIDRMatchMode, "nodes")
 }
 
 // PerNodeLabelsEnabled returns true if per-node labels feature
@@ -2560,10 +2583,9 @@ func (c *DaemonConfig) LoadBalancerUsesDSR() bool {
 		c.LoadBalancerModeAnnotation
 }
 
-// KVstoreEnabledWithoutPodNetworkSupport returns whether Cilium is configured to connect
-// to an external KVStore, and the support for running it in pod network is disabled.
-func (c *DaemonConfig) KVstoreEnabledWithoutPodNetworkSupport() bool {
-	return c.KVStore != "" && !c.KVstorePodNetworkSupport
+// KVstoreEnabled returns whether Cilium is configured to connect to an external KVStore.
+func (c *DaemonConfig) KVstoreEnabled() bool {
+	return c.KVStore != ""
 }
 
 func (c *DaemonConfig) validateIPv6ClusterAllocCIDR() error {
@@ -2817,7 +2839,6 @@ func (c *DaemonConfig) Populate(vp *viper.Viper) {
 	c.AgentHealthPort = vp.GetInt(AgentHealthPort)
 	c.ClusterHealthPort = vp.GetInt(ClusterHealthPort)
 	c.ClusterMeshHealthPort = vp.GetInt(ClusterMeshHealthPort)
-	c.AgentLabels = vp.GetStringSlice(AgentLabels)
 	c.AllowICMPFragNeeded = vp.GetBool(AllowICMPFragNeeded)
 	c.AllowLocalhost = vp.GetString(AllowLocalhost)
 	c.AnnotateK8sNode = vp.GetBool(AnnotateK8sNode)
@@ -2907,7 +2928,6 @@ func (c *DaemonConfig) Populate(vp *viper.Viper) {
 	c.KVstoreLeaseTTL = vp.GetDuration(KVstoreLeaseTTL)
 	c.KVstorePeriodicSync = vp.GetDuration(KVstorePeriodicSync)
 	c.KVstoreConnectivityTimeout = vp.GetDuration(KVstoreConnectivityTimeout)
-	c.KVstorePodNetworkSupport = vp.GetBool(KVstorePodNetworkSupport)
 	c.KVstoreMaxConsecutiveQuorumErrors = vp.GetUint(KVstoreMaxConsecutiveQuorumErrorsName)
 	c.LabelPrefixFile = vp.GetString(LabelPrefixFile)
 	c.Labels = vp.GetStringSlice(Labels)
