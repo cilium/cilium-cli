@@ -115,9 +115,9 @@ func (s defaultScenario) Name() string {
 
 var ghWorkflowRegexp = regexp.MustCompile("^(?:.+?)/(?:.+?)/(.+?)@.*$")
 
-func (ct *ConnectivityTest) LogOwners(scenarios ...ownedScenario) {
+func (ct *ConnectivityTest) GetOwners(scenarios ...ownedScenario) []string {
 	if !ct.params.LogCodeOwners {
-		return
+		return nil
 	}
 
 	rules := make(map[ownedScenario]*codeowners.Rule)
@@ -126,7 +126,7 @@ func (ct *ConnectivityTest) LogOwners(scenarios ...ownedScenario) {
 		if err != nil || rule == nil || rule.Owners == nil {
 			ct.Fatalf("Failed to find CODEOWNERS for test scenario. Developer BUG?"+
 				"\n\t\tname=%s path=%s err=%s", scenario.Name(), scenario.FilePath(), err)
-			return
+			return nil
 		}
 		rules[scenario] = rule
 	}
@@ -154,22 +154,35 @@ func (ct *ConnectivityTest) LogOwners(scenarios ...ownedScenario) {
 		excludeOwners[owner] = struct{}{}
 	}
 
-	ct.Log("    ⛑️ The following owners are responsible for reliability of the testsuite: ")
+	var owners []string
 	for scenario, rule := range rules {
 		for _, o := range rule.Owners {
 			owner := o.String()
 			if _, ok := excludeOwners[owner]; ok {
 				continue
 			}
-			ct.Log("        - " + owner + " (" + scenario.Name() + ")")
+			owners = append(owners, fmt.Sprintf("%s (%s)", owner, scenario.Name()))
 		}
 		for _, o := range workflowOwners {
 			owner := o.String()
 			if _, ok := excludeOwners[owner]; ok {
 				continue
 			}
-			ct.Log("        - " + owner + " (" + ghWorkflow + ")")
+			owners = append(owners, fmt.Sprintf("%s (%s)", owner, ghWorkflow))
 		}
+	}
+	return owners
+}
+
+func (ct *ConnectivityTest) LogOwners(scenarios ...ownedScenario) {
+	owners := ct.GetOwners(scenarios...)
+	if len(owners) == 0 {
+		return
+	}
+
+	ct.Log("    ⛑️ The following owners are responsible for reliability of the testsuite: ")
+	for _, o := range owners {
+		ct.Log("        - " + o)
 	}
 }
 
@@ -323,7 +336,7 @@ func (t *Test) flush() {
 	if _, err := io.Copy(buf, t.logBuf); err != nil {
 		panic(err)
 	}
-	t.ctx.logger.Print(t, buf.String())
+	t.ctx.logger.Print(t, buf.Bytes())
 
 	// Assign a nil buffer so future writes go to user-specified writer.
 	t.logBuf = nil
@@ -484,6 +497,14 @@ func (a *Action) Fatalf(format string, s ...interface{}) {
 
 func timestamp() string {
 	return fmt.Sprintf("[%s] ", time.Now().Format(time.RFC3339))
+}
+
+func timestampBytes() []byte {
+	b := make([]byte, 0, 32) // roughly enough space
+	b = append(b, '[')
+	b = time.Now().AppendFormat(b, time.RFC3339)
+	b = append(b, ']', ' ')
+	return b
 }
 
 type debugWriter struct {

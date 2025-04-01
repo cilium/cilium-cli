@@ -313,10 +313,6 @@ const (
 	// a kvstore path for too long.
 	KVStoreStaleLockTimeout = 30 * time.Second
 
-	// KVstorePodNetworkSupport represents whether to enable the support for
-	// running the Cilium KVstore in pod network.
-	KVstorePodNetworkSupport = false
-
 	// KVstoreQPS is default rate limit for kv store operations
 	KVstoreQPS = 20
 
@@ -414,6 +410,9 @@ const (
 	// per GC interval
 	ENIGarbageCollectionMaxPerInterval = 25
 
+	// ENIMaxResultsPerApiCall is the maximum number of ENI objects to fetch per DescribeNetworkInterfaces API call
+	ENIMaxResultsPerApiCall = 1000
+
 	// ParallelAllocWorkers is the default max number of parallel workers doing allocation in the operator
 	ParallelAllocWorkers = 50
 
@@ -507,6 +506,9 @@ const (
 	// TunnelSourcePortRange specifies the default tunnel source port range. Both
 	// zero means that we rely on the kernel driver defaults.
 	TunnelSourcePortRange = "0-0"
+
+	// UnderlayProtocol is the default IP family for the underlay.
+	UnderlayProtocol = "ipv4"
 
 	// ServiceNoBackendResponse is the default response for services without backends
 	ServiceNoBackendResponse = "reject"

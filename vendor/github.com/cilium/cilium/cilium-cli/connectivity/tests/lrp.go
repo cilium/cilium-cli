@@ -45,7 +45,6 @@ func (s lrp) Name() string {
 }
 
 func (s lrp) Run(ctx context.Context, t *check.Test) {
-	ct := t.Context()
 	policies := make([]*v2.CiliumLocalRedirectPolicy, 0, len(t.CiliumLocalRedirectPolicies()))
 
 	for _, policy := range t.CiliumLocalRedirectPolicies() {
@@ -54,22 +53,80 @@ func (s lrp) Run(ctx context.Context, t *check.Test) {
 			continue
 		}
 		policies = append(policies, policy)
+	}
+
+	t.ForEachIPFamily(func(ipFamily features.IPFamily) {
+		// Filter policies by IP family
+		var familyPolicies []*v2.CiliumLocalRedirectPolicy
+		for _, policy := range policies {
+			frontendIP := policy.Spec.RedirectFrontend.AddressMatcher.IP
+			if features.GetIPFamily(frontendIP) == ipFamily {
+				familyPolicies = append(familyPolicies, policy)
+			}
+		}
+
+		if len(familyPolicies) == 0 {
+			return
+		}
+
+		if ipFamily == features.IPFamilyV4 {
+			s.runTestsForIPFamily(ctx, t, familyPolicies, ipFamily)
+		} else if ipFamily == features.IPFamilyV6 {
+			// Split IPv6 policies based on skipRedirectFromBackend
+			ipv6SkipTruePolicies := make([]*v2.CiliumLocalRedirectPolicy, 0)
+			ipv6SkipFalsePolicies := make([]*v2.CiliumLocalRedirectPolicy, 0)
+			for _, policy := range familyPolicies {
+				if policy.Spec.SkipRedirectFromBackend {
+					ipv6SkipTruePolicies = append(ipv6SkipTruePolicies, policy)
+				} else {
+					ipv6SkipFalsePolicies = append(ipv6SkipFalsePolicies, policy)
+				}
+			}
+
+			// Run tests for skipRedirectFromBackend=true policies regardless of SocketLB
+			if s.skipRedirectFromBackend && len(ipv6SkipTruePolicies) > 0 {
+				if versioncheck.MustCompile(">=1.17.3")(t.Context().CiliumVersion) {
+					s.runTestsForIPFamily(ctx, t, ipv6SkipTruePolicies, ipFamily)
+				} else {
+					t.Info("Skipping IPv6 tests for policies with skipRedirectFromBackend=true. It works with >=1.17.3.")
+				}
+			}
+
+			// Run tests for skipRedirectFromBackend=false policies only if SocketLB is fully functional
+			if !s.skipRedirectFromBackend && len(ipv6SkipFalsePolicies) > 0 {
+				if !t.Context().IsSocketLBFull() {
+					t.Info("Skipping IPv6 tests for policies with skipRedirectFromBackend=false due to SocketLB not being fully functional")
+				} else {
+					s.runTestsForIPFamily(ctx, t, ipv6SkipFalsePolicies, ipFamily)
+				}
+			}
+		}
+	})
+}
+
+func (s lrp) runTestsForIPFamily(ctx context.Context, t *check.Test, policies []*v2.CiliumLocalRedirectPolicy, ipFamily features.IPFamily) {
+	ct := t.Context()
+
+	for _, policy := range policies {
+		spec := policy.Spec
 		frontend := check.NewLRPFrontend(spec.RedirectFrontend)
-		frontendStr := net.JoinHostPort(frontend.Address(features.IPFamilyV4), fmt.Sprint(frontend.Port()))
+		frontendStr := net.JoinHostPort(frontend.Address(ipFamily), fmt.Sprint(frontend.Port()))
 		if versioncheck.MustCompile(">=1.17.0")(ct.CiliumVersion) {
 			frontendStr += fmt.Sprintf("/%s", frontend.Protocol())
 		}
+
 		lrpBackendsMap := make(map[string][]string)
 		// Check for LRP backend pods deployed on nodes in the cluster.
 		for _, pod := range t.Context().LrpBackendPods() {
 			node := pod.NodeName()
-			podIP := pod.Pod.Status.PodIP
+			podIP := getPodIP(pod, ipFamily)
 			if _, ok := lrpBackendsMap[node]; !ok {
 				lrpBackendsMap[node] = []string{podIP}
 				continue
 			}
 			lrpBackendsMap[node] = append(lrpBackendsMap[node], podIP)
 		}
+
 		// Wait until the local redirect entries are plumbed in the BPF LB map
 		// on the cilium agent nodes hosting LRP backend pods.
 		WaitForLocalRedirectBPFEntries(ctx, t, frontendStr, lrpBackendsMap)
@@ -85,7 +142,7 @@ func (s lrp) Run(ctx context.Context, t *check.Test) {
 
 			i := 0
 			lf := check.NewLRPFrontend(policy.Spec.RedirectFrontend)
-			t.NewAction(s, fmt.Sprintf("curl-%d", i), &pod, lf, features.IPFamilyV4).Run(func(a *check.Action) {
+			t.NewAction(s, fmt.Sprintf("curl-%d-%s", i, ipFamily), &pod, lf, ipFamily).Run(func(a *check.Action) {
 				a.ExecInPod(ctx, a.CurlCommand(lf))
 				i++
 			})
@@ -102,7 +159,7 @@ func (s lrp) Run(ctx context.Context, t *check.Test) {
 
 			i := 0
 			lf := check.NewLRPFrontend(policy.Spec.RedirectFrontend)
-			t.NewAction(s, fmt.Sprintf("curl-%d", i), &pod, lf, features.IPFamilyV4).Run(func(a *check.Action) {
+			t.NewAction(s, fmt.Sprintf("curl-%d-%s", i, ipFamily), &pod, lf, ipFamily).Run(func(a *check.Action) {
 				a.ExecInPod(ctx, a.CurlCommand(lf))
 
 				if policy.Spec.SkipRedirectFromBackend {
@@ -113,8 +170,32 @@ func (s lrp) Run(ctx context.Context, t *check.Test) {
 				i++
 			})
 		}
-
 	}
+}
+
+func getPodIP(pod check.Pod, ipFamily features.IPFamily) string {
+	matchesFamily := func(ipStr string) bool {
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			return false
+		}
+		if ipFamily == features.IPFamilyV4 {
+			return ip.To4() != nil
+		}
+		return ip.To4() == nil
+	}
+
+	if matchesFamily(pod.Pod.Status.PodIP) {
+		return pod.Pod.Status.PodIP
+	}
+
+	for _, podIP := range pod.Pod.Status.PodIPs {
+		if matchesFamily(podIP.IP) {
+			return podIP.IP
+		}
+	}
+
+	return ""
 }
 
 func WaitForLocalRedirectBPFEntries(ctx context.Context, t *check.Test, frontend string, backendsMap map[string][]string) {

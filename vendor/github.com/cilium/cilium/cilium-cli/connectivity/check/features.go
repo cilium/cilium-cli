@@ -160,9 +160,6 @@ func (ct *ConnectivityTest) extractFeaturesFromCiliumStatus(ctx context.Context,
 			if f.HostPort != nil {
 				result[features.KPRHostPort] = features.Status{Enabled: f.HostPort.Enabled}
 			}
-			if f.GracefulTermination != nil {
-				result[features.KPRGracefulTermination] = features.Status{Enabled: f.GracefulTermination.Enabled}
-			}
 			if f.NodePort != nil {
 				result[features.KPRNodePort] = features.Status{Enabled: f.NodePort.Enabled}
 				acceleration := strings.ToLower(f.NodePort.Acceleration)
@@ -330,7 +327,7 @@ func (ct *ConnectivityTest) detectFeatures(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		features.ExtractFromNodes(ct.params.Perf, ct.nodesWithoutCilium)
+		features.ExtractFromNodes(ct.nodesWithoutCilium)
 		err = ct.extractFeaturesFromCiliumStatus(ctx, ciliumPod, features)
 		if err != nil {
 			return err
