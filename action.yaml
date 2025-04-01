@@ -41,6 +41,9 @@ inputs:
     description: >
       Kubeconfig to be used by cilium-cli in docker
     default: '~/.kube/config'
+  kubeconfig-mount-path:
+    description: 'Path to mount kubeconfig inside the cilium-cli container'
+    default: '/root/.kube/config'
 runs:
   using: "composite"
   steps:
@@ -118,6 +121,7 @@ runs:
         export CILIUM_CLI_IMAGE_REPO=${{ inputs.image-repo }}
         export CILIUM_CLI_IMAGE_TAG=${{ inputs.image-tag }}
         export KUBECONFIG=${{ inputs.kubeconfig }}
+        export KUBECONFIG_MOUNT_PATH=${{ inputs.kubeconfig-mount-path }}
         cat ${{ github.action_path }}/.github/tools/cilium.sh | envsubst > /tmp/cilium
         sudo install /tmp/cilium ${{ inputs.binary-dir }}/${{ inputs.binary-name }}
 
