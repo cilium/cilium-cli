@@ -65,8 +65,8 @@ jobs:
             --set bpf.monitorAggregation=none \
             --set cni.chainingMode=portmap \
             --set loadBalancer.l7.backend=envoy \
-            --set=tls.readSecretsOnlyFromSecretsNamespace=true \
-            --set=tls.secretSync.enabled=true \
+            --set=tls.readSecretsOnlyFromSecretsNamespace=false \
+            --set=tls.secretSync.enabled=false \
             --set prometheus.enabled=true \
             --set localRedirectPolicy=true \
             --set socketLB.enabled=true
@@ -147,7 +147,9 @@ jobs:
           --nodes-without-cilium \
           --set encryption.enabled=true \
           --set encryption.type=ipsec \
-          --set kubeProxyReplacement=false
+          --set kubeProxyReplacement=false \
+          --set=tls.readSecretsOnlyFromSecretsNamespace=false \
+          --set=tls.secretSync.enabled=false
 
       - name: Enable Relay
         run: |
