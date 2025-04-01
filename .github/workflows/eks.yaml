@@ -29,7 +29,7 @@ env:
   region: us-east-2
   eksctl_version: v0.147.0
   # renovate: datasource=github-releases depName=cilium/cilium
-  cilium_version: v1.16.8
+  cilium_version: v1.17.2
 
 jobs:
   installation-and-connectivity:
@@ -119,7 +119,7 @@ jobs:
 
       - name: Generate cilium-cli kubeconfig
         id: gen-kubeconfig
-        uses: cilium/cilium/.github/actions/get-cloud-kubeconfig@0abd5b89da23b808820baea119314b9b416bdf2a
+        uses: cilium/cilium/.github/actions/get-cloud-kubeconfig@5aa23b3635f8e6b72746b8079de0a524d38d7702
         with:
           kubeconfig: "~/.kube/config"
 
