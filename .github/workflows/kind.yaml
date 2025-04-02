@@ -82,22 +82,6 @@ jobs:
           sleep 10s
           nc -nvz 127.0.0.1 4245
 
-      - name: Set up external targets
-        id: external_targets
-        run: |
-          export worker2_ip=$(kubectl get nodes chart-testing-worker2 -o=jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
-          export worker3_ip=$(kubectl get nodes chart-testing-worker3 -o=jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
-          echo "worker2_ip=${worker2_ip}" >> $GITHUB_OUTPUT
-          echo "worker3_ip=${worker3_ip}" >> $GITHUB_OUTPUT
-          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.12.0/cert-manager.yaml
-          kubectl rollout status -n cert-manager deployment.apps/cert-manager
-          kubectl rollout status -n cert-manager deployment.apps/cert-manager-webhook
-          kubectl create ns external-targets
-          cat .github/external-targets/certs.yaml | envsubst | kubectl apply -n external-targets -f -
-          until kubectl get secret -n external-targets external-target-cert &> /dev/null; do sleep 1s; done
-          kubectl apply -n external-targets -f .github/external-targets/nginx.yaml
-          kubectl rollout status -n external-targets ds/nginx
-
       - name: Set up node local DNS
         run: |
           kubedns=$(kubectl get svc kube-dns -n kube-system -o jsonpath={.spec.clusterIP}) && sed -i "s/__PILLAR__DNS__SERVER__/$kubedns/g;" .github/node-local-dns/node-local-dns.yaml
@@ -120,14 +104,7 @@ jobs:
             --test-concurrency=5 \
             --include-unsafe-tests --include-conn-disrupt-test \
             --collect-sysdump-on-failure --junit-file cilium-junit-1.xml \
-            --junit-property type=no-tunnel \
-            --curl-insecure \
-            --external-target chart-testing-worker2 \
-            --external-target-ca-namespace=external-targets \
-            --external-target-ca-name=ca \
-            --external-cidr 172.18.0.0/16 \
-            --external-ip ${{ steps.external_targets.outputs.worker2_ip }} \
-            --external-other-ip ${{ steps.external_targets.outputs.worker3_ip }}
+            --junit-property type=no-tunnel
 
       - name: Uninstall node local DNS
         run: |
@@ -166,14 +143,7 @@ jobs:
             --test-concurrency=5 \
             --include-unsafe-tests \
             --collect-sysdump-on-failure --junit-file cilium-junit-2.xml \
-            --junit-property type=ipsec \
-            --curl-insecure \
-            --external-target chart-testing-worker2 \
-            --external-target-ca-namespace=external-targets \
-            --external-target-ca-name=ca \
-            --external-cidr 172.18.0.0/16 \
-            --external-ip ${{ steps.external_targets.outputs.worker2_ip }} \
-            --external-other-ip ${{ steps.external_targets.outputs.worker3_ip }}
+            --junit-property type=ipsec
 
       - name: Upload JUnit
         if: ${{ always() }}
