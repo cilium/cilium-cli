@@ -119,7 +119,7 @@ jobs:
 
       - name: Generate cilium-cli kubeconfig
         id: gen-kubeconfig
-        uses: cilium/cilium/.github/actions/get-cloud-kubeconfig@67fbabc42e3efb390c5035a726ea88b73c5c0dc1
+        uses: cilium/cilium/.github/actions/get-cloud-kubeconfig@20f0e004901d81a278ec9d18fa4526046b426323
         with:
           kubeconfig: "~/.kube/config"
 
