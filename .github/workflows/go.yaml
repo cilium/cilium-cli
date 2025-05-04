@@ -26,7 +26,7 @@ jobs:
         go-version: 1.24.2
 
     - name: Run static checks
-      uses: golangci/golangci-lint-action@1481404843c368bc19ca9406f87d6e0fc97bdcfd # v7.0.0
+      uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7.0.1
       with:
         # renovate: datasource=docker depName=golangci/golangci-lint
         version: v2.1.2
