@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.15@sha256:9857836c9ee4268391bb5b09f9f157f3c91bb15821bb77969642813b0d00518d
-
 # Copyright Authors of Cilium
 # SPDX-License-Identifier: Apache-2.0
 
