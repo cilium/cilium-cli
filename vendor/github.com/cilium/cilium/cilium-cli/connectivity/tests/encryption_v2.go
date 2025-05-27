@@ -38,7 +38,7 @@ var _ check.Scenario = (*podToPodEncryptionV2)(nil)
 //
 // For tunnel mode the TCPDUMP filter looks for UDP packets which match:
 // 1. UDP protocol
-// 2. UDP dst port matching the configured tunnel mode's well known port (e.g. 8472 for VXLAN)
+// 2. UDP port matching the configured tunnel mode's current port
 // 3. Inner IP headers of pod-to-pod traffic.
 // In other words the TCPDUMP filter seeks into the tunnel packet and looks for
 // plain-text pod-to-pod traffic for the client and server pods under test.
@@ -210,7 +210,7 @@ func (s *podToPodEncryptionV2) tunnelTCPDumpFilters4(ctx context.Context) (clien
 	// UDP(8)+VXLAN|GENEVE(8)+ETHER(14) = udp[30] + Offset to IPHeader.Dst = udp[46]
 	fmtInnerIPHeaderSrc := "udp[42:4] == %s"
 	fmtInnerIPHeaderDst := "udp[46:4] == %s"
-	fmtFilter := "udp and port %d and ( %s and %s )"
+	fmtFilter := "%s and ( %s and %s )"
 
 	src, err := netip.ParseAddr(s.client.Address(features.IPFamilyV4))
 	if err != nil {
@@ -227,18 +227,18 @@ func (s *podToPodEncryptionV2) tunnelTCPDumpFilters4(ctx context.Context) (clien
 	dstBytes := dst.As4()
 	dstAsHex := fmt.Sprintf("0x%02x%02x%02x%02x", dstBytes[0], dstBytes[1], dstBytes[2], dstBytes[3])
 
-	port := 8472
-	if s.tunnelMode.Mode == "geneve" {
-		port = 6081
+	baseTunnelFilter, err := sniff.GetTunnelFilter(s.ct)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to build tunnel filter: %w", err)
 	}
 
 	// InnerIP.Src(client) -> InnerIP.Dst(server)
-	clientFilter = fmt.Sprintf(fmtFilter, port,
+	clientFilter = fmt.Sprintf(fmtFilter, baseTunnelFilter,
 		fmt.Sprintf(fmtInnerIPHeaderSrc, srcAsHex),
 		fmt.Sprintf(fmtInnerIPHeaderDst, dstAsHex))
 
 	// InnerIP.Src(server) -> InnerIP.Dst(client)
-	serverFilter = fmt.Sprintf(fmtFilter, port,
+	serverFilter = fmt.Sprintf(fmtFilter, baseTunnelFilter,
 		fmt.Sprintf(fmtInnerIPHeaderSrc, dstAsHex),
 		fmt.Sprintf(fmtInnerIPHeaderDst, srcAsHex))
 
@@ -297,6 +297,10 @@ func (s *podToPodEncryptionV2) resolveTCPDumpFilters4(ctx context.Context) (clie
 	return s.nativeTCPDumpFilters4(ctx)
 }
 
+// icmpv6NAFilter filters ipv6 packets with icmpv6 type 136 (neighbor advertisement).
+// These are sent unencrypted when node encryption and wireguard is enabled.
+const icmpv6NAFilter = "not (icmp6 and ip6[40] = 136)"
+
 // tunnelTCPDumpFilters6 is equivalent to tunnelTCPDumpFilters4 but for IPv6.
 func (s *podToPodEncryptionV2) tunnelTCPDumpFilters6(ctx context.Context) (clientFilter string, serverFilter string, err error) {
 	if ctx.Err() != nil {
@@ -312,7 +316,7 @@ func (s *podToPodEncryptionV2) tunnelTCPDumpFilters6(ctx context.Context) (clien
 	// the IPv6 address into groups of 4 byte words: (4peeks x 4bytes = 16byte IPv6 Address).
 	innerIPv6Src := "(udp[38:4] == %s and udp[42:4] == %s and udp[46:4] == %s and udp[50:4] == %s)"
 	innerIPv6Dst := "(udp[54:4] == %s and udp[58:4] == %s and udp[62:4] == %s and udp[66:4] == %s)"
-	fmtFilter := "udp and port %d and %s and %s"
+	fmtFilter := "%s and %s and %s"
 
 	src, err := netip.ParseAddr(s.client.Address(features.IPFamilyV6))
 	if err != nil {
@@ -323,9 +327,9 @@ func (s *podToPodEncryptionV2) tunnelTCPDumpFilters6(ctx context.Context) (clien
 		return "", "", fmt.Errorf("Failed to parse server pod IP: %w", err)
 	}
 
-	port := 8472
-	if s.tunnelMode.Mode == "geneve" {
-		port = 6081
+	baseTunnelFilter, err := sniff.GetTunnelFilter(s.ct)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to build tunnel filter: %w", err)
 	}
 
 	srcBytes := src.As16()
@@ -346,8 +350,9 @@ func (s *podToPodEncryptionV2) tunnelTCPDumpFilters6(ctx context.Context) (clien
 	serverInnerIPv6Src := fmt.Sprintf(innerIPv6Src, dstWord1, dstWord2, dstWord3, dstWord4)
 	serverInnerIPv6Dst := fmt.Sprintf(innerIPv6Dst, srcWord1, srcWord2, srcWord3, srcWord4)
 
-	clientFilter = fmt.Sprintf(fmtFilter, port, clientInnerIPv6Src, clientInnerIPv6Dst)
-	serverFilter = fmt.Sprintf(fmtFilter, port, serverInnerIPv6Dst, serverInnerIPv6Src)
+	clientFilter = fmt.Sprintf(fmtFilter, baseTunnelFilter, clientInnerIPv6Src, clientInnerIPv6Dst)
+	serverFilter = fmt.Sprintf(fmtFilter, baseTunnelFilter, serverInnerIPv6Dst, serverInnerIPv6Src)
+
 	return clientFilter, serverFilter, nil
 }
 
@@ -379,10 +384,22 @@ func (s *podToPodEncryptionV2) resolveTCPDumpFilters6(ctx context.Context) (clie
 	}
 
 	if s.tunnelMode.Enabled {
-		return s.tunnelTCPDumpFilters6(ctx)
+		clientFilter, serverFilter, err = s.tunnelTCPDumpFilters6(ctx)
+	} else {
+		clientFilter, serverFilter, err = s.nativeTCPDumpFilters6(ctx)
 	}
 
-	return s.nativeTCPDumpFilters6(ctx)
+	if err == nil {
+		// If we have node encryption enabled with wireguard, filter out icmpv6 packets
+		// that are neighbor broadcast messages as these are not sent to the WG device.
+		encNode, ok := s.ct.Feature(features.EncryptionNode)
+		if ok && encNode.Enabled && s.encryptMode.Mode == "wireguard" {
+			clientFilter = fmt.Sprintf("(%s) and (%s)", clientFilter, icmpv6NAFilter)
+			serverFilter = fmt.Sprintf("(%s) and (%s)", serverFilter, icmpv6NAFilter)
+		}
+	}
+
+	return clientFilter, serverFilter, err
 }
 
 // startSniffers will start TCPdump on both the client and the server pod's host

@@ -309,18 +309,12 @@ func (r *resource[T]) markNeeded() {
 }
 
 func (r *resource[T]) startWhenNeeded() {
-	defer r.wg.Done()
-
 	// Wait until we're needed before starting the informer.
 	select {
 	case <-r.ctx.Done():
+		r.wg.Done()
 		return
 	case <-r.needed:
-	}
-
-	// Short-circuit if we're being stopped.
-	if r.ctx.Err() != nil {
-		return
 	}
 
 	// Wait for CRDs to have synced before trying to access (Cilium) k8s resources
@@ -331,7 +325,6 @@ func (r *resource[T]) startWhenNeeded() {
 	store, informer := r.newInformer()
 	r.storeResolver.Resolve(&typedStore[T]{store})
 
-	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
 		informer.Run(r.ctx.Done())
@@ -739,7 +732,7 @@ func (p *wrapperController) Run(stopCh <-chan struct{}) {
 
 func (r *resource[T]) newInformer() (cache.Indexer, cache.Controller) {
 	clientState := cache.NewIndexer(cache.DeletionHandlingMetaNamespaceKeyFunc, r.opts.indexers)
-	opts := cache.DeltaFIFOOptions{KeyFunction: cache.MetaNamespaceKeyFunc, KnownObjects: clientState}
+	opts := cache.DeltaFIFOOptions{KeyFunction: cache.MetaNamespaceKeyFunc, KnownObjects: clientState, EmitDeltaTypeReplaced: true}
 	fifo := cache.NewDeltaFIFOWithOptions(opts)
 	transformer := r.opts.transform
 	cacheMutationDetector := cache.NewCacheMutationDetector(fmt.Sprintf("%T", r))
@@ -748,8 +741,7 @@ func (r *resource[T]) newInformer() (cache.Indexer, cache.Controller) {
 		ListerWatcher:    r.lw,
 		ObjectType:       r.opts.sourceObj(),
 		FullResyncPeriod: 0,
-		RetryOnError:     false,
-		Process: func(obj interface{}, isInInitialList bool) error {
+		Process: func(obj any, isInInitialList bool) error {
 			// Processing of the deltas is done under the resource mutex. This
 			// avoids emitting double events for new subscribers that list the
 			// keys in the store.
@@ -757,7 +749,7 @@ func (r *resource[T]) newInformer() (cache.Indexer, cache.Controller) {
 			defer r.mu.RUnlock()
 
 			for _, d := range obj.(cache.Deltas) {
-				var obj interface{}
+				var obj any
 				if transformer != nil {
 					var err error
 					if obj, err = transformer(d.Object); err != nil {
@@ -778,7 +770,7 @@ func (r *resource[T]) newInformer() (cache.Indexer, cache.Controller) {
 				key := NewKey(obj)
 
 				switch d.Type {
-				case cache.Sync, cache.Added, cache.Updated:
+				case cache.Sync, cache.Added, cache.Updated, cache.Replaced:
 					metric := resources.MetricCreate
 					if d.Type != cache.Added {
 						metric = resources.MetricUpdate

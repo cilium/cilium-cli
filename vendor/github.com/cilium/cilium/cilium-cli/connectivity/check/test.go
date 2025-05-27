@@ -553,17 +553,32 @@ func (t *Test) WithCiliumEgressGatewayPolicy(params CiliumEgressGatewayPolicyPar
 
 	pl.Spec.EgressGateway.NodeSelector.MatchLabels["kubernetes.io/hostname"] = egressGatewayNode
 
+	var ipv6Enabled bool
+	if status, ok := t.ctx.Feature(features.IPv6); ok && status.Enabled && versioncheck.MustCompile(">=1.18.0")(t.ctx.CiliumVersion) {
+		ipv6Enabled = true
+	}
+
+	// If IPv6 egress policies are enabled, add the necessary destination CIDR
+	if ipv6Enabled {
+		pl.Spec.DestinationCIDRs = append(pl.Spec.DestinationCIDRs, "::/0")
+	}
+
 	// Set the excluded CIDRs
-	pl.Spec.ExcludedCIDRs = []ciliumv2.IPv4CIDR{}
+	pl.Spec.ExcludedCIDRs = []ciliumv2.CIDR{}
 
 	switch params.ExcludedCIDRsConf {
 	case ExternalNodeExcludedCIDRs:
 		for _, nodeWithoutCiliumIP := range t.Context().params.NodesWithoutCiliumIPs {
 			if parsedIP := net.ParseIP(nodeWithoutCiliumIP.IP); parsedIP.To4() == nil {
+				// If it is an IPv6 address, add the necessary excluded CIDR
+				if ipv6Enabled {
+					cidr := ciliumv2.CIDR(fmt.Sprintf("%s/128", nodeWithoutCiliumIP.IP))
+					pl.Spec.ExcludedCIDRs = append(pl.Spec.ExcludedCIDRs, cidr)
+				}
 				continue
 			}
 
-			cidr := ciliumv2.IPv4CIDR(fmt.Sprintf("%s/32", nodeWithoutCiliumIP.IP))
+			cidr := ciliumv2.CIDR(fmt.Sprintf("%s/32", nodeWithoutCiliumIP.IP))
 			pl.Spec.ExcludedCIDRs = append(pl.Spec.ExcludedCIDRs, cidr)
 		}
 	}
@@ -797,6 +812,17 @@ func (t *Test) NewAction(s Scenario, name string, src *Pod, dst TestPeer, ipFam 
 // is created for, name should be a visually-distinguishable name.
 func (t *Test) NewGenericAction(s Scenario, name string) *Action {
 	return t.NewAction(s, name, nil, nil, features.IPFamilyAny)
+}
+
+// Scenarios returns a slice of all Scenarios belonging to the Test.
+func (t *Test) Scenarios() []Scenario {
+	var out []Scenario
+
+	for s := range t.scenarios {
+		out = append(out, s)
+	}
+
+	return out
 }
 
 // failedActions returns a list of failed Actions in the Test.
