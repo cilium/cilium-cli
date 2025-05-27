@@ -127,7 +127,7 @@ func NewClient(contextName, kubeconfig, ciliumNamespace string, impersonateAs st
 	// Use the default Helm driver (Kubernetes secret).
 	helmDriver := ""
 	actionConfig := action.Configuration{}
-	logger := func(_ string, _ ...interface{}) {}
+	logger := func(_ string, _ ...any) {}
 	if err := actionConfig.Init(&restClientGetter, ciliumNamespace, helmDriver, logger); err != nil {
 		return nil, err
 	}
@@ -228,8 +228,8 @@ func (c *Client) GetService(ctx context.Context, namespace, name string, opts me
 	return c.Clientset.CoreV1().Services(namespace).Get(ctx, name, opts)
 }
 
-func (c *Client) GetEndpoints(ctx context.Context, namespace, name string, opts metav1.GetOptions) (*corev1.Endpoints, error) {
-	return c.Clientset.CoreV1().Endpoints(namespace).Get(ctx, name, opts)
+func (c *Client) GetEndpointSlice(ctx context.Context, namespace, name string, opts metav1.GetOptions) (*discoveryv1.EndpointSlice, error) {
+	return c.Clientset.DiscoveryV1().EndpointSlices(namespace).Get(ctx, name, opts)
 }
 
 func (c *Client) CreateDeployment(ctx context.Context, namespace string, deployment *appsv1.Deployment, opts metav1.CreateOptions) (*appsv1.Deployment, error) {
@@ -840,7 +840,8 @@ func (c *Client) createDialer(url *url.URL) (httpstream.Dialer, error) {
 		return nil, fmt.Errorf("Error while creating k8s dialer: (websocket) %w, (spdy) %w", errWebsocket, errSPDY)
 	}
 
-	dialerFallback := portforward.NewFallbackDialer(dialerWebsocket, dialerSPDY, func(err error) bool {
+	// Default to the SPDY connection
+	dialerFallback := portforward.NewFallbackDialer(dialerSPDY, dialerWebsocket, func(err error) bool {
 		return httpstream.IsUpgradeFailure(err) || httpstream.IsHTTPSProxyError(err)
 	})
 	return dialerFallback, nil
@@ -1029,10 +1030,6 @@ func (c *Client) GetRunningCiliumVersion(ciliumHelmReleaseName string) (string, 
 	return release.Chart.Metadata.Version, nil
 }
 
-func (c *Client) ListCiliumLoadBalancerIPPools(ctx context.Context, opts metav1.ListOptions) (*ciliumv2alpha1.CiliumLoadBalancerIPPoolList, error) {
-	return c.CiliumClientset.CiliumV2alpha1().CiliumLoadBalancerIPPools().List(ctx, opts)
-}
-
 func (c *Client) ListCiliumLocalRedirectPolicies(ctx context.Context, namespace string, opts metav1.ListOptions) (*ciliumv2.CiliumLocalRedirectPolicyList, error) {
 	return c.CiliumClientset.CiliumV2().CiliumLocalRedirectPolicies(namespace).List(ctx, opts)
 }
@@ -1077,7 +1074,7 @@ func (c *Client) GetHelmValues(_ context.Context, releaseName string, namespace 
 	}
 	helmDriver := ""
 	actionConfig := action.Configuration{}
-	logger := func(_ string, _ ...interface{}) {}
+	logger := func(_ string, _ ...any) {}
 	if err := actionConfig.Init(c.RESTClientGetter, namespace, helmDriver, logger); err != nil {
 		return "", err
 	}
@@ -1101,7 +1098,7 @@ func (c *Client) GetHelmMetadata(_ context.Context, releaseName string, namespac
 	}
 	helmDriver := ""
 	actionConfig := action.Configuration{}
-	logger := func(_ string, _ ...interface{}) {}
+	logger := func(_ string, _ ...any) {}
 	if err := actionConfig.Init(c.RESTClientGetter, namespace, helmDriver, logger); err != nil {
 		return "", err
 	}

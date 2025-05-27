@@ -30,7 +30,7 @@ func Run(ctx context.Context, connTests []*check.ConnectivityTest, extra Hooks) 
 	if err != nil {
 		return err
 	}
-	junitCollector := check.NewJUnitCollector(connTests[0].Params().JunitProperties, connTests[0].Params().JunitFile)
+	junitCollector := check.NewJUnitCollector(connTests[0].Params().JunitProperties, connTests[0].Params().JunitFile, connTests[0].CodeOwners)
 	for i := range suiteBuilders {
 		if e := suiteBuilders[i](connTests, extra.AddConnectivityTests); e != nil {
 			return e
@@ -83,7 +83,7 @@ func runConnectivityTests(ctx context.Context, connTests []*check.ConnectivityTe
 	if err := me.Wait(); err != nil {
 		return err
 	}
-	for i := 0; i < len(connTests); i++ {
+	for i := range connTests {
 		if !finish[i] {
 			// Exit with a non-zero return code.
 			return errors.New("encountered internal error, exiting")

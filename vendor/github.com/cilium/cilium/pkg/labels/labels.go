@@ -12,9 +12,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/sirupsen/logrus"
-
 	"github.com/cilium/cilium/pkg/container/cache"
+	"github.com/cilium/cilium/pkg/logging"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 )
 
@@ -328,7 +327,10 @@ func NewLabel(key string, value string, source string) Label {
 	if l.Source == LabelSourceCIDR {
 		c, err := LabelToPrefix(l.Key)
 		if err != nil {
-			logrus.WithField("key", l.Key).WithError(err).Error("Failed to parse CIDR label: invalid prefix.")
+			logging.DefaultSlogLogger.Error("Failed to parse CIDR label: invalid prefix.",
+				logfields.Error, err,
+				logfields.Key, l.Key,
+			)
 		} else {
 			l.cidr = &c
 		}
@@ -481,7 +483,10 @@ func (l *Label) UnmarshalJSON(data []byte) error {
 		if err == nil {
 			l.cidr = &c
 		} else {
-			logrus.WithField("key", l.Key).WithError(err).Error("Failed to parse CIDR label: invalid prefix.")
+			logging.DefaultSlogLogger.Error("Failed to parse CIDR label: invalid prefix.",
+				logfields.Error, err,
+				logfields.Key, l.Key,
+			)
 		}
 	}
 
@@ -583,17 +588,6 @@ func FromSlice(labels []Label) Labels {
 // NewLabelsFromSortedList returns labels based on the output of SortedList()
 func NewLabelsFromSortedList(list string) Labels {
 	return NewLabelsFromModel(strings.Split(list, ";"))
-}
-
-// NewSelectLabelArrayFromModel parses a slice of strings and converts them
-// into an array of selecting labels, sorted by the key.
-func NewSelectLabelArrayFromModel(base []string) LabelArray {
-	lbls := make(LabelArray, 0, len(base))
-	for i := range base {
-		lbls = append(lbls, ParseSelectLabel(base[i]))
-	}
-
-	return lbls.Sort()
 }
 
 // NewFrom creates a new Labels from the given labels by creating a copy.
@@ -713,13 +707,12 @@ func (l Labels) LabelArray() LabelArray {
 
 // FindReserved locates all labels with reserved source in the labels and
 // returns a copy of them. If there are no reserved labels, returns nil.
-// TODO: return LabelArray as it is likely faster
-func (l Labels) FindReserved() Labels {
-	lbls := Labels{}
+func (l Labels) FindReserved() LabelArray {
+	lbls := make(LabelArray, 0)
 
-	for k, lbl := range l {
+	for _, lbl := range l {
 		if lbl.Source == LabelSourceReserved {
-			lbls[k] = lbl
+			lbls = append(lbls, lbl)
 		}
 	}
 
@@ -822,11 +815,15 @@ func parseLabel(str string, delim byte) (lbl Label) {
 
 	if lbl.Source == LabelSourceCIDR {
 		if lbl.Value != "" {
-			logrus.WithField(logfields.Label, lbl.String()).Error("Invalid CIDR label: labels with source cidr cannot have values.")
+			logging.DefaultSlogLogger.Error("Invalid CIDR label: labels with source cidr cannot have values.",
+				logfields.Label, lbl,
+			)
 		}
 		c, err := LabelToPrefix(lbl.Key)
 		if err != nil {
-			logrus.WithField(logfields.Label, str).WithError(err).Error("Failed to parse CIDR label: invalid prefix.")
+			logging.DefaultSlogLogger.Error("Failed to parse CIDR label: invalid prefix.",
+				logfields.Label, lbl,
+			)
 		} else {
 			lbl.cidr = &c
 		}

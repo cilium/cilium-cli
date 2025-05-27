@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"reflect"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/cilium/ebpf/internal/kallsyms"
 	"github.com/cilium/ebpf/internal/kconfig"
 	"github.com/cilium/ebpf/internal/linux"
+	"github.com/cilium/ebpf/internal/platform"
 	"github.com/cilium/ebpf/internal/sys"
 )
 
@@ -61,26 +63,34 @@ func (cs *CollectionSpec) Copy() *CollectionSpec {
 	}
 
 	cpy := CollectionSpec{
-		Maps:      make(map[string]*MapSpec, len(cs.Maps)),
-		Programs:  make(map[string]*ProgramSpec, len(cs.Programs)),
+		Maps:      copyMapOfSpecs(cs.Maps),
+		Programs:  copyMapOfSpecs(cs.Programs),
 		Variables: make(map[string]*VariableSpec, len(cs.Variables)),
 		ByteOrder: cs.ByteOrder,
 		Types:     cs.Types.Copy(),
 	}
 
-	for name, spec := range cs.Maps {
-		cpy.Maps[name] = spec.Copy()
-	}
-
-	for name, spec := range cs.Programs {
-		cpy.Programs[name] = spec.Copy()
-	}
-
 	for name, spec := range cs.Variables {
 		cpy.Variables[name] = spec.copy(&cpy)
 	}
+	if cs.Variables == nil {
+		cpy.Variables = nil
+	}
 
 	return &cpy
+}
+
+func copyMapOfSpecs[T interface{ Copy() T }](m map[string]T) map[string]T {
+	if m == nil {
+		return nil
+	}
+
+	cpy := make(map[string]T, len(m))
+	for k, v := range m {
+		cpy[k] = v.Copy()
+	}
+
+	return cpy
 }
 
 // RewriteMaps replaces all references to specific maps.
@@ -295,8 +305,7 @@ func (cs *CollectionSpec) LoadAndAssign(to interface{}, opts *CollectionOptions)
 
 	// Evaluate the loader's objects after all (lazy)loading has taken place.
 	for n, m := range loader.maps {
-		switch m.typ {
-		case ProgramArray:
+		if m.typ.canStoreProgram() {
 			// Require all lazy-loaded ProgramArrays to be assigned to the given object.
 			// The kernel empties a ProgramArray once the last user space reference
 			// to it closes, which leads to failed tail calls. Combined with the library
@@ -403,6 +412,7 @@ type collectionLoader struct {
 	maps     map[string]*Map
 	programs map[string]*Program
 	vars     map[string]*Variable
+	types    *btf.Cache
 }
 
 func newCollectionLoader(coll *CollectionSpec, opts *CollectionOptions) (*collectionLoader, error) {
@@ -427,6 +437,7 @@ func newCollectionLoader(coll *CollectionSpec, opts *CollectionOptions) (*collec
 		make(map[string]*Map),
 		make(map[string]*Program),
 		make(map[string]*Variable),
+		newBTFCache(&opts.Programs),
 	}, nil
 }
 
@@ -525,6 +536,7 @@ func (cl *collectionLoader) loadMap(mapName string) (*Map, error) {
 	// that need to be finalized before invoking the verifier.
 	if !mapSpec.Type.canStoreMapOrProgram() {
 		if err := m.finalize(mapSpec); err != nil {
+			_ = m.Close()
 			return nil, fmt.Errorf("finalizing map %s: %w", mapName, err)
 		}
 	}
@@ -577,7 +589,7 @@ func (cl *collectionLoader) loadProgram(progName string) (*Program, error) {
 		}
 	}
 
-	prog, err := newProgramWithOptions(progSpec, cl.opts.Programs)
+	prog, err := newProgramWithOptions(progSpec, cl.opts.Programs, cl.types)
 	if err != nil {
 		return nil, fmt.Errorf("program %s: %w", progName, err)
 	}
@@ -618,7 +630,12 @@ func (cl *collectionLoader) loadVariable(varName string) (*Variable, error) {
 	// emit a Variable with a nil Memory. This keeps Collection{Spec}.Variables
 	// consistent across systems with different feature sets without breaking
 	// LoadAndAssign.
-	mm, err := m.Memory()
+	var mm *Memory
+	if unsafeMemory {
+		mm, err = m.unsafeMemory()
+	} else {
+		mm, err = m.Memory()
+	}
 	if err != nil && !errors.Is(err, ErrNotSupported) {
 		return nil, fmt.Errorf("variable %s: getting memory for map %s: %w", varName, mapName, err)
 	}
@@ -700,6 +717,10 @@ func resolveKconfig(m *MapSpec) error {
 	ds, ok := m.Value.(*btf.Datasec)
 	if !ok {
 		return errors.New("map value is not a Datasec")
+	}
+
+	if platform.IsWindows {
+		return fmt.Errorf(".kconfig: %w", internal.ErrNotSupportedOnOS)
 	}
 
 	type configInfo struct {
@@ -794,6 +815,13 @@ func resolveKconfig(m *MapSpec) error {
 // Omitting Collection.Close() during application shutdown is an error.
 // See the package documentation for details around Map and Program lifecycle.
 func LoadCollection(file string) (*Collection, error) {
+	if platform.IsWindows {
+		// This mirrors a check in efW.
+		if ext := filepath.Ext(file); ext == ".sys" {
+			return loadCollectionFromNativeImage(file)
+		}
+	}
+
 	spec, err := LoadCollectionSpec(file)
 	if err != nil {
 		return nil, err

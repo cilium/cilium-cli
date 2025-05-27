@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/blang/semver/v4"
-	"github.com/hmarr/codeowners"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	corev1 "k8s.io/api/core/v1"
@@ -28,10 +27,10 @@ import (
 	"github.com/cilium/cilium/cilium-cli/defaults"
 	"github.com/cilium/cilium/cilium-cli/k8s"
 	"github.com/cilium/cilium/cilium-cli/sysdump"
+	"github.com/cilium/cilium/cilium-cli/utils/codeowners"
 	"github.com/cilium/cilium/cilium-cli/utils/features"
 	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	"github.com/cilium/cilium/pkg/lock"
-	"github.com/cilium/cilium/pkg/versioncheck"
 )
 
 const (
@@ -52,7 +51,7 @@ type ConnectivityTest struct {
 	// Features contains the features enabled on the running Cilium cluster
 	Features features.Set
 
-	CodeOwners codeowners.Ruleset
+	CodeOwners *codeowners.Ruleset
 
 	// ClusterName is the identifier of the local cluster.
 	ClusterName string
@@ -210,7 +209,7 @@ func NewConnectivityTest(
 	p Parameters,
 	sysdumpHooks sysdump.Hooks,
 	logger *ConcurrentLogger,
-	owners codeowners.Ruleset,
+	owners *codeowners.Ruleset,
 ) (*ConnectivityTest, error) {
 	if err := p.validate(); err != nil {
 		return nil, err
@@ -364,6 +363,9 @@ func (ct *ConnectivityTest) setupAndValidate(ctx context.Context, extra SetupHoo
 	if err := ct.validateDeployment(ctx); err != nil {
 		return err
 	}
+	if err := ct.patchDeployment(ctx); err != nil {
+		return err
+	}
 	if ct.params.Hubble {
 		if err := ct.enableHubbleClient(ctx); err != nil {
 			return fmt.Errorf("unable to create hubble client: %w", err)
@@ -485,7 +487,7 @@ func (ct *ConnectivityTest) PrintReport(ctx context.Context) error {
 				ct.Debugf("Flushing CT entries in %s/%s", pod.Pod.Namespace, pod.Pod.Name)
 				_, err := pod.K8sClient.ExecInPod(ctx, pod.Pod.Namespace, pod.Pod.Name, defaults.AgentContainerName, cmd)
 				if err != nil {
-					ct.Fatal("failed to flush ct entries: %w", err)
+					ct.Fatalf("failed to flush ct entries: %v", err)
 				}
 			}(ctx, ciliumPod)
 		}
@@ -542,7 +544,7 @@ func (ct *ConnectivityTest) report() error {
 			}
 		}
 		if len(failed) > 0 && failedActions == 0 {
-			allScenarios := make([]ownedScenario, 0, len(failed))
+			allScenarios := make([]codeowners.Scenario, 0, len(failed))
 			for _, t := range failed {
 				for scenario := range t.scenarios {
 					allScenarios = append(allScenarios, scenario)
@@ -551,7 +553,7 @@ func (ct *ConnectivityTest) report() error {
 			if len(allScenarios) == 0 {
 				// Test failure was triggered not by a specific action
 				// failing, but some other infrastructure code.
-				allScenarios = []ownedScenario{defaultTestOwners}
+				allScenarios = []codeowners.Scenario{defaultTestOwners}
 			}
 			ct.LogOwners(allScenarios...)
 		}
@@ -559,7 +561,7 @@ func (ct *ConnectivityTest) report() error {
 		return fmt.Errorf("[%s] %d tests failed", ct.params.TestNamespace, nf)
 	}
 
-	if ct.params.Perf && !ct.params.PerfParameters.NetQos {
+	if ct.params.Perf && !ct.params.PerfParameters.NetQos && !ct.params.PerfParameters.Bandwidth {
 		ct.Header(fmt.Sprintf("🔥 Network Performance Test Summary [%s]:", ct.params.TestNamespace))
 		ct.Logf("%s", strings.Repeat("-", 200))
 		ct.Logf("📋 %-15s | %-10s | %-15s | %-15s | %-15s | %-15s | %-15s | %-15s | %-15s | %-15s | %-15s", "Scenario", "Node", "Test", "Duration", "Min", "Mean", "Max", "P50", "P90", "P99", "Transaction rate OP/s")
@@ -645,7 +647,7 @@ func (ct *ConnectivityTest) enableHubbleClient(ctx context.Context) error {
 		time.Sleep(5 * time.Second)
 		status, err = ct.hubbleClient.ServerStatus(ctx, &observer.ServerStatusRequest{})
 		if err != nil {
-			ct.Fail("Not all nodes became available to Hubble Relay: %w", err)
+			ct.Failf("Not all nodes became available to Hubble Relay: %v", err)
 			return fmt.Errorf("not all nodes became available to Hubble Relay: %w", err)
 		}
 	}
@@ -806,7 +808,6 @@ var multiClusterClientLock = lock.Mutex{}
 // otherwise, list nodes and check for NoSchedule taints, as long as we have > 1
 // schedulable nodes we will run multi-node tests.
 func (ct *ConnectivityTest) detectSingleNode(ctx context.Context) error {
-
 	if ct.params.MultiCluster != "" && ct.params.SingleNode {
 		return fmt.Errorf("single-node test can not be enabled with multi-cluster test")
 	}
@@ -1284,16 +1285,6 @@ func (ct *ConnectivityTest) KillMulticastTestSender() []string {
 func (ct *ConnectivityTest) ForEachIPFamily(hasNetworkPolicies bool, do func(features.IPFamily)) {
 	ipFams := features.GetIPFamilies(ct.Params().IPFamilies)
 
-	// The per-endpoint routes feature is broken with IPv6 on < v1.14 when there
-	// are any netpols installed (https://github.com/cilium/cilium/issues/23852
-	// and https://github.com/cilium/cilium/issues/23910).
-	if f, ok := ct.Feature(features.EndpointRoutes); ok &&
-		f.Enabled && hasNetworkPolicies &&
-		versioncheck.MustCompile("<1.14.0")(ct.CiliumVersion) {
-
-		ipFams = []features.IPFamily{features.IPFamilyV4}
-	}
-
 	for _, ipFam := range ipFams {
 		switch ipFam {
 		case features.IPFamilyV4:
@@ -1313,8 +1304,7 @@ func (ct *ConnectivityTest) ShouldRunConnDisruptNSTraffic() bool {
 	return ct.params.IncludeConnDisruptTestNSTraffic &&
 		ct.Features[features.NodeWithoutCilium].Enabled &&
 		(ct.Params().MultiCluster == "" || ct.Features[features.KPRNodePort].Enabled) &&
-		!ct.Features[features.KPRNodePortAcceleration].Enabled &&
-		(!ct.Features[features.IPsecEnabled].Enabled || !ct.Features[features.KPRNodePort].Enabled)
+		!ct.Features[features.KPRNodePortAcceleration].Enabled
 }
 
 func (ct *ConnectivityTest) ShouldRunConnDisruptEgressGateway() bool {
@@ -1333,4 +1323,13 @@ func (ct *ConnectivityTest) IsSocketLBFull() bool {
 		return !socketLBHostnsOnly
 	}
 	return false
+}
+
+func (ct *ConnectivityTest) GetPodHostIPByFamily(pod Pod, ipFam features.IPFamily) (string, error) {
+	for _, addr := range pod.Pod.Status.HostIPs {
+		if features.GetIPFamily(addr.IP) == ipFam {
+			return addr.IP, nil
+		}
+	}
+	return "", fmt.Errorf("pod doesn't have HostIP of family %s", ipFam)
 }

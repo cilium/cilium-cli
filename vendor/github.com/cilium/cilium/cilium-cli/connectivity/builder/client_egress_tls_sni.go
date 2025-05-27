@@ -5,6 +5,7 @@ package builder
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/cilium/cilium/cilium-cli/connectivity/check"
 	"github.com/cilium/cilium/cilium-cli/connectivity/tests"
@@ -27,7 +28,9 @@ func clientEgressTlsSniTest(ct *check.ConnectivityTest, templates map[string]str
 		WithFeatureRequirements(features.RequireEnabled(features.L7Proxy)).
 		WithCiliumPolicy(yamlFile).                                   // L7 allow policy TLS SNI enforcement for external target
 		WithCiliumPolicy(templates["clientEgressOnlyDNSPolicyYAML"]). // DNS resolution only
-		WithScenarios(tests.PodToWorld()).
+		// TODO: Reenable IPv6 for this test once the kernel with the bugfix is released:
+		// https://patchwork.kernel.org/project/netdevbpf/patch/20250318161516.3791383-1-maxim@isovalent.com/
+		WithScenarios(tests.PodToWorld(false)).
 		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
 			if a.Destination().Port() == 443 {
 				return check.ResultOK, check.ResultNone
@@ -41,7 +44,9 @@ func clientEgressTlsSniTest(ct *check.ConnectivityTest, templates map[string]str
 		WithFeatureRequirements(features.RequireEnabled(features.L7Proxy)).
 		WithCiliumPolicy(yamlFile).                                   // L7 allow policy TLS SNI enforcement for external target
 		WithCiliumPolicy(templates["clientEgressOnlyDNSPolicyYAML"]). // DNS resolution only
-		WithScenarios(tests.PodToWorld()).                            // External Target is not allowed
+		// TODO: Reenable IPv6 for this test once the kernel with the bugfix is released:
+		// https://patchwork.kernel.org/project/netdevbpf/patch/20250318161516.3791383-1-maxim@isovalent.com/
+		WithScenarios(tests.PodToWorld(false)). // External Target is not allowed
 		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
 			if a.Destination().Port() == 443 {
 				// SSL error as another external target (e.g. cilium.io) SNI is not allowed
@@ -49,6 +54,76 @@ func clientEgressTlsSniTest(ct *check.ConnectivityTest, templates map[string]str
 			}
 			return check.ResultDefaultDenyEgressDrop, check.ResultNone
 		})
+
+	yamlFile = templates["clientEgressTLSSNIWildcardPolicyYAML"]
+	newTest(fmt.Sprintf("%s-wildcard", testName), ct).
+		WithCiliumVersion(">=1.18.0").
+		WithFeatureRequirements(features.RequireEnabled(features.L7Proxy)).
+		WithCiliumPolicy(yamlFile).                                   // L7 allow policy TLS SNI enforcement for external target
+		WithCiliumPolicy(templates["clientEgressOnlyDNSPolicyYAML"]). // DNS resolution only
+		// TODO: Reenable IPv6 for this test once the kernel with the bugfix is released:
+		// https://patchwork.kernel.org/project/netdevbpf/patch/20250318161516.3791383-1-maxim@isovalent.com/
+		WithScenarios(tests.PodToWorld(false)).
+		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			if a.Destination().Port() == 443 {
+				return check.ResultOK, check.ResultNone
+			}
+			return check.ResultDefaultDenyEgressDrop, check.ResultNone
+		})
+
+	yamlFile = templates["clientEgressTLSSNIWildcardPolicyYAML"]
+	newTest(fmt.Sprintf("%s-wildcard-denied", testName), ct).
+		WithCiliumVersion(">=1.18.0").
+		WithFeatureRequirements(features.RequireEnabled(features.L7Proxy)).
+		WithCiliumPolicy(yamlFile).                                   // L7 allow policy TLS SNI enforcement for external target
+		WithCiliumPolicy(templates["clientEgressOnlyDNSPolicyYAML"]). // DNS resolution only
+		// TODO: Reenable IPv6 for this test once the kernel with the bugfix is released:
+		// https://patchwork.kernel.org/project/netdevbpf/patch/20250318161516.3791383-1-maxim@isovalent.com/
+		WithScenarios(tests.PodToWorld2(false)).
+		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			if a.Destination().Port() == 443 {
+				// SSL error as another external target (e.g. cilium.io) SNI is not allowed
+				return check.ResultCurlSSLError, check.ResultNone
+			}
+			return check.ResultDefaultDenyEgressDrop, check.ResultNone
+		})
+
+	// Only the double wildcard related tests if the external is long enough
+	// e.g. google.com. or k8s.io. will be skipped
+	if len(strings.Split(ct.Params().ExternalTarget, ".")) > 3 {
+		yamlFile = templates["clientEgressTLSSNIDoubleWildcardPolicyYAML"]
+		newTest(fmt.Sprintf("%s-double-wildcard", testName), ct).
+			WithCiliumVersion(">=1.18.0").
+			WithFeatureRequirements(features.RequireEnabled(features.L7Proxy)).
+			WithCiliumPolicy(yamlFile).                                   // L7 allow policy TLS SNI enforcement for external target
+			WithCiliumPolicy(templates["clientEgressOnlyDNSPolicyYAML"]). // DNS resolution only
+			// TODO: Reenable IPv6 for this test once the kernel with the bugfix is released:
+			// https://patchwork.kernel.org/project/netdevbpf/patch/20250318161516.3791383-1-maxim@isovalent.com/
+			WithScenarios(tests.PodToWorld(false)).
+			WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+				if a.Destination().Port() == 443 {
+					return check.ResultOK, check.ResultNone
+				}
+				return check.ResultDefaultDenyEgressDrop, check.ResultNone
+			})
+
+		yamlFile = templates["clientEgressTLSSNIDoubleWildcardPolicyYAML"]
+		newTest(fmt.Sprintf("%s-double-wildcard-denied", testName), ct).
+			WithCiliumVersion(">=1.18.0").
+			WithFeatureRequirements(features.RequireEnabled(features.L7Proxy)).
+			WithCiliumPolicy(yamlFile).                                   // L7 allow policy TLS SNI enforcement for external target
+			WithCiliumPolicy(templates["clientEgressOnlyDNSPolicyYAML"]). // DNS resolution only
+			// TODO: Reenable IPv6 for this test once the kernel with the bugfix is released:
+			// https://patchwork.kernel.org/project/netdevbpf/patch/20250318161516.3791383-1-maxim@isovalent.com/
+			WithScenarios(tests.PodToWorld2(false)).
+			WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+				if a.Destination().Port() == 443 {
+					// SSL error as another external target (e.g. cilium.io) SNI is not allowed
+					return check.ResultCurlSSLError, check.ResultNone
+				}
+				return check.ResultDefaultDenyEgressDrop, check.ResultNone
+			})
+	}
 }
 
 func clientEgressL7TlsSniTest(ct *check.ConnectivityTest, templates map[string]string) {

@@ -16,6 +16,7 @@ import (
 	"unique"
 
 	cilium "github.com/cilium/proxy/go/cilium/api"
+	"github.com/cilium/proxy/pkg/policy/api/kafka"
 	k8sTypes "k8s.io/apimachinery/pkg/types"
 
 	"github.com/cilium/cilium/api/v1/models"
@@ -439,6 +440,91 @@ func (ro *ruleOrigin) Merge(other ruleOrigin) bool {
 	return false
 }
 
+// hasWildcard checks if the L7Rules contains a wildcard rule for the given parser type.
+func hasWildcard(rules *api.L7Rules, parserType L7ParserType) bool {
+	if rules == nil {
+		return false
+	}
+
+	switch {
+	case parserType == ParserTypeDNS:
+		for _, rule := range rules.DNS {
+			if rule.MatchPattern == "*" {
+				return true
+			}
+		}
+	case parserType == ParserTypeHTTP:
+		for _, rule := range rules.HTTP {
+			if rule.Path == "" && rule.Method == "" && rule.Host == "" &&
+				len(rule.Headers) == 0 && len(rule.HeaderMatches) == 0 {
+				return true
+			}
+		}
+	case parserType == ParserTypeKafka:
+		for _, rule := range rules.Kafka {
+			if rule.Topic == "" {
+				return true
+			}
+		}
+	case rules.L7Proto != "":
+		// For custom L7 rules
+		for _, rule := range rules.L7 {
+			if len(rule) == 0 {
+				return true
+			}
+		}
+	default:
+		// Unsupported parser type
+	}
+
+	return false
+}
+
+// addWildcard adds a wildcard rule to the L7Rules for the given parser type.
+// It returns a copy of the rules with the wildcard rule added.
+func addWildcard(rules *api.L7Rules, parserType L7ParserType) *api.L7Rules {
+	rulesCopy := *rules
+	result := &rulesCopy
+
+	switch {
+	case parserType == ParserTypeDNS:
+		if len(rules.DNS) > 0 {
+			result.DNS = append(result.DNS, api.PortRuleDNS{MatchPattern: "*"})
+		}
+	case parserType == ParserTypeHTTP:
+		if len(rules.HTTP) > 0 {
+			result.HTTP = append(result.HTTP, api.PortRuleHTTP{})
+		}
+	case parserType == ParserTypeKafka:
+		if len(rules.Kafka) > 0 {
+			result.Kafka = append(result.Kafka, kafka.PortRule{})
+		}
+	case rules.L7Proto != "":
+		// For custom L7 rules with L7Proto
+		if len(rules.L7) > 0 {
+			result.L7 = append(result.L7, api.PortRuleL7{})
+		}
+	default:
+		// Unsupported parser type
+	}
+
+	return result
+}
+
+// ensureWildcard ensures that the L7Rules contains a wildcard rule for the given parser type.
+// It returns a copy of the rules with the wildcard rule added if it wasn't already present.
+func ensureWildcard(rules *api.L7Rules, parserType L7ParserType) *api.L7Rules {
+	if rules == nil {
+		return nil
+	}
+
+	if hasWildcard(rules, parserType) {
+		return rules
+	}
+
+	return addWildcard(rules, parserType)
+}
+
 func singleRuleOrigin(ruleLabels stringLabels) ruleOrigin {
 	return ruleOrigin(ruleLabels)
 }
@@ -739,15 +825,6 @@ func (l4 *L4Filter) toMapState(logger *slog.Logger, p *EndpointPolicy, features 
 			for _, keyToAdd := range keysToAdd {
 				keyToAdd.Identity = id
 				p.policyMapState.insertWithChanges(keyToAdd, entry, features, changes)
-				// If Cilium is in dual-stack mode then the "World" identity
-				// needs to be split into two identities to represent World
-				// IPv6 and IPv4 traffic distinctly from one another.
-				if id == identity.ReservedIdentityWorld && option.Config.IsDualStack() {
-					keyToAdd.Identity = identity.ReservedIdentityWorldIPv4
-					p.policyMapState.insertWithChanges(keyToAdd, entry, features, changes)
-					keyToAdd.Identity = identity.ReservedIdentityWorldIPv6
-					p.policyMapState.insertWithChanges(keyToAdd, entry, features, changes)
-				}
 			}
 		}
 	}
@@ -870,10 +947,13 @@ const (
 // getCerts reads certificates out of the PolicyContext, reading from k8s or local files depending on config
 // and puts the values into the relevant keys in the TLSContext. Note that if the returned TLSContext.FromFile is
 // `false`, then this will be read from Kubernetes.
-func (l4 *L4Filter) getCerts(logger *slog.Logger, policyCtx PolicyContext, tls *api.TLSContext, direction TLSDirection) (*TLSContext, error) {
+func (l4 *L4Filter) getCerts(policyCtx PolicyContext, tls *api.TLSContext, direction TLSDirection) (*TLSContext, error) {
 	if tls == nil {
 		return nil, nil
 	}
+
+	logger := policyCtx.GetLogger()
+
 	ca, public, private, inlineSecrets, err := policyCtx.GetTLSContext(tls)
 	if err != nil {
 		logger.Warn(
@@ -916,10 +996,11 @@ func (l4 *L4Filter) getCerts(logger *slog.Logger, policyCtx PolicyContext, tls *
 // filter is derived from. This filter may be associated with a series of L7
 // rules via the `rule` parameter.
 // Not called with an empty peerEndpoints.
-func createL4Filter(logger *slog.Logger, policyCtx PolicyContext, peerEndpoints api.EndpointSelectorSlice, auth *api.Authentication, rule api.Ports, port api.PortProtocol,
+func createL4Filter(policyCtx PolicyContext, peerEndpoints api.EndpointSelectorSlice, auth *api.Authentication, rule api.Ports, port api.PortProtocol,
 	protocol api.L4Proto, ruleLabels stringLabels, ingress bool, fqdns api.FQDNSelectorSlice,
 ) (*L4Filter, error) {
 	selectorCache := policyCtx.GetSelectorCache()
+	logger := policyCtx.GetLogger()
 
 	portName := ""
 	p := uint64(0)
@@ -963,15 +1044,15 @@ func createL4Filter(logger *slog.Logger, policyCtx PolicyContext, peerEndpoints 
 	pr := rule.GetPortRule()
 	if pr != nil {
 		rules = pr.Rules
-		sni = pr.ServerNames
+		sni = pr.GetServerNames()
 
 		// Get TLS contexts, if any
 		var err error
-		terminatingTLS, err = l4.getCerts(logger, policyCtx, pr.TerminatingTLS, TerminatingTLS)
+		terminatingTLS, err = l4.getCerts(policyCtx, pr.TerminatingTLS, TerminatingTLS)
 		if err != nil {
 			return nil, err
 		}
-		originatingTLS, err = l4.getCerts(logger, policyCtx, pr.OriginatingTLS, OriginatingTLS)
+		originatingTLS, err = l4.getCerts(policyCtx, pr.OriginatingTLS, OriginatingTLS)
 		if err != nil {
 			return nil, err
 		}
@@ -1036,7 +1117,27 @@ func createL4Filter(logger *slog.Logger, policyCtx PolicyContext, peerEndpoints 
 	}
 
 	if l7Parser != ParserTypeNone || auth != nil || policyCtx.IsDeny() {
-		l4.PerSelectorPolicies.addPolicyForSelector(l7Parser, rules, terminatingTLS, originatingTLS, auth, policyCtx.IsDeny(), sni, listener, priority)
+		modifiedRules := rules
+
+		// If we have L7 rules and default deny is disabled (EnableDefaultDeny=false), we should ensure those rules
+		// don't cause other L7 traffic to be denied.
+		// Special handling for L7 rules is applied when:
+		// 1. We have L7 rules
+		// 2. Default deny is disabled for this direction
+		// 3. This is a positive policy (not a deny policy)
+		hasL7Rules := !rules.IsEmpty()
+		isDefaultDenyDisabled := (ingress && !policyCtx.DefaultDenyIngress()) || (!ingress && !policyCtx.DefaultDenyEgress())
+		isAllowPolicy := !policyCtx.IsDeny()
+
+		if hasL7Rules && isDefaultDenyDisabled && isAllowPolicy {
+			logger.Debug("Adding wildcard L7 rules for default-allow policy",
+				logfields.L7Parser, l7Parser,
+				logfields.Ingress, ingress)
+
+			modifiedRules = ensureWildcard(rules, l7Parser)
+		}
+
+		l4.PerSelectorPolicies.addPolicyForSelector(l7Parser, modifiedRules, terminatingTLS, originatingTLS, auth, policyCtx.IsDeny(), sni, listener, priority)
 	}
 
 	origin := singleRuleOrigin(ruleLabels)
@@ -1113,10 +1214,10 @@ func (l4 *L4Filter) attach(ctx PolicyContext, l4Policy *L4Policy) policyFeatures
 //
 // hostWildcardL7 determines if L7 traffic from Host should be
 // wildcarded (in the relevant daemon mode).
-func createL4IngressFilter(logger *slog.Logger, policyCtx PolicyContext, fromEndpoints api.EndpointSelectorSlice, auth *api.Authentication, hostWildcardL7 []string, rule api.Ports, port api.PortProtocol,
+func createL4IngressFilter(policyCtx PolicyContext, fromEndpoints api.EndpointSelectorSlice, auth *api.Authentication, hostWildcardL7 []string, rule api.Ports, port api.PortProtocol,
 	protocol api.L4Proto, ruleLabels stringLabels,
 ) (*L4Filter, error) {
-	filter, err := createL4Filter(logger, policyCtx, fromEndpoints, auth, rule, port, protocol, ruleLabels, true, nil)
+	filter, err := createL4Filter(policyCtx, fromEndpoints, auth, rule, port, protocol, ruleLabels, true, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1141,10 +1242,10 @@ func createL4IngressFilter(logger *slog.Logger, policyCtx PolicyContext, fromEnd
 // specified endpoints and port/protocol for egress traffic, with reference
 // to the original rules that the filter is derived from. This filter may be
 // associated with a series of L7 rules via the `rule` parameter.
-func createL4EgressFilter(logger *slog.Logger, policyCtx PolicyContext, toEndpoints api.EndpointSelectorSlice, auth *api.Authentication, rule api.Ports, port api.PortProtocol,
+func createL4EgressFilter(policyCtx PolicyContext, toEndpoints api.EndpointSelectorSlice, auth *api.Authentication, rule api.Ports, port api.PortProtocol,
 	protocol api.L4Proto, ruleLabels stringLabels, fqdns api.FQDNSelectorSlice,
 ) (*L4Filter, error) {
-	return createL4Filter(logger, policyCtx, toEndpoints, auth, rule, port, protocol, ruleLabels, false, fqdns)
+	return createL4Filter(policyCtx, toEndpoints, auth, rule, port, protocol, ruleLabels, false, fqdns)
 }
 
 // redirectType returns the redirectType for this filter
@@ -1212,7 +1313,7 @@ func (l4 *L4Filter) matchesLabels(labels labels.LabelArray) (bool, bool) {
 // the 'filterToMerge' can't be merged with an existing filter for the same
 // port and proto.
 func addL4Filter(policyCtx PolicyContext,
-	ctx *SearchContext, resMap L4PolicyMap,
+	resMap L4PolicyMap,
 	p api.PortProtocol, proto api.L4Proto,
 	filterToMerge *L4Filter,
 ) error {
@@ -1223,7 +1324,7 @@ func addL4Filter(policyCtx PolicyContext,
 	}
 
 	selectorCache := policyCtx.GetSelectorCache()
-	if err := mergePortProto(ctx, existingFilter, filterToMerge, selectorCache); err != nil {
+	if err := mergePortProto(policyCtx, existingFilter, filterToMerge, selectorCache); err != nil {
 		filterToMerge.detach(selectorCache)
 		return err
 	}
@@ -1251,8 +1352,6 @@ type L4PolicyMap interface {
 	ExactLookup(port string, endPort uint16, protocol string) *L4Filter
 	MatchesLabels(port, protocol string, labels labels.LabelArray) (match, isDeny bool)
 	Detach(selectorCache *SelectorCache)
-	IngressCoversContext(ctx *SearchContext) api.Decision
-	EgressCoversContext(ctx *SearchContext) api.Decision
 	ForEach(func(l4 *L4Filter) bool)
 	TestingOnlyEquals(bMap L4PolicyMap) bool
 	TestingOnlyDiff(expectedMap L4PolicyMap) string
@@ -1567,61 +1666,6 @@ func (l4 *L4DirectionPolicy) attach(ctx PolicyContext, l4Policy *L4Policy) redir
 	return redirectTypes
 }
 
-// containsAllL3L4 checks if the L4PolicyMap contains all L4 ports in `ports`.
-// For L4Filters that specify ToEndpoints or FromEndpoints, uses `labels` to
-// determine whether the policy allows L4 communication between the corresponding
-// endpoints.
-// Returns api.Denied in the following conditions:
-//   - If a single port is not present in the `L4PolicyMap` and is not allowed
-//     by the distilled L3 policy
-//   - If a port is present in the `L4PolicyMap`, but it applies ToEndpoints or
-//     FromEndpoints constraints that require labels not present in `labels`.
-//
-// Otherwise, returns api.Allowed.
-//
-// Note: Only used for policy tracing
-func (l4M *l4PolicyMap) containsAllL3L4(labels labels.LabelArray, ports []*models.Port) api.Decision {
-	if l4M.Len() == 0 {
-		return api.Allowed
-	}
-
-	// Check L3-only filters first.
-	filter := l4M.ExactLookup("0", 0, "ANY")
-	if filter != nil {
-
-		matches, isDeny := filter.matchesLabels(labels)
-		switch {
-		case matches && isDeny:
-			return api.Denied
-		case matches:
-			return api.Allowed
-		}
-	}
-
-	for _, l4Ctx := range ports {
-		portStr := l4Ctx.Name
-		if !iana.IsSvcName(portStr) {
-			portStr = strconv.FormatUint(uint64(l4Ctx.Port), 10)
-		}
-		lwrProtocol := l4Ctx.Protocol
-		switch lwrProtocol {
-		case "", models.PortProtocolANY:
-			tcpmatch, isTCPDeny := l4M.MatchesLabels(portStr, "TCP", labels)
-			udpmatch, isUDPDeny := l4M.MatchesLabels(portStr, "UDP", labels)
-			sctpmatch, isSCTPDeny := l4M.MatchesLabels(portStr, "SCTP", labels)
-			if (!tcpmatch && !udpmatch && !sctpmatch) || (isTCPDeny && isUDPDeny && isSCTPDeny) {
-				return api.Denied
-			}
-		default:
-			matches, isDeny := l4M.MatchesLabels(portStr, lwrProtocol, labels)
-			if !matches || isDeny {
-				return api.Denied
-			}
-		}
-	}
-	return api.Allowed
-}
-
 type L4Policy struct {
 	Ingress L4DirectionPolicy
 	Egress  L4DirectionPolicy
@@ -1818,22 +1862,6 @@ func (l4 *L4Policy) Attach(ctx PolicyContext) {
 	ingressRedirects := l4.Ingress.attach(ctx, l4)
 	egressRedirects := l4.Egress.attach(ctx, l4)
 	l4.redirectTypes = ingressRedirects | egressRedirects
-}
-
-// IngressCoversContext checks if the receiver's ingress L4Policy contains
-// all `dPorts` and `labels`.
-//
-// Note: Only used for policy tracing
-func (l4M *l4PolicyMap) IngressCoversContext(ctx *SearchContext) api.Decision {
-	return l4M.containsAllL3L4(ctx.From, ctx.DPorts)
-}
-
-// EgressCoversContext checks if the receiver's egress L4Policy contains
-// all `dPorts` and `labels`.
-//
-// Note: Only used for policy tracing
-func (l4M *l4PolicyMap) EgressCoversContext(ctx *SearchContext) api.Decision {
-	return l4M.containsAllL3L4(ctx.To, ctx.DPorts)
 }
 
 // HasRedirect returns true if the L4 policy contains at least one port redirection

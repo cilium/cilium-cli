@@ -63,7 +63,7 @@ func agentCRDResourceNames() []string {
 	}
 
 	if option.Config.EnableCiliumNetworkPolicy || option.Config.EnableCiliumClusterwideNetworkPolicy {
-		result = append(result, CRDResourceName(v2alpha1.CCGName))
+		result = append(result, CRDResourceName(v2.CCGName))
 	}
 
 	if option.Config.EnableIPv4EgressGateway {
@@ -87,7 +87,7 @@ func agentCRDResourceNames() []string {
 	}
 
 	result = append(result,
-		CRDResourceName(v2alpha1.LBIPPoolName),
+		CRDResourceName(v2.LBIPPoolName),
 		CRDResourceName(v2alpha1.L2AnnouncementName),
 	)
 
@@ -126,7 +126,6 @@ func AllCiliumCRDResourceNames() []string {
 	res := append(AgentCRDResourceNames(), GatewayAPIResourceNames()...)
 	res = append(res,
 		CRDResourceName(v2.CNCName),
-		CRDResourceName(v2alpha1.CNCName), // TODO depreciate CNC on v2alpha1 https://github.com/cilium/cilium/issues/31982
 	)
 	return res
 }
@@ -147,8 +146,8 @@ func SyncCRDs(ctx context.Context, logger *slog.Logger, clientset client.Clients
 		&slim_metav1.PartialObjectMetadata{},
 		0,
 		cache.ResourceEventHandlerFuncs{
-			AddFunc:    func(obj interface{}) { crds.add(obj) },
-			DeleteFunc: func(obj interface{}) { crds.remove(obj) },
+			AddFunc:    func(obj any) { crds.add(obj) },
+			DeleteFunc: func(obj any) { crds.remove(obj) },
 		},
 		nil,
 	)
@@ -238,7 +237,7 @@ func SyncCRDs(ctx context.Context, logger *slog.Logger, clientset client.Clients
 	}
 }
 
-func (s *crdState) add(obj interface{}) {
+func (s *crdState) add(obj any) {
 	if pom := informer.CastInformerEvent[slim_metav1.PartialObjectMetadata](s.logger, obj); pom != nil {
 		s.Lock()
 		s.m[CRDResourceName(pom.GetName())] = true
@@ -246,7 +245,7 @@ func (s *crdState) add(obj interface{}) {
 	}
 }
 
-func (s *crdState) remove(obj interface{}) {
+func (s *crdState) remove(obj any) {
 	if pom := informer.CastInformerEvent[slim_metav1.PartialObjectMetadata](s.logger, obj); pom != nil {
 		s.Lock()
 		s.m[CRDResourceName(pom.GetName())] = false

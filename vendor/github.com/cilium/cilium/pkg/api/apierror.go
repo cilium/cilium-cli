@@ -19,8 +19,8 @@ type APIError struct {
 	msg  string
 }
 
-// New creates a API error from the code, msg and extra arguments.
-func New(code int, msg string, args ...interface{}) *APIError {
+// New creates an API error from the code, msg and extra arguments.
+func New(code int, msg string, args ...any) *APIError {
 	if code <= 0 {
 		code = 500
 	}

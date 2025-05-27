@@ -4,9 +4,7 @@
 package policy
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"maps"
 	"slices"
@@ -32,83 +30,6 @@ import (
 	"github.com/cilium/cilium/pkg/spanstat"
 )
 
-// PolicyContext is an interface policy resolution functions use to access the Repository.
-// This way testing code can run without mocking a full Repository.
-type PolicyContext interface {
-	// return the namespace in which the policy rule is being resolved
-	GetNamespace() string
-
-	// return the SelectorCache
-	GetSelectorCache() *SelectorCache
-
-	// GetTLSContext resolves the given 'api.TLSContext' into CA
-	// certs and the public and private keys, using secrets from
-	// k8s or from the local file system.
-	GetTLSContext(tls *api.TLSContext) (ca, public, private string, inlineSecrets bool, err error)
-
-	// GetEnvoyHTTPRules translates the given 'api.L7Rules' into
-	// the protobuf representation the Envoy can consume. The bool
-	// return parameter tells whether the rule enforcement can
-	// be short-circuited upon the first allowing rule. This is
-	// false if any of the rules has side-effects, requiring all
-	// such rules being evaluated.
-	GetEnvoyHTTPRules(l7Rules *api.L7Rules) (*cilium.HttpNetworkPolicyRules, bool)
-
-	// IsDeny returns true if the policy computation should be done for the
-	// policy deny case. This function returns different values depending on the
-	// code path as it can be changed during the policy calculation.
-	IsDeny() bool
-
-	// SetDeny sets the Deny field of the PolicyContext and returns the old
-	// value stored.
-	SetDeny(newValue bool) (oldValue bool)
-}
-
-type policyContext struct {
-	repo *Repository
-	ns   string
-	// isDeny this field is set to true if the given policy computation should
-	// be done for the policy deny.
-	isDeny bool
-}
-
-// GetNamespace() returns the namespace for the policy rule being resolved
-func (p *policyContext) GetNamespace() string {
-	return p.ns
-}
-
-// GetSelectorCache() returns the selector cache used by the Repository
-func (p *policyContext) GetSelectorCache() *SelectorCache {
-	return p.repo.GetSelectorCache()
-}
-
-// GetTLSContext() returns data for TLS Context via a CertificateManager
-func (p *policyContext) GetTLSContext(tls *api.TLSContext) (ca, public, private string, inlineSecrets bool, err error) {
-	if p.repo.certManager == nil {
-		return "", "", "", false, fmt.Errorf("No Certificate Manager set on Policy Repository")
-	}
-	return p.repo.certManager.GetTLSContext(context.TODO(), tls, p.ns)
-}
-
-func (p *policyContext) GetEnvoyHTTPRules(l7Rules *api.L7Rules) (*cilium.HttpNetworkPolicyRules, bool) {
-	return p.repo.GetEnvoyHTTPRules(l7Rules, p.ns)
-}
-
-// IsDeny returns true if the policy computation should be done for the
-// policy deny case. This function return different values depending on the
-// code path as it can be changed during the policy calculation.
-func (p *policyContext) IsDeny() bool {
-	return p.isDeny
-}
-
-// SetDeny sets the Deny field of the PolicyContext and returns the old
-// value stored.
-func (p *policyContext) SetDeny(deny bool) bool {
-	oldDeny := p.isDeny
-	p.isDeny = deny
-	return oldDeny
-}
-
 type PolicyRepository interface {
 	BumpRevision() uint64
 	GetAuthTypes(localID identity.NumericIdentity, remoteID identity.NumericIdentity) AuthTypes
@@ -122,6 +43,8 @@ type PolicyRepository interface {
 	// calculation.
 	GetSelectorPolicy(id *identity.Identity, skipRevision uint64, stats GetPolicyStatistics, endpointID uint64) (SelectorPolicy, uint64, error)
 
+	// GetPolicySnapshot returns a map of all the SelectorPolicies in the repository.
+	GetPolicySnapshot() map[identity.NumericIdentity]SelectorPolicy
 	GetRevision() uint64
 	GetRulesList() *models.Policy
 	GetSelectorCache() *SelectorCache
@@ -209,44 +132,6 @@ func NewPolicyRepository(
 	return repo
 }
 
-// traceState is an internal structure used to collect information
-// while determining policy decision
-type traceState struct {
-	// selectedRules is the number of rules with matching EndpointSelector
-	selectedRules int
-
-	// matchedRules is the number of rules that have allowed traffic
-	matchedRules int
-
-	// matchedDenyRules is the number of rules that have denied traffic
-	matchedDenyRules int
-
-	// constrainedRules counts how many "FromRequires" constraints are
-	// unsatisfied
-	constrainedRules int
-
-	// ruleID is the rule ID currently being evaluated
-	ruleID int
-}
-
-func (state *traceState) trace(rules int, ctx *SearchContext) {
-	ctx.PolicyTrace("%d/%d rules selected\n", state.selectedRules, rules)
-	if state.constrainedRules > 0 {
-		ctx.PolicyTrace("Found unsatisfied FromRequires constraint\n")
-	} else {
-		if state.matchedRules > 0 {
-			ctx.PolicyTrace("Found allow rule\n")
-		} else {
-			ctx.PolicyTrace("Found no allow rule\n")
-		}
-		if state.matchedDenyRules > 0 {
-			ctx.PolicyTrace("Found deny rule\n")
-		} else {
-			ctx.PolicyTrace("Found no deny rule\n")
-		}
-	}
-}
-
 func (p *Repository) Search(lbls labels.LabelArray) (api.Rules, uint64) {
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
@@ -286,10 +171,11 @@ func (p *Repository) addListLocked(rules api.Rules) (ruleSlice, uint64) {
 func (p *Repository) insert(r *rule) {
 	p.rules[r.key] = r
 	p.metricsManager.AddRule(r.Rule)
-	if _, ok := p.rulesByNamespace[r.key.resource.Namespace()]; !ok {
-		p.rulesByNamespace[r.key.resource.Namespace()] = sets.New[ruleKey]()
+	namespace := r.key.resource.Namespace()
+	if _, ok := p.rulesByNamespace[namespace]; !ok {
+		p.rulesByNamespace[namespace] = sets.New[ruleKey]()
 	}
-	p.rulesByNamespace[r.key.resource.Namespace()].Insert(r.key)
+	p.rulesByNamespace[namespace].Insert(r.key)
 	rid := r.key.resource
 	if len(rid) > 0 {
 		if p.rulesByResource[rid] == nil {
@@ -308,9 +194,10 @@ func (p *Repository) del(key ruleKey) {
 	}
 	p.metricsManager.DelRule(r.Rule)
 	delete(p.rules, key)
-	p.rulesByNamespace[key.resource.Namespace()].Delete(key)
-	if len(p.rulesByNamespace[key.resource.Namespace()]) == 0 {
-		delete(p.rulesByNamespace, key.resource.Namespace())
+	namespace := r.key.resource.Namespace()
+	p.rulesByNamespace[namespace].Delete(key)
+	if len(p.rulesByNamespace[namespace]) == 0 {
+		delete(p.rulesByNamespace, namespace)
 	}
 
 	rid := key.resource
@@ -411,6 +298,7 @@ func (p *Repository) resolvePolicyLocked(securityIdentity *identity.Identity) (*
 	// perform the matching decision again when computing policy for each
 	// protocol layer, which is quite costly in terms of performance.
 	ingressEnabled, egressEnabled,
+		hasIngressDefaultDeny, hasEgressDefaultDeny,
 		matchingRules := p.computePolicyEnforcementAndRules(securityIdentity)
 
 	calculatedPolicy := &selectorPolicy{
@@ -421,29 +309,17 @@ func (p *Repository) resolvePolicyLocked(securityIdentity *identity.Identity) (*
 		EgressPolicyEnabled:  egressEnabled,
 	}
 
-	lbls := securityIdentity.LabelArray
-	ingressCtx := SearchContext{
-		To:          lbls,
-		rulesSelect: true,
-	}
-
-	egressCtx := SearchContext{
-		From:        lbls,
-		rulesSelect: true,
-	}
-
-	if option.Config.TracingEnabled() {
-		ingressCtx.Trace = TRACE_ENABLED
-		egressCtx.Trace = TRACE_ENABLED
-	}
-
 	policyCtx := policyContext{
-		repo: p,
-		ns:   lbls.Get(labels.LabelSourceK8sKeyPrefix + k8sConst.PodNamespaceLabel),
+		repo:               p,
+		ns:                 securityIdentity.LabelArray.Get(labels.LabelSourceK8sKeyPrefix + k8sConst.PodNamespaceLabel),
+		defaultDenyIngress: hasIngressDefaultDeny,
+		defaultDenyEgress:  hasEgressDefaultDeny,
+		traceEnabled:       option.Config.TracingEnabled(),
+		logger:             p.logger.With(logfields.Identity, securityIdentity.ID),
 	}
 
 	if ingressEnabled {
-		newL4IngressPolicy, err := matchingRules.resolveL4IngressPolicy(p.logger, &policyCtx, &ingressCtx)
+		newL4IngressPolicy, err := matchingRules.resolveL4IngressPolicy(&policyCtx)
 		if err != nil {
 			return nil, err
 		}
@@ -451,7 +327,7 @@ func (p *Repository) resolvePolicyLocked(securityIdentity *identity.Identity) (*
 	}
 
 	if egressEnabled {
-		newL4EgressPolicy, err := matchingRules.resolveL4EgressPolicy(p.logger, &policyCtx, &egressCtx)
+		newL4EgressPolicy, err := matchingRules.resolveL4EgressPolicy(&policyCtx)
 		if err != nil {
 			return nil, err
 		}
@@ -470,14 +346,14 @@ func (p *Repository) resolvePolicyLocked(securityIdentity *identity.Identity) (*
 //
 // Must be called with repo mutex held for reading.
 func (p *Repository) computePolicyEnforcementAndRules(securityIdentity *identity.Identity) (
-	ingress, egress bool,
+	ingress, egress, hasIngressDefaultDeny, hasEgressDefaultDeny bool,
 	matchingRules ruleSlice,
 ) {
 	lbls := securityIdentity.LabelArray
 
 	// Check if policy enforcement should be enabled at the daemon level.
 	if lbls.Has(labels.IDNameHost) && !option.Config.EnableHostFirewall {
-		return false, false, nil
+		return false, false, false, false, nil
 	}
 
 	policyMode := GetPolicyEnabled()
@@ -485,7 +361,7 @@ func (p *Repository) computePolicyEnforcementAndRules(securityIdentity *identity
 	// enforcement for the endpoint. We don't care about returning any
 	// rules that match.
 	if policyMode == option.NeverEnforce {
-		return false, false, nil
+		return false, false, false, false, nil
 	}
 
 	matchingRules = []*rule{}
@@ -512,7 +388,7 @@ func (p *Repository) computePolicyEnforcementAndRules(securityIdentity *identity
 	// If the endpoint has the reserved:init label, i.e. if it has not yet
 	// received any labels, always enforce policy (default deny).
 	if policyMode == option.AlwaysEnforce || lbls.Has(labels.IDNameInit) {
-		return true, true, matchingRules
+		return true, true, true, true, matchingRules
 	}
 
 	// Determine the default policy for each direction.
@@ -521,7 +397,7 @@ func (p *Repository) computePolicyEnforcementAndRules(securityIdentity *identity
 	// If any rules select the endpoint, then the endpoint switches to a
 	// default-deny mode (same as traffic being enabled), per-direction.
 	//
-	// Rules, however, can optionally be configure to not enable default deny mode.
+	// Rules, however, can optionally be configured to not enable default deny mode.
 	// If no rules enable default-deny, then all traffic is allowed except that explicitly
 	// denied by a Deny rule.
 	//
@@ -531,8 +407,6 @@ func (p *Repository) computePolicyEnforcementAndRules(securityIdentity *identity
 	// 3: Only non-default-deny rules are present. Then, policy is enabled, but we must insert
 	//    an additional allow-all rule. We must do this, even if all traffic is allowed, because
 	//    rules may have additional effects such as enabling L7 proxy.
-	hasIngressDefaultDeny := false
-	hasEgressDefaultDeny := false
 	for _, r := range matchingRules {
 		if !ingress || !hasIngressDefaultDeny { // short-circuit len()
 			if len(r.Ingress) > 0 || len(r.IngressDeny) > 0 {
@@ -719,4 +593,12 @@ func (p *Repository) ReplaceByLabels(rules api.Rules, searchLabelsList []labels.
 	}
 
 	return affectedIDs, p.BumpRevision(), len(oldRules)
+}
+
+// GetPolicySnapshot returns a map of all the SelectorPolicies in the repository.
+func (p *Repository) GetPolicySnapshot() map[identity.NumericIdentity]SelectorPolicy {
+	p.mutex.RLock()
+	defer p.mutex.RUnlock()
+
+	return p.policyCache.GetPolicySnapshot()
 }

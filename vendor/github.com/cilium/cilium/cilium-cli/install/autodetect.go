@@ -13,10 +13,9 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/cilium/cilium/cilium-cli/k8s"
-	"github.com/cilium/cilium/pkg/versioncheck"
 )
 
-func (k *K8sInstaller) detectDatapathMode(helmValues map[string]interface{}) error {
+func (k *K8sInstaller) detectDatapathMode(helmValues map[string]any) error {
 	if k.params.DatapathMode != "" {
 		k.Log("ℹ️  Custom datapath mode: %s", k.params.DatapathMode)
 		return nil
@@ -69,7 +68,7 @@ func (k *K8sInstaller) autodetect(ctx context.Context) {
 	}
 }
 
-func getClusterName(helmValues map[string]interface{}) string {
+func getClusterName(helmValues map[string]any) string {
 	clusterName, _, _ := unstructured.NestedString(helmValues, "cluster", "name")
 	return clusterName
 }
@@ -88,7 +87,7 @@ func trimEKSClusterARN(fullARN string) string {
 	return ""
 }
 
-func (k *K8sInstaller) autodetectAndValidate(ctx context.Context, helmValues map[string]interface{}) error {
+func (k *K8sInstaller) autodetectAndValidate(ctx context.Context, helmValues map[string]any) error {
 	k.autodetect(ctx)
 
 	k.Log("ℹ️  Using Cilium version %s", k.chartVersion)
@@ -122,7 +121,7 @@ func (k *K8sInstaller) autodetectAndValidate(ctx context.Context, helmValues map
 	return nil
 }
 
-func (k *K8sInstaller) autodetectKubeProxy(ctx context.Context, helmValues map[string]interface{}) error {
+func (k *K8sInstaller) autodetectKubeProxy(ctx context.Context, helmValues map[string]any) error {
 	if k.flavor.Kind == k8s.KindK3s {
 		return nil
 	}
@@ -146,24 +145,24 @@ func (k *K8sInstaller) autodetectKubeProxy(ctx context.Context, helmValues map[s
 		k.Log("ℹ️  Detecting real Kubernetes API server addr and port on Kind")
 
 		// When we are using Kind, the API server addr & port is port forwarded
-		eps, err := k.client.GetEndpoints(ctx, "default", "kubernetes", metav1.GetOptions{})
+		es, err := k.client.GetEndpointSlice(ctx, "default", "kubernetes", metav1.GetOptions{})
 		if err != nil {
 			k.Log("❌ Couldn't find 'kubernetes' service endpoint on Kind")
 			return fmt.Errorf("failed to detect API server endpoint")
 		}
 
-		if len(eps.Subsets) != 0 {
-			subset := eps.Subsets[0]
+		if len(es.Endpoints) != 0 {
+			endpoint := es.Endpoints[0]
 
-			if len(subset.Addresses) != 0 {
-				apiServerHost = subset.Addresses[0].IP
+			if len(endpoint.Addresses) != 0 {
+				apiServerHost = endpoint.Addresses[0]
 			} else {
 				k.Log("❌ Couldn't find endpoint address of the 'kubernetes' service endpoint on Kind")
 				return fmt.Errorf("failed to detect API server address")
 			}
 
-			if len(subset.Ports) != 0 {
-				apiServerPort = strconv.FormatInt(int64(subset.Ports[0].Port), 10)
+			if len(es.Ports) != 0 {
+				apiServerPort = strconv.FormatInt(int64(*es.Ports[0].Port), 10)
 			} else {
 				k.Log("❌ Couldn't find endpoint port of the 'kubernetes' service endpoint on Kind")
 				return fmt.Errorf("failed to detect API server address")
@@ -187,12 +186,7 @@ func (k *K8sInstaller) autodetectKubeProxy(ctx context.Context, helmValues map[s
 		}
 
 		// Use HelmOpts to set auto kube-proxy installation
-		setIfUnset("kubeProxyReplacement", func() string {
-			if versioncheck.MustCompile(">=1.14.0")(k.chartVersion) {
-				return "true"
-			}
-			return "strict"
-		}())
+		setIfUnset("kubeProxyReplacement", "true")
 
 		setIfUnset("k8sServiceHost", apiServerHost)
 		setIfUnset("k8sServicePort", apiServerPort)
