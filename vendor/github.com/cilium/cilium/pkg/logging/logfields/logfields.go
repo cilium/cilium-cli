@@ -44,6 +44,12 @@ const (
 	// EndpointID is the numeric endpoint identifier
 	EndpointID = "endpointID"
 
+	// EndpointAddressing is the endpoint addressing
+	EndpointAddressing = "addressing"
+
+	// EndpointAddressing defines whether to build an endpoint synchronously or not
+	EndpointSyncBuild = "sync-build"
+
 	// EndpointState is the current endpoint state
 	EndpointState = "endpointState"
 
@@ -93,8 +99,10 @@ const (
 	// IngressClass is the identifier of an ingress class object
 	IngressClass = "ingressClass"
 
-	// OldIdentity is a previously used security identity
-	OldIdentity = "oldIdentity"
+	// IdentityOld is a previously used security identity
+	IdentityOld = "old-" + Identity
+
+	IdentityNew = "new-" + Identity
 
 	// PolicyKey is a policy map key
 	PolicyKey = "policyKey"
@@ -476,6 +484,9 @@ const (
 	// DatapathMode is the datapath mode name
 	DatapathMode = "datapathMode"
 
+	// DatapathConfiguration is the datapath configuration
+	DatapathConfiguration = "datapathConfiguration"
+
 	// Tunnel is the tunnel name
 	Tunnel = "tunnel"
 
@@ -665,6 +676,8 @@ const (
 
 	// Count is a measure being compared to the Limit
 	Count = "count"
+
+	Total = "total"
 
 	// Debug is a boolean value for whether debug is set or not.
 	Debug = "debug"
@@ -1444,4 +1457,326 @@ const (
 	GlobalConfiguration = "globalConfiguration"
 
 	Annotation = "annotation"
+
+	LPM = "LPM"
+
+	IngressDeleted = "ingressDeleted"
+
+	EgressDeleted = "egressDeleted"
+
+	IngressAlive = "ingressAlive"
+
+	EgressAlive = "egressAlive"
+
+	CTMapIPVersion = "ctMapIPVersion"
+
+	ExpectedPrevInterval = "expectedPrevInterval"
+
+	ActualPrevInterval = "actualPrevInterval"
+
+	NewInterval = "newInterval"
+
+	DeleteRatio = "deleteRatio"
+
+	AdjustedDeleteRatio = "adjustedDeleteRatio"
+
+	Interrupted = "interrupted"
+
+	Errors = "errors"
+
+	IPSet = "ipset"
+
+	Cmd = "cmd"
+
+	Prog = "prog"
+
+	Table = "table"
+
+	OptionalParameter = "optionalParameter"
+
+	Param = "param"
+
+	Module = "module"
+
+	NeedFor = "needFor"
+
+	ProgType = "progType"
+
+	Helper = "helper"
+
+	Routes = "routes"
+
+	RevertError = "revertError"
+
+	BootTime = "bootTime"
+
+	BootstrapTime = "bootstrapTime"
+
+	Socket = "socket"
+
+	Filter = "filter"
+
+	Success = "success"
+
+	Failed = "failed"
+
+	BPFFSEndpointLinksDir = "bpffsEndpointLinksDir"
+
+	BPFFSEndpointDir = "bpffsEndpointDir"
+
+	CompilerPID = "compilerPID"
+
+	Output = "output"
+
+	RssBytes = "rssBytes"
+
+	BPFSPath = "bpffsPath"
+
+	ProgName = "progName"
+
+	Range = "range"
+
+	Pin = "pin"
+
+	Priority = "priority"
+
+	Args = "args"
+
+	Candidates = "candidates"
+
+	Location = "location"
+
+	Skipped = "skipped"
+
+	AliveEntries = "aliveEntries"
+
+	Scope = "scope"
+
+	NewLocally = "newLocally"
+
+	Released = "released"
+
+	DNSRulesV2 = "dnsRulesV2"
+
+	BPFHeaderfileHashOld = "old-" + "bpfHeaderfileHash"
+
+	DumpedPolicyMap = "dumpedPolicyMap"
+
+	DumpedDiffs = "dumpedDiffs"
+
+	NewDirectory = "newDirectory"
+
+	TmpDirectory = "tmpDirectory"
+
+	Code = "code"
+
+	EndpointStateFrom = "endpointStateFrom"
+
+	EndpointStateTo = "endpointStateTo"
+
+	BandwidthLimit = "bandwidthLimit"
+
+	PolicyRevisionNext = "policyRevisionNext"
+
+	PolicyRevisionRepo = "policyRevisionRepo"
+
+	PolicyChanged = "policyChanged"
+
+	CEPUIDOld = "old-" + CEPUID
+
+	HubbleCLIVersion = "hubble-cli-version"
+
+	HubbleRelayVersion = "hubble-relay-version"
+
+	HubbleServerVersion = "hubble-server-version"
+
+	Handler = "handler"
+
+	NodeOwner = "nodeOwner"
+
+	LenStaleNodes = "lenStaleNodes"
+
+	StaleNodes = "staleNodes"
+
+	SyncInterval = "syncInterval"
+
+	BootID = "bootID"
+
+	LeaseDuration = "leaseDuration"
+
+	RenewDeadline = "renewDeadline"
+
+	RetryPeriod = "retryPeriod"
+
+	Resources = "resources"
+
+	LastModifiedVersion = "lastModifiedVersion"
+
+	ReturningResources = "returningResources"
+
+	RequestedResources = "requestedResources"
+
+	ResponseNonce = "responseNonce"
+
+	ResourceWatcherVersion = "resourceWatcherVersion"
+
+	WaitVersion = "waitVersion"
+
+	CurrentVersion = "currentVersion"
+
+	PendingCompletions = "pendingCompletions"
+
+	Root = "root"
+
+	LenConfigPairs = "lenConfigPairs"
+
+	Exists = "exists"
+
+	MulticastAddr = "multicastAddr"
+
+	IPMask4 = "ipMask4"
+
+	IPMask6 = "ipMask6"
+
+	IPRules = "ipRules"
+
+	Rules = "rules"
+
+	SecID = "secID"
+
+	WrittenBytes = "writtenBytes"
+
+	TotalBytes = "totalBytes"
+
+	Destination = "destination"
+
+	LenEntries = "lenEntries"
+
+	FQDNSelector = "fqdnSelector"
+
+	MatchName = "matchName"
+
+	LenPrefixes = "lenPrefixes"
+
+	LookupIPAddrs = "lookupIPAddrs"
+
+	MatchPattern = "matchPattern"
+
+	BPFFSRoot = "bpffsRoot"
+
+	Section = "section"
+
+	Instruction = "instruction"
+
+	Reference = "reference"
+
+	MapRenames = "mapRenames"
+
+	Constants = "constants"
+
+	Remaining = "remaining"
+
+	Resolved = "resolved"
+
+	Scanned = "scanned"
+
+	KeySize = "keySize"
+
+	Subnets = "subnets"
+
+	Ratio = "ratio"
+
+	OldName = "oldName"
+
+	NewName = "newName"
+
+	ValueSize = "valueSize"
+
+	MaxEntries = "maxEntries"
+
+	Flags = "flags"
+
+	ExitCode = "exitCode"
+
+	NetLink = "netLink"
+
+	NetConf = "netConf"
+
+	Result = "result"
+
+	NetNamespace = "netNamespace"
+
+	DockerHostPath = "dockerHostPath"
+
+	ImageID = "imageID"
+
+	NumBufferedEvents = "numBufferedEvents"
+
+	EventHandlingDuration = "eventHandlingDuration"
+
+	EventEnqueueWaitTime = "eventEnqueueWaitTime"
+
+	CalculatedInterval = "calculatedInterval"
+
+	MaxAllowedInterval = "maxAllowedInterval"
+
+	EventConsumeOffQueueWaitTime = "eventConsumeOffQueueWaitTime"
+
+	CachedSource = "cachedSource"
+
+	Info = "info"
+
+	OperatorID = "operatorID"
+
+	NewLeader = "newLeader"
+
+	KVStore = "kvstore"
+
+	LabelSelectorFlagOption = "label-selector"
+
+	RemoveCiliumNodeTaintsFlagOption = "remove-cilium-node-taints"
+
+	SetCiliumNodeTaintsFlagOption = "set-cilium-node-taints"
+
+	SetCiliumIsUpConditionFlagOption = "set-cilium-is-up-condition"
+
+	TimeSinceRestart = "timeSinceRestart"
+
+	TimeSincePodStarted = "timeSincePodStarted"
+
+	DNSRules = "dnsRules"
+
+	PortProtocol = "portProtocol"
+
+	Option = "option"
+
+	RunDirectory = "runDirectory"
+
+	LibDirectory = "libDirectory"
+
+	BPFDirectory = "BPFDirectory"
+
+	StateDirectory = "StateDirectory"
+
+	Restored = "restored"
+
+	Detected = "detected"
+
+	NodeLabels = "nodeLabels"
+
+	UID = "UID"
+
+	ProviderID = "providerID"
+
+	EndpointLXCID = "endpointLXCID"
+
+	Regenerated = "regenerated"
+
+	Primary = "primary"
+
+	RTT = "rtt"
+
+	URI = "uri"
+
+	Goroutine = "goroutine"
 )

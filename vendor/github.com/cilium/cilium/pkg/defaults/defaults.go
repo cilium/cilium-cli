@@ -53,7 +53,7 @@ const (
 	// StateDirRights are the default access rights of the state directory
 	StateDirRights = 0770
 
-	//StateDir is the default path for the state directory relative to RuntimePath
+	// StateDir is the default path for the state directory relative to RuntimePath
 	StateDir = "state"
 
 	// TemplatesDir is the default path for the compiled template objects relative to StateDir
@@ -135,7 +135,7 @@ const (
 
 	// FQDNProxyResponseMaxDelay The maximum time the DNS proxy holds an allowed
 	// DNS response before sending it along. Responses are sent as soon as the
-	//datapath is updated with the new IP information.
+	// datapath is updated with the new IP information.
 	FQDNProxyResponseMaxDelay = 100 * time.Millisecond
 
 	// ToFQDNsPreCache is a path to a file with DNS cache data to insert into the
@@ -180,17 +180,6 @@ const (
 	// MaxInternalTimerDelay does not enforce a maximum on timer values in
 	// the agent by default.
 	MaxInternalTimerDelay = 0 * time.Second
-
-	// StatusCollectorInterval is the interval between a probe invocations
-	StatusCollectorInterval = 5 * time.Second
-
-	// StatusCollectorWarningThreshold is the duration after which a probe
-	// is declared as stale
-	StatusCollectorWarningThreshold = 15 * time.Second
-
-	// StatusCollectorFailureThreshold is the duration after which a probe
-	// is considered failed
-	StatusCollectorFailureThreshold = 1 * time.Minute
 
 	// SessionAffinityTimeoutMaxFallback defines the maximum number of seconds
 	// for the session affinity timeout. See also lb{4,6}_affinity_timeout().
@@ -289,10 +278,6 @@ const (
 	// EnableEndpointHealthChecking
 	EnableEndpointHealthChecking = true
 
-	// EnableHealthCheckNodePort is the default value for
-	// EnableHealthCheckNodePort
-	EnableHealthCheckNodePort = true
-
 	// EnableHealthCheckLoadBalancerIP is the default value for
 	// EnableHealthCheckLoadBalancerIP
 	EnableHealthCheckLoadBalancerIP = false
@@ -337,8 +322,8 @@ const (
 	// connection tracking garbage collection
 	ConntrackGCStartingInterval = 5 * time.Minute
 
-	// LoopbackIPv4 is the default address for service loopback
-	LoopbackIPv4 = "169.254.42.1"
+	// ServiceLoopbackIPv4 is the default address for service loopback
+	ServiceLoopbackIPv4 = "169.254.42.1"
 
 	// EnableEndpointRoutes is the value for option.EnableEndpointRoutes.
 	// It is disabled by default for backwards compatibility.
@@ -463,6 +448,10 @@ const (
 	// L4-based lookups
 	EnableIPv4FragmentsTracking = true
 
+	// EnableIPv6FragmentsTracking enables IPv6 fragments tracking for
+	// L4-based lookups
+	EnableIPv6FragmentsTracking = true
+
 	// FragmentsMapEntries is the default number of entries allowed in an
 	// the map used to track datagram fragments.
 	FragmentsMapEntries = 8192
@@ -480,19 +469,12 @@ const (
 	// API groups using Discovery API.
 	K8sEnableLeasesFallbackDiscovery = false
 
-	// KubeProxyReplacementHealthzBindAddr is the default kubeproxyReplacement healthz server bind addr
-	KubeProxyReplacementHealthzBindAddr = ""
-
 	// InstallNoConntrackRules instructs Cilium to install Iptables rules to skip netfilter connection tracking on all pod traffic.
 	InstallNoConntrackIptRules = false
 
 	// ContainerIPLocalReservedPortsAuto instructs the Cilium CNI plugin to reserve
 	// an auto-generated list of ports in the container network namespace
 	ContainerIPLocalReservedPortsAuto = "auto"
-
-	// ExternalClusterIP enables cluster external access to ClusterIP services.
-	// Defaults to false to retain prior behaviour of not routing external packets to ClusterIPs.
-	ExternalClusterIP = false
 
 	// EnableICMPRules enables ICMP-based rule support for Cilium Network Policies.
 	EnableICMPRules = true
@@ -581,9 +563,6 @@ const (
 	// EnableSourceIPVerification is the default value for source ip validation
 	EnableSourceIPVerification = true
 
-	// BGPRouterIDAllocationMode is default BGP router-id allocation mode
-	BGPRouterIDAllocationMode = "default"
-
 	// WireguardTrackAllIPsFallback forces the WireGuard agent to track all IPs.
 	WireguardTrackAllIPsFallback = false
 
@@ -602,7 +581,6 @@ var (
 		// cilium_ipcache is the likely the most useful use of this feature, but also has
 		// the highest churn.
 		"cilium_ipcache":           "enabled,1024,0",
-		"cilium_tunnel_map":        "enabled,128,0",
 		"cilium_lb_affinity_match": "enabled,128,0",
 
 		// ip4

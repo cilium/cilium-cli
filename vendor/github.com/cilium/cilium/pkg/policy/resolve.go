@@ -4,20 +4,139 @@
 package policy
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"iter"
 	"log/slog"
 	"runtime"
+	"strings"
 
-	"github.com/sirupsen/logrus"
+	cilium "github.com/cilium/proxy/go/cilium/api"
 
 	"github.com/cilium/cilium/pkg/container/versioned"
 	"github.com/cilium/cilium/pkg/endpoint/regeneration"
 	"github.com/cilium/cilium/pkg/labels"
 	"github.com/cilium/cilium/pkg/logging/logfields"
+	"github.com/cilium/cilium/pkg/policy/api"
 	"github.com/cilium/cilium/pkg/u8proto"
 )
+
+// PolicyContext is an interface policy resolution functions use to access the Repository.
+// This way testing code can run without mocking a full Repository.
+type PolicyContext interface {
+	// return the namespace in which the policy rule is being resolved
+	GetNamespace() string
+
+	// return the SelectorCache
+	GetSelectorCache() *SelectorCache
+
+	// GetTLSContext resolves the given 'api.TLSContext' into CA
+	// certs and the public and private keys, using secrets from
+	// k8s or from the local file system.
+	GetTLSContext(tls *api.TLSContext) (ca, public, private string, inlineSecrets bool, err error)
+
+	// GetEnvoyHTTPRules translates the given 'api.L7Rules' into
+	// the protobuf representation the Envoy can consume. The bool
+	// return parameter tells whether the rule enforcement can
+	// be short-circuited upon the first allowing rule. This is
+	// false if any of the rules has side-effects, requiring all
+	// such rules being evaluated.
+	GetEnvoyHTTPRules(l7Rules *api.L7Rules) (*cilium.HttpNetworkPolicyRules, bool)
+
+	// IsDeny returns true if the policy computation should be done for the
+	// policy deny case. This function returns different values depending on the
+	// code path as it can be changed during the policy calculation.
+	IsDeny() bool
+
+	// SetDeny sets the Deny field of the PolicyContext and returns the old
+	// value stored.
+	SetDeny(newValue bool) (oldValue bool)
+
+	// DefaultDenyIngress returns true if default deny is enabled for ingress
+	DefaultDenyIngress() bool
+
+	// DefaultDenyEgress returns true if default deny is enabled for egress
+	DefaultDenyEgress() bool
+
+	GetLogger() *slog.Logger
+
+	PolicyTrace(format string, a ...any)
+}
+
+type policyContext struct {
+	repo *Repository
+	ns   string
+	// isDeny this field is set to true if the given policy computation should
+	// be done for the policy deny.
+	isDeny             bool
+	defaultDenyIngress bool
+	defaultDenyEgress  bool
+
+	logger       *slog.Logger
+	traceEnabled bool
+}
+
+var _ PolicyContext = &policyContext{}
+
+// GetNamespace() returns the namespace for the policy rule being resolved
+func (p *policyContext) GetNamespace() string {
+	return p.ns
+}
+
+// GetSelectorCache() returns the selector cache used by the Repository
+func (p *policyContext) GetSelectorCache() *SelectorCache {
+	return p.repo.GetSelectorCache()
+}
+
+// GetTLSContext() returns data for TLS Context via a CertificateManager
+func (p *policyContext) GetTLSContext(tls *api.TLSContext) (ca, public, private string, inlineSecrets bool, err error) {
+	if p.repo.certManager == nil {
+		return "", "", "", false, fmt.Errorf("No Certificate Manager set on Policy Repository")
+	}
+	return p.repo.certManager.GetTLSContext(context.TODO(), tls, p.ns)
+}
+
+func (p *policyContext) GetEnvoyHTTPRules(l7Rules *api.L7Rules) (*cilium.HttpNetworkPolicyRules, bool) {
+	return p.repo.GetEnvoyHTTPRules(l7Rules, p.ns)
+}
+
+// IsDeny returns true if the policy computation should be done for the
+// policy deny case. This function return different values depending on the
+// code path as it can be changed during the policy calculation.
+func (p *policyContext) IsDeny() bool {
+	return p.isDeny
+}
+
+// SetDeny sets the Deny field of the PolicyContext and returns the old
+// value stored.
+func (p *policyContext) SetDeny(deny bool) bool {
+	oldDeny := p.isDeny
+	p.isDeny = deny
+	return oldDeny
+}
+
+// DefaultDenyIngress returns true if default deny is enabled for ingress
+func (p *policyContext) DefaultDenyIngress() bool {
+	return p.defaultDenyIngress
+}
+
+// DefaultDenyEgress returns true if default deny is enabled for egress
+func (p *policyContext) DefaultDenyEgress() bool {
+	return p.defaultDenyEgress
+}
+
+func (p *policyContext) GetLogger() *slog.Logger {
+	return p.logger
+}
+
+func (p *policyContext) PolicyTrace(format string, a ...any) {
+	if p.logger == nil || !p.traceEnabled {
+		return
+	}
+	format = strings.TrimRight(format, " \t\n")
+	p.logger.Info(fmt.Sprintf(format, a...))
+}
 
 // SelectorPolicy represents a selectorPolicy, previously resolved from
 // the policy repository and ready to be distilled against a set of identities
@@ -25,7 +144,7 @@ import (
 type SelectorPolicy interface {
 	// CreateRedirects is used to ensure the endpoint has created all the needed redirects
 	// before a new EndpointPolicy is created.
-	RedirectFilters() iter.Seq2[*L4Filter, *PerSelectorPolicy]
+	RedirectFilters() iter.Seq2[*L4Filter, PerSelectorPolicyTuple]
 
 	// DistillPolicy returns the policy in terms of connectivity to peer
 	// Identities.
@@ -123,7 +242,7 @@ func (p *EndpointPolicy) Lookup(key Key) (MapStateEntry, labels.LabelArrayList, 
 type PolicyOwner interface {
 	GetID() uint64
 	GetNamedPort(ingress bool, name string, proto u8proto.U8proto) uint16
-	PolicyDebug(fields logrus.Fields, msg string)
+	PolicyDebug(msg string, attrs ...any)
 	IsHost() bool
 	MapStateSize() int
 	RegenerateIfAlive(regenMetadata *regeneration.ExternalRegenerationMetadata) <-chan bool
@@ -380,21 +499,26 @@ func (l4policy L4DirectionPolicy) toMapState(logger *slog.Logger, p *EndpointPol
 	})
 }
 
+type PerSelectorPolicyTuple struct {
+	Policy   *PerSelectorPolicy
+	Selector CachedSelector
+}
+
 // RedirectFilters returns an iterator for each L4Filter with a redirect in the policy.
-func (p *selectorPolicy) RedirectFilters() iter.Seq2[*L4Filter, *PerSelectorPolicy] {
-	return func(yield func(*L4Filter, *PerSelectorPolicy) bool) {
+func (p *selectorPolicy) RedirectFilters() iter.Seq2[*L4Filter, PerSelectorPolicyTuple] {
+	return func(yield func(*L4Filter, PerSelectorPolicyTuple) bool) {
 		if p.L4Policy.Ingress.forEachRedirectFilter(yield) {
 			p.L4Policy.Egress.forEachRedirectFilter(yield)
 		}
 	}
 }
 
-func (l4policy L4DirectionPolicy) forEachRedirectFilter(yield func(*L4Filter, *PerSelectorPolicy) bool) bool {
+func (l4policy L4DirectionPolicy) forEachRedirectFilter(yield func(*L4Filter, PerSelectorPolicyTuple) bool) bool {
 	ok := true
 	l4policy.PortRules.ForEach(func(l4 *L4Filter) bool {
-		for _, ps := range l4.PerSelectorPolicies {
+		for cs, ps := range l4.PerSelectorPolicies {
 			if ps != nil && ps.IsRedirect() {
-				ok = yield(l4, ps)
+				ok = yield(l4, PerSelectorPolicyTuple{ps, cs})
 			}
 		}
 		return ok
@@ -426,10 +550,10 @@ func (p *EndpointPolicy) ConsumeMapChanges() (closer func(), changes ChangeState
 		}
 		p.VersionHandle = version
 
-		p.PolicyOwner.PolicyDebug(logrus.Fields{
-			logfields.Version: version,
-			logfields.Changes: changes,
-		}, msg)
+		p.PolicyOwner.PolicyDebug(msg,
+			logfields.Version, version,
+			logfields.Changes, changes,
+		)
 	}
 
 	return closer, changes

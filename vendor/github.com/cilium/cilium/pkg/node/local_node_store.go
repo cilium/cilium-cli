@@ -6,6 +6,7 @@ package node
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net"
 	"sync"
 
@@ -21,6 +22,9 @@ import (
 
 // +deepequal-gen=true
 type LocalNode struct {
+	// +deepequal-gen=false
+	Logger *slog.Logger
+
 	types.Node
 	// OptOutNodeEncryption will make the local node opt-out of node-to-node
 	// encryption
@@ -34,7 +38,9 @@ type LocalNode struct {
 	IPv4NativeRoutingCIDR *cidr.CIDR
 	// v6 CIDR in which pod IPs are routable
 	IPv6NativeRoutingCIDR *cidr.CIDR
-	IPv4Loopback          net.IP
+	// ServiceLoopbackIPv4 is the source address used for SNAT when a Pod talks to
+	// itself through a Service.
+	ServiceLoopbackIPv4 net.IP
 }
 
 // LocalNodeSynchronizer specifies how to build, and keep synchronized the local
@@ -58,6 +64,7 @@ var LocalNodeStoreCell = cell.Module(
 type LocalNodeStoreParams struct {
 	cell.In
 
+	Logger    *slog.Logger
 	Lifecycle cell.Lifecycle
 	Sync      LocalNodeSynchronizer `optional:"true"`
 }
@@ -111,13 +118,15 @@ func NewLocalNodeStore(params LocalNodeStoreParams) (*LocalNodeStore, error) {
 
 	s := &LocalNodeStore{
 		Observable: src,
-		value: LocalNode{Node: types.Node{
-			// Explicitly initialize the labels and annotations maps, so that
-			// we don't need to always check for nil values.
-			Labels:      make(map[string]string),
-			Annotations: make(map[string]string),
-			Source:      source.Unspec,
-		}},
+		value: LocalNode{
+			Logger: params.Logger,
+			Node: types.Node{
+				// Explicitly initialize the labels and annotations maps, so that
+				// we don't need to always check for nil values.
+				Labels:      make(map[string]string),
+				Annotations: make(map[string]string),
+				Source:      source.Unspec,
+			}},
 		hasValue: hasValue,
 	}
 

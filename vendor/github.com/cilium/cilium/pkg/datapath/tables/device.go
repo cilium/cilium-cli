@@ -97,6 +97,7 @@ type Device struct {
 	RawFlags     uint32          // Raw interface flags
 	Type         string          // Device type, e.g. "veth" etc.
 	MasterIndex  int             // Index of the master device (e.g. bridge or bonding device)
+	OperStatus   string          // Operational status, e.g. "up", "lower-layer-down"
 
 	Selected          bool   // True if this is an external facing device
 	NotSelectedReason string // Reason why this device was not selected
@@ -108,9 +109,9 @@ func (d *Device) DeepCopy() *Device {
 	return &copy
 }
 
-func (d *Device) HasIP(ip net.IP) bool {
+func (d *Device) HasIP(ip netip.Addr) bool {
 	for _, addr := range d.Addrs {
-		if addr.AsIP().Equal(ip) {
+		if addr.Addr == ip {
 			return true
 		}
 	}
@@ -127,6 +128,7 @@ func (*Device) TableHeader() []string {
 		"HWAddr",
 		"Flags",
 		"Addresses",
+		"OperStatus",
 	}
 }
 
@@ -144,6 +146,7 @@ func (d *Device) TableRow() []string {
 		d.HardwareAddr.String(),
 		d.Flags.String(),
 		strings.Join(addrs, ", "),
+		d.OperStatus,
 	}
 }
 

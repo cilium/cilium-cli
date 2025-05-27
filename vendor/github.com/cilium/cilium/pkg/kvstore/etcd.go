@@ -396,7 +396,7 @@ func (e *etcdMutex) Unlock(ctx context.Context) (err error) {
 	return e.mutex.Unlock(ctx)
 }
 
-func (e *etcdMutex) Comparator() interface{} {
+func (e *etcdMutex) Comparator() any {
 	return e.mutex.IsOwner()
 }
 
@@ -573,7 +573,7 @@ func connectEtcdClient(ctx context.Context, logger *slog.Logger, config *client.
 		}()
 	}
 
-	ec.limiter = ciliumrate.NewAPILimiter(makeSessionName("etcd", opts), ciliumrate.APILimiterParameters{
+	ec.limiter = ciliumrate.NewAPILimiter(logger, makeSessionName("etcd", opts), ciliumrate.APILimiterParameters{
 		RateLimit:        rate.Limit(initialLimit),
 		RateBurst:        clientOptions.RateLimit,
 		ParallelRequests: clientOptions.MaxInflight,
@@ -697,9 +697,10 @@ func makeSessionName(sessionPrefix string, opts *ExtraOptions) string {
 
 func newExpBackoffRateLimiter(e *etcdClient, name string) backoff.Exponential {
 	errLimiter := backoff.Exponential{
-		Name: name,
-		Min:  50 * time.Millisecond,
-		Max:  1 * time.Minute,
+		Logger: e.logger,
+		Name:   name,
+		Min:    50 * time.Millisecond,
+		Max:    1 * time.Minute,
 	}
 
 	if e != nil && e.extraOptions != nil {

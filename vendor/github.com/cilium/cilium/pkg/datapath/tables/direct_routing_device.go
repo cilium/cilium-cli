@@ -5,11 +5,12 @@ package tables
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/cilium/hive/cell"
 	"github.com/cilium/statedb"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
+	"go4.org/netipx"
 
 	"github.com/cilium/cilium/pkg/node"
 	"github.com/cilium/cilium/pkg/option"
@@ -40,7 +41,7 @@ type DirectRoutingDeviceConfig struct {
 type DirectRoutingDeviceParams struct {
 	cell.In
 
-	Log     logrus.FieldLogger
+	Log     *slog.Logger
 	Config  DirectRoutingDeviceConfig
 	Node    *node.LocalNodeStore `optional:"true"`
 	DB      *statedb.DB
@@ -82,11 +83,13 @@ func (dr DirectRoutingDevice) Get(ctx context.Context, rxn statedb.ReadTxn) (*De
 	if device == nil && dr.p.Node != nil {
 		node, err := dr.p.Node.Get(ctx)
 		if err == nil {
-			nodeIP := node.GetK8sNodeIP()
-			for _, dev := range devs {
-				if dev.HasIP(nodeIP) {
-					device = dev
-					break
+			nodeIP, ok := netipx.FromStdIP(node.GetK8sNodeIP())
+			if ok {
+				for _, dev := range devs {
+					if dev.HasIP(nodeIP) {
+						device = dev
+						break
+					}
 				}
 			}
 		}

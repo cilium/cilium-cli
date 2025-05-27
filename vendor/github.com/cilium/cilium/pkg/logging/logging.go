@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"os"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -30,6 +31,10 @@ const (
 	Syslog    = "syslog"
 	LevelOpt  = "level"
 	FormatOpt = "format"
+	WriterOpt = "writer"
+
+	StdOutOpt = "stdout"
+	StdErrOpt = "stderr"
 
 	LogFormatText          LogFormat = "text"
 	LogFormatTextTimestamp LogFormat = "text-ts"
@@ -57,9 +62,7 @@ var DefaultLogger = initializeDefaultLogger()
 
 var klogErrorOverrides = []logLevelOverride{
 	{
-		// TODO: We can drop the misspelled case here once client-go version is bumped to include:
-		//	https://github.com/kubernetes/client-go/commit/ae43527480ee9d8750fbcde3d403363873fd3d89
-		matcher:     regexp.MustCompile("Failed to update lock (optimitically|optimistically).*falling back to slow path"),
+		matcher:     regexp.MustCompile("Failed to update lock optimistically.*falling back to slow path"),
 		targetLevel: logrus.InfoLevel,
 	},
 }
@@ -152,7 +155,7 @@ func severityOverrideWriter(level logrus.Level, log *logrus.Entry, overrides []l
 func writerScanner(
 	entry *logrus.Entry,
 	reader *io.PipeReader,
-	defaultPrintFunc func(args ...interface{}),
+	defaultPrintFunc func(args ...any),
 	overrides []logLevelOverride) {
 
 	defer reader.Close()
@@ -255,16 +258,17 @@ func (o LogOptions) GetLogFormat() LogFormat {
 // SetLogLevel updates the DefaultLogger with a new logrus.Level
 func SetLogLevel(logLevel logrus.Level) {
 	DefaultLogger.SetLevel(logLevel)
+	DefaultLogger.SetReportCaller(logLevel == logrus.DebugLevel)
 }
 
 // SetDefaultLogLevel updates the DefaultLogger with the DefaultLogLevel
 func SetDefaultLogLevel() {
-	DefaultLogger.SetLevel(DefaultLogLevel)
+	SetLogLevel(DefaultLogLevel)
 }
 
 // SetLogLevelToDebug updates the DefaultLogger with the logrus.DebugLevel
 func SetLogLevelToDebug() {
-	DefaultLogger.SetLevel(logrus.DebugLevel)
+	SetLogLevel(logrus.DebugLevel)
 }
 
 // SetLogFormat updates the DefaultLogger with a new LogFormat
@@ -294,7 +298,8 @@ func SetupLogging(loggers []string, logOpts LogOptions, tag string, debug bool) 
 	if debug {
 		logOpts[LevelOpt] = "debug"
 	}
-	initializeSlog(logOpts, len(loggers) == 0)
+
+	initializeSlog(logOpts, loggers)
 
 	// Updating the default log format
 	SetLogFormat(logOpts.GetLogFormat())
@@ -339,12 +344,26 @@ func GetFormatter(format LogFormat) logrus.Formatter {
 		return &logrus.TextFormatter{
 			DisableTimestamp: true,
 			DisableColors:    true,
+			FieldMap: logrus.FieldMap{
+				logrus.FieldKeyFile: "source",
+			},
+			CallerPrettyfier: func(f *runtime.Frame) (function string, file string) {
+				file = fmt.Sprintf("%s:%d", f.File, f.Line)
+				return
+			},
 		}
 	case LogFormatTextTimestamp:
 		return &logrus.TextFormatter{
 			DisableTimestamp: false,
 			TimestampFormat:  time.RFC3339Nano,
 			DisableColors:    true,
+			FieldMap: logrus.FieldMap{
+				logrus.FieldKeyFile: "source",
+			},
+			CallerPrettyfier: func(f *runtime.Frame) (function string, file string) {
+				file = fmt.Sprintf("%s:%d", f.File, f.Line)
+				return
+			},
 		}
 	case LogFormatJSON:
 		return &logrus.JSONFormatter{
@@ -397,7 +416,7 @@ func getLogDriverConfig(logDriver string, logOpts LogOptions) LogOptions {
 
 // MultiLine breaks a multi line text into individual log entries and calls the
 // logging function to log each entry
-func MultiLine(logFn func(args ...interface{}), output string) {
+func MultiLine(logFn func(args ...any), output string) {
 	scanner := bufio.NewScanner(bytes.NewReader([]byte(output)))
 	for scanner.Scan() {
 		logFn(scanner.Text())
