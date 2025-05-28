@@ -13,7 +13,7 @@ import (
 	"github.com/cilium/cilium/pkg/versioncheck"
 )
 
-func (k *K8sInstaller) getHelmValues() (map[string]interface{}, error) {
+func (k *K8sInstaller) getHelmValues() (map[string]any, error) {
 	helmMapOpts := map[string]string{}
 
 	switch {
@@ -63,13 +63,6 @@ func (k *K8sInstaller) getHelmValues() (map[string]interface{}, error) {
 			} else {
 				// Can be removed once we drop support for <1.14.0
 				helmMapOpts["tunnel"] = tunnelDisabled
-			}
-			if versioncheck.MustCompile(">=1.17.0")(k.chartVersion) {
-				// AL2023 uses ens interfaces, but we default to eth interfaces for everything else for backwards compatibility,
-				// since the CLI was assuming eth interfaces before support for AL2023 was introduced
-				helmMapOpts["egressMasqueradeInterfaces"] = "eth+ ens+"
-			} else {
-				helmMapOpts["egressMasqueradeInterfaces"] = "eth+"
 			}
 
 		case DatapathGKE:

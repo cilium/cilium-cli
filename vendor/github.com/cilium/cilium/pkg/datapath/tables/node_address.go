@@ -6,6 +6,7 @@ package tables
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 	"slices"
@@ -17,11 +18,9 @@ import (
 	"github.com/cilium/statedb"
 	"github.com/cilium/statedb/index"
 	"github.com/cilium/stream"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	"github.com/cilium/cilium/pkg/cidr"
 	"github.com/cilium/cilium/pkg/defaults"
 	"github.com/cilium/cilium/pkg/ip"
 	"github.com/cilium/cilium/pkg/logging/logfields"
@@ -99,7 +98,7 @@ func (n NodeAddress) TableRow() []string {
 }
 
 type NodeAddressConfig struct {
-	NodePortAddresses []*cidr.CIDR `mapstructure:"nodeport-addresses"`
+	NodePortAddresses []netip.Prefix `mapstructure:"nodeport-addresses"`
 }
 
 type NodeAddressKey struct {
@@ -200,14 +199,6 @@ func newAddressScopeMax(cfg NodeAddressConfig, daemonCfg *option.DaemonConfig) (
 	return AddressScopeMax(daemonCfg.AddressScopeMax), nil
 }
 
-func (cfg NodeAddressConfig) getNets() []*net.IPNet {
-	nets := make([]*net.IPNet, len(cfg.NodePortAddresses))
-	for i, cidr := range cfg.NodePortAddresses {
-		nets[i] = cidr.IPNet
-	}
-	return nets
-}
-
 func (NodeAddressConfig) Flags(flags *pflag.FlagSet) {
 	flags.StringSlice(
 		"nodeport-addresses",
@@ -219,7 +210,7 @@ type nodeAddressControllerParams struct {
 	cell.In
 
 	Health          cell.Health
-	Log             logrus.FieldLogger
+	Log             *slog.Logger
 	Config          NodeAddressConfig
 	Lifecycle       cell.Lifecycle
 	Jobs            job.Registry
@@ -391,7 +382,11 @@ func (n *nodeAddressController) updateWildcardDevice(txn statedb.WriteTxn, dev *
 		n.NodeAddresses.Insert(txn, nodeAddr)
 	}
 
-	n.Log.WithFields(logrus.Fields{"node-addresses": showAddresses(newAddrs), logfields.Device: WildcardDeviceName}).Info("Fallback node addresses updated")
+	n.Log.Info(
+		"Fallback node addresses updated",
+		logfields.Addresses, showAddresses(newAddrs),
+		logfields.Device, WildcardDeviceName,
+	)
 }
 
 func (n *nodeAddressController) updateFallbacks(txn statedb.ReadTxn, dev *Device, deleted bool) (updated bool) {
@@ -446,7 +441,11 @@ func (n *nodeAddressController) update(txn statedb.WriteTxn, new []NodeAddress, 
 
 	if updated {
 		addrs := showAddresses(new)
-		n.Log.WithFields(logrus.Fields{"node-addresses": addrs, logfields.Device: device}).Info("Node addresses updated")
+		n.Log.Info(
+			"Node addresses updated",
+			logfields.Addresses, addrs,
+			logfields.Device, device,
+		)
 		if reporter != nil {
 			reporter.OK(addrs)
 		}
@@ -535,7 +534,7 @@ func (n *nodeAddressController) getAddressesFromDevice(dev *Device) []NodeAddres
 		// by the logic following this loop.
 		nodePort := false
 		if len(n.Config.NodePortAddresses) > 0 {
-			nodePort = dev.Name != defaults.HostDevice && ip.NetsContainsAny(n.Config.getNets(), []*net.IPNet{ip.IPToPrefix(addr.AsIP())})
+			nodePort = dev.Name != defaults.HostDevice && ip.PrefixesContains(n.Config.NodePortAddresses, addr.Addr)
 		}
 		addrs = append(addrs,
 			NodeAddress{

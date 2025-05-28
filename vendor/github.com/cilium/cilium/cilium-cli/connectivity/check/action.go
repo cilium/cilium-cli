@@ -37,7 +37,8 @@ const (
 
 var (
 	// PING 10.0.0.1 (10.0.0.1) 56(84) bytes of data.
-	pingHeaderPattern = regexp.MustCompile(`^PING .* bytes of data\.`)
+	// PING 2606:4700:4700::1111(2606:4700:4700::1111) 56 data bytes
+	pingHeaderPattern = regexp.MustCompile(`^PING .*(bytes of data\.|data bytes)`)
 )
 
 // Action represents an individual action (e.g. a curl call) in a Scenario
@@ -111,10 +112,10 @@ func (a *Action) String() string {
 	sn := a.test.scenarioName(a.scenario)
 	p := a.Peers()
 	if p != "" {
-		return fmt.Sprintf("%s/%s: %s", sn, a.name, p)
+		return fmt.Sprintf("%s:%s: %s", sn, a.name, p)
 	}
 
-	return fmt.Sprintf("%s/%s", sn, a.name)
+	return fmt.Sprintf("%s:%s", sn, a.name)
 }
 
 // Peers returns the name and addr:port of the peers involved in the Action.
