@@ -2,9 +2,9 @@
 
 Release process and checklist for `cilium-cli`.
 
-This repository currently uses release branches `v0.10` and `main`. All releases stem from
-one of these branches. Refer to the [Release
-table](https://github.com/cilium/cilium-cli#releases) for the most recent supported versions.
+All releases in this repository are cut from the `main` branch. Refer to the
+[Release table](https://github.com/cilium/cilium-cli#releases) for the most
+recent supported versions.
 
 ## Check issues and PRs
 
