@@ -19,7 +19,7 @@ recent supported versions.
 Set `RELEASE` environment variable to the new version. This variable will be
 used in the commands throughout the documenat to allow copy-pasting.
 
-    export RELEASE=v0.18.5
+    export RELEASE=v0.18.6
 
 ## Create release preparation branch and PR
 

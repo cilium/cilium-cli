@@ -27,10 +27,10 @@ import (
 	"github.com/cilium/cilium/cilium-cli/defaults"
 	"github.com/cilium/cilium/cilium-cli/k8s"
 	"github.com/cilium/cilium/cilium-cli/sysdump"
-	"github.com/cilium/cilium/cilium-cli/utils/codeowners"
 	"github.com/cilium/cilium/cilium-cli/utils/features"
 	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	"github.com/cilium/cilium/pkg/lock"
+	"github.com/cilium/cilium/tools/testowners/codeowners"
 )
 
 const (
@@ -53,8 +53,10 @@ type ConnectivityTest struct {
 
 	CodeOwners *codeowners.Ruleset
 
-	// ClusterName is the identifier of the local cluster.
-	ClusterName string
+	// ClusterNameLocal is the identifier of the local cluster.
+	ClusterNameLocal string
+	// ClusterNameRemote is the identifier of the destination cluster.
+	ClusterNameRemote string
 
 	// Parameters to the test suite, specified by the CLI user.
 	params Parameters
@@ -71,6 +73,7 @@ type ConnectivityTest struct {
 	echoExternalPods     map[string]Pod
 	clientPods           map[string]Pod
 	clientCPPods         map[string]Pod
+	l7LBClientPods       map[string]Pod
 	perfClientPods       []Pod
 	perfServerPod        []Pod
 	perfProfilingPods    map[string]Pod
@@ -78,6 +81,7 @@ type ConnectivityTest struct {
 	echoServices         map[string]Service
 	echoExternalServices map[string]Service
 	ingressService       map[string]Service
+	l7LBService          map[string]Service
 	k8sService           Service
 	lrpClientPods        map[string]Pod
 	lrpBackendPods       map[string]Pod
@@ -225,6 +229,7 @@ func NewConnectivityTest(
 		echoExternalPods:         make(map[string]Pod),
 		clientPods:               make(map[string]Pod),
 		clientCPPods:             make(map[string]Pod),
+		l7LBClientPods:           make(map[string]Pod),
 		lrpClientPods:            make(map[string]Pod),
 		lrpBackendPods:           make(map[string]Pod),
 		perfProfilingPods:        make(map[string]Pod),
@@ -236,6 +241,7 @@ func NewConnectivityTest(
 		echoServices:             make(map[string]Service),
 		echoExternalServices:     make(map[string]Service),
 		ingressService:           make(map[string]Service),
+		l7LBService:              make(map[string]Service),
 		hostNetNSPodsByNode:      make(map[string]Pod),
 		secondaryNetworkNodeIPv4: make(map[string]string),
 		secondaryNetworkNodeIPv6: make(map[string]string),
@@ -331,9 +337,6 @@ func (ct *ConnectivityTest) setupAndValidate(ctx context.Context, extra SetupHoo
 	if err := ct.getNodes(ctx); err != nil {
 		return err
 	}
-	if err := ct.getCiliumNodes(ctx); err != nil {
-		return err
-	}
 	// Detect Cilium version after Cilium pods have been initialized and before feature
 	// detection.
 	if err := ct.detectCiliumVersion(ctx); err != nil {
@@ -364,6 +367,9 @@ func (ct *ConnectivityTest) setupAndValidate(ctx context.Context, extra SetupHoo
 		return err
 	}
 	if err := ct.patchDeployment(ctx); err != nil {
+		return err
+	}
+	if err := ct.getCiliumNodes(ctx); err != nil {
 		return err
 	}
 	if ct.params.Hubble {
@@ -539,7 +545,11 @@ func (ct *ConnectivityTest) report() error {
 			ct.Logf("Test [%s]:", t.Name())
 			for _, a := range t.failedActions() {
 				failedActions++
-				ct.Log("  ❌", a)
+				if a.failureMessage != "" {
+					ct.Logf("  🟥 %s: %s", a, a.failureMessage)
+				} else {
+					ct.Log("  ❌", a)
+				}
 				ct.LogOwners(a.Scenario())
 			}
 		}
@@ -670,20 +680,35 @@ func (ct *ConnectivityTest) detectPodCIDRs() {
 			continue
 		}
 
+		// PodIPs match HostIPs given that the pod is running in host network.
+		hostIPs := pod.Pod.Status.PodIPs
+
 		for _, cidr := range n.Spec.IPAM.PodCIDRs {
-			// PodIPs match HostIPs given that the pod is running in host network.
-			for _, ip := range pod.Pod.Status.PodIPs {
-				f := features.GetIPFamily(ip.IP)
-				if strings.Contains(cidr, ":") != (f == features.IPFamilyV6) {
-					// Skip if the host IP of the pod mismatches with pod CIDR.
-					// Cannot create a route with the gateway IP family
-					// mismatching the subnet.
-					continue
-				}
-				ct.params.PodCIDRs = append(ct.params.PodCIDRs, podCIDRs{cidr, ip.IP})
+			ct.params.PodCIDRs = append(ct.params.PodCIDRs, toPodCIDRs(cidr, hostIPs...)...)
+		}
+
+		// additional IP pools from multi-pool IPAM mode
+		for _, pool := range n.Spec.IPAM.Pools.Allocated {
+			for _, podCIDR := range pool.CIDRs {
+				ct.params.PodCIDRs = append(ct.params.PodCIDRs, toPodCIDRs(string(podCIDR), hostIPs...)...)
 			}
 		}
 	}
+}
+
+func toPodCIDRs(cidr string, podIPs ...corev1.PodIP) []podCIDRs {
+	var podCIDRsInfo []podCIDRs
+	for _, ip := range podIPs {
+		f := features.GetIPFamily(ip.IP)
+		if strings.Contains(cidr, ":") != (f == features.IPFamilyV6) {
+			// Skip if the host IP of the pod mismatches with pod CIDR.
+			// Cannot create a route with the gateway IP family
+			// mismatching the subnet.
+			continue
+		}
+		podCIDRsInfo = append(podCIDRsInfo, podCIDRs{cidr, ip.IP})
+	}
+	return podCIDRsInfo
 }
 
 // detectNodeCIDRs produces one or more CIDRs that cover all nodes in the cluster.
@@ -1096,6 +1121,10 @@ func (ct *ConnectivityTest) ControlPlaneClientPods() map[string]Pod {
 	return ct.clientCPPods
 }
 
+func (ct *ConnectivityTest) L7LBClientPods() map[string]Pod {
+	return ct.l7LBClientPods
+}
+
 func (ct *ConnectivityTest) HostNetNSPodsByNode() map[string]Pod {
 	return ct.hostNetNSPodsByNode
 }
@@ -1170,6 +1199,10 @@ func (ct *ConnectivityTest) FRRPods() []Pod {
 
 func (ct *ConnectivityTest) IngressService() map[string]Service {
 	return ct.ingressService
+}
+
+func (ct *ConnectivityTest) L7LBService() map[string]Service {
+	return ct.l7LBService
 }
 
 func (ct *ConnectivityTest) K8sService() Service {
