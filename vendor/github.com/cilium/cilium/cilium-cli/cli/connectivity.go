@@ -21,9 +21,9 @@ import (
 	"github.com/cilium/cilium/cilium-cli/connectivity/check"
 	"github.com/cilium/cilium/cilium-cli/defaults"
 	"github.com/cilium/cilium/cilium-cli/sysdump"
-	"github.com/cilium/cilium/cilium-cli/utils/codeowners"
 	"github.com/cilium/cilium/cilium-cli/utils/features"
 	"github.com/cilium/cilium/pkg/option"
+	"github.com/cilium/cilium/tools/testowners/codeowners"
 )
 
 func newCmdConnectivity(hooks api.Hooks) *cobra.Command {
@@ -191,6 +191,7 @@ func newCmdConnectivityTest(hooks api.Hooks) *cobra.Command {
 	cmd.Flags().StringVar(&params.TestConnDisruptImage, "test-conn-disrupt-image", defaults.ConnectivityCheckImagesTest["ConnectivityTestConnDisruptImage"], "Image path to use for connection disruption tests")
 	cmd.Flags().StringVar(&params.FRRImage, "frr-image", defaults.ConnectivityCheckImagesTest["ConnectivityTestFRRImage"], "Image path to use for FRR")
 	cmd.Flags().StringVar(&params.SocatImage, "socat-image", defaults.ConnectivityCheckImagesTest["ConnectivityTestSocatImage"], "Image path to use for multicast tests")
+	cmd.Flags().StringVar(&params.EchoImage, "echo-image", defaults.ConnectivityCheckOptionalImagesTest["ConnectivityTestEchoImage"], "Image path to use for echo server")
 
 	cmd.Flags().UintVar(&params.Retry, "retry", defaults.ConnectRetry, "Number of retries on connection failure to external targets")
 	cmd.Flags().DurationVar(&params.RetryDelay, "retry-delay", defaults.ConnectRetryDelay, "Delay between retries for external targets")
@@ -296,7 +297,6 @@ func newCmdConnectivityPerf(hooks api.Hooks) *cobra.Command {
 		"node-selector-server", "Node selector for the server pod (and client same-node)")
 	cmd.Flags().Var(option.NewNamedMapOptions("node-selector-client", &params.PerfParameters.NodeSelectorClient, nil),
 		"node-selector-client", "Node selector for the other-node client pod")
-	cmd.Flags().StringSliceVar(&params.PerfParameters.Tolerations, "tolerations", nil, "Extra NoSchedule tolerations added to test pods")
 
 	cmd.Flags().StringVar(&params.PerfParameters.Image, "performance-image", defaults.ConnectivityCheckImagesPerf["ConnectivityPerformanceImage"], "Image path to use for performance")
 	cmd.Flags().StringVar(&params.PerfParameters.ReportDir, "report-dir", "", "Directory to save perf results in json format")
@@ -307,6 +307,7 @@ func newCmdConnectivityPerf(hooks api.Hooks) *cobra.Command {
 
 func registerCommonFlags(flags *pflag.FlagSet) {
 	flags.BoolVarP(&params.Debug, "debug", "d", false, "Show debug messages")
+	flags.StringSliceVar(&params.Tolerations, "tolerations", nil, "Extra NoSchedule tolerations added to test pods")
 	flags.StringVar(&params.TestNamespace, "test-namespace", defaults.ConnectivityCheckNamespace, "Namespace to perform the connectivity in (always suffixed with a sequence number to be compliant with test-concurrency param, e.g.: cilium-test-1)")
 	flags.Var(option.NewNamedMapOptions("namespace-labels", &params.NamespaceLabels, nil), "namespace-labels", "Add labels to the connectivity test namespace")
 	flags.Var(option.NewNamedMapOptions("namespace-annotations", &params.NamespaceAnnotations, nil), "namespace-annotations", "Add annotations to the connectivity test namespace")

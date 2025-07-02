@@ -101,7 +101,7 @@ const (
 
 	IngressController Feature = "ingress-controller"
 
-	EgressGateway Feature = "enable-ipv4-egress-gateway"
+	EgressGateway Feature = "enable-egress-gateway"
 	GatewayAPI    Feature = "enable-gateway-api"
 
 	EnableEnvoyConfig Feature = "enable-envoy-config"
@@ -113,6 +113,8 @@ const (
 	IPsecEnabled                  Feature = "enable-ipsec"
 	ClusterMeshEnableEndpointSync Feature = "clustermesh-enable-endpoint-sync"
 
+	PolicyDefaultLocalCLuster Feature = "policy-default-local-cluster"
+
 	LocalRedirectPolicy Feature = "enable-local-redirect-policy"
 
 	BGPControlPlane Feature = "enable-bgp-control-plane"
@@ -120,6 +122,8 @@ const (
 	NodeLocalDNS Feature = "node-local-dns"
 
 	Multicast Feature = "multicast-enabled"
+
+	L7LoadBalancer Feature = "loadbalancer-l7"
 )
 
 // Feature is the name of a Cilium Feature (e.g. l7-proxy, cni chaining mode etc)
@@ -164,7 +168,7 @@ func (fs Set) MatchRequirements(reqs ...Requirement) (bool, string) {
 			return false, fmt.Sprintf("requires Feature %s mode %s, got %s", req.Feature, req.mode, status.Mode)
 		}
 		if req.requireModeIsNot && (req.mode == status.Mode) {
-			return false, fmt.Sprintf("requires Feature %s mode %s to not equal %s, req.Feature", req.Feature, status.Mode, req.mode)
+			return false, fmt.Sprintf("requires Feature %s not equal to %s", req.Feature, req.mode)
 		}
 	}
 
@@ -344,7 +348,7 @@ func (fs Set) ExtractFromConfigMap(cm *v1.ConfigMap) {
 	}
 
 	fs[EgressGateway] = Status{
-		Enabled: cm.Data["enable-ipv4-egress-gateway"] == "true",
+		Enabled: cm.Data[string(EgressGateway)] == "true" || cm.Data["enable-ipv4-egress-gateway"] == "true",
 	}
 
 	fs[CIDRMatchNodes] = Status{
@@ -373,6 +377,10 @@ func (fs Set) ExtractFromConfigMap(cm *v1.ConfigMap) {
 
 	fs[ClusterMeshEnableEndpointSync] = Status{
 		Enabled: cm.Data[string(ClusterMeshEnableEndpointSync)] == "true",
+	}
+
+	fs[PolicyDefaultLocalCLuster] = Status{
+		Enabled: cm.Data[string(PolicyDefaultLocalCLuster)] == "true",
 	}
 
 	fs[LocalRedirectPolicy] = Status{
@@ -405,6 +413,10 @@ func (fs Set) ExtractFromConfigMap(cm *v1.ConfigMap) {
 
 	fs[PolicySecretSync] = Status{
 		Enabled: cm.Data[string(PolicySecretSync)] == "true",
+	}
+
+	fs[L7LoadBalancer] = Status{
+		Enabled: cm.Data[string(L7LoadBalancer)] == "envoy",
 	}
 
 	fs[Tunnel], fs[TunnelPort] = ExtractTunnelFeatureFromConfigMap(cm)

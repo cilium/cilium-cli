@@ -46,15 +46,6 @@ type PerfParameters struct {
 
 	NodeSelectorServer map[string]string
 	NodeSelectorClient map[string]string
-	Tolerations        []string
-}
-
-func (p *PerfParameters) GetTolerations() []corev1.Toleration {
-	tolerations := make([]corev1.Toleration, 0, len(p.Tolerations))
-	for _, t := range p.Tolerations {
-		tolerations = append(tolerations, corev1.Toleration{Key: t, Operator: corev1.TolerationOpExists})
-	}
-	return tolerations
 }
 
 type Parameters struct {
@@ -86,6 +77,7 @@ type Parameters struct {
 	CurlImage                 string
 	JSONMockImage             string
 	TestConnDisruptImage      string
+	EchoImage                 string
 	FRRImage                  string
 	SocatImage                string
 	AgentDaemonSetName        string
@@ -95,6 +87,7 @@ type Parameters struct {
 	AgentPodSelector          string
 	CiliumPodSelector         string
 	NodeSelector              map[string]string
+	Tolerations               []string
 	DeploymentAnnotations     annotationsMap
 	NamespaceLabels           map[string]string
 	NamespaceAnnotations      map[string]string
@@ -159,6 +152,14 @@ type Parameters struct {
 	ExternalTargetCAName      string
 
 	Timeout time.Duration
+}
+
+func (p *Parameters) GetTolerations() []corev1.Toleration {
+	tolerations := make([]corev1.Toleration, 0, len(p.Tolerations))
+	for _, t := range p.Tolerations {
+		tolerations = append(tolerations, corev1.Toleration{Key: t, Operator: corev1.TolerationOpExists})
+	}
+	return tolerations
 }
 
 type podCIDRs struct {
