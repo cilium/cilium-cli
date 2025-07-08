@@ -72,6 +72,9 @@ Then tag and push the release:
 
     git tag -a $RELEASE -m "$RELEASE release" $COMMIT_SHA && git push origin $RELEASE
 
+Review and approve the image build workflow run https://github.com/cilium/cilium-cli/actions/workflows/images.yaml
+to push the release image to https://quay.io/repository/cilium/cilium-cli?tab=tags&tag=latest.
+
 ## Update the GitHub release notes
 
 When a tag is pushed, a GitHub Action job takes care of creating a new GitHub
