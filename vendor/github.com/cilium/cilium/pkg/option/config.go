@@ -90,9 +90,6 @@ const (
 	// CGroupRoot is the path to Cgroup2 filesystem
 	CGroupRoot = "cgroup-root"
 
-	// CompilerFlags allow to specify extra compiler commands for advanced debugging
-	CompilerFlags = "cflags"
-
 	// ConfigFile is the Configuration file (default "$HOME/ciliumd.yaml")
 	ConfigFile = "config"
 
@@ -248,9 +245,6 @@ const (
 	// LoadBalancerExternalControlPlane switch skips connectivity to kube-apiserver
 	// which is relevant in lb-only mode
 	LoadBalancerExternalControlPlane = "bpf-lb-external-control-plane"
-
-	// LoadBalancerProtocolDifferentiation enables support for service protocol differentiation (TCP, UDP, SCTP)
-	LoadBalancerProtocolDifferentiation = "bpf-lb-proto-diff"
 
 	// NodePortBindProtection rejects bind requests to NodePort service ports
 	NodePortBindProtection = "node-port-bind-protection"
@@ -1060,6 +1054,9 @@ const (
 
 	// ConnectivityProbeFrequencyRatio is the name of the option to specify the connectivity probe frequency
 	ConnectivityProbeFrequencyRatio = "connectivity-probe-frequency-ratio"
+
+	// EnableExtendedIPProtocols controls whether traffic with extended IP protocols is supported in datapath.
+	EnableExtendedIPProtocols = "enable-extended-ip-protocols"
 )
 
 // Default string arguments
@@ -1377,7 +1374,7 @@ type DaemonConfig struct {
 
 	// MaxControllerInterval is the maximum value for a controller's
 	// RunInterval. Zero means unlimited.
-	MaxControllerInterval int
+	MaxControllerInterval uint
 
 	// HTTP403Message is the error message to return when a HTTP 403 is returned
 	// by the proxy, if L7 policy is configured.
@@ -1491,7 +1488,6 @@ type DaemonConfig struct {
 	BPFSocketLBHostnsOnly         bool
 	CGroupRoot                    string
 	BPFCompileDebug               string
-	CompilerFlags                 []string
 	ConfigFile                    string
 	ConfigDir                     string
 	Debug                         bool
@@ -1503,10 +1499,10 @@ type DaemonConfig struct {
 	EnableIPIPTermination         bool
 	EnableUnreachableRoutes       bool
 	FixedIdentityMapping          map[string]string
-	FixedIdentityMappingValidator func(val string) (string, error) `json:"-"`
+	FixedIdentityMappingValidator Validator `json:"-"`
 	FixedZoneMapping              map[string]uint8
 	ReverseFixedZoneMapping       map[uint8]string
-	FixedZoneMappingValidator     func(val string) (string, error) `json:"-"`
+	FixedZoneMappingValidator     Validator `json:"-"`
 	IPv4Range                     string
 	IPv6Range                     string
 	IPv4ServiceRange              string
@@ -1526,7 +1522,6 @@ type DaemonConfig struct {
 	EnableBPFMasquerade         bool
 	EnableMasqueradeRouteSource bool
 	EnableIPMasqAgent           bool
-	IPMasqAgentConfigPath       string
 
 	EnableBPFClockProbe    bool
 	EnableEgressGateway    bool
@@ -1540,7 +1535,6 @@ type DaemonConfig struct {
 	TracePayloadlen        int
 	TracePayloadlenOverlay int
 	Version                string
-	PrometheusServeAddr    string
 	ToFQDNsMinTTL          int
 
 	// DNSMaxIPsPerRestoredRule defines the maximum number of IPs to maintain
@@ -1580,7 +1574,7 @@ type DaemonConfig struct {
 
 	// FQDNRegexCompileLRUSize is the size of the FQDN regex compilation LRU.
 	// Useful for heavy but repeated FQDN MatchName or MatchPattern use.
-	FQDNRegexCompileLRUSize int
+	FQDNRegexCompileLRUSize uint
 
 	// Path to a file with DNS cache data to preload on startup
 	ToFQDNsPreCache string
@@ -1721,9 +1715,6 @@ type DaemonConfig struct {
 	// LoadBalancerExternalControlPlane tells whether to not use kube-apiserver as
 	// its control plane in lb-only mode.
 	LoadBalancerExternalControlPlane bool
-
-	// LoadBalancerProtocolDifferentiation enables support for service protocol differentiation (TCP, UDP, SCTP)
-	LoadBalancerProtocolDifferentiation bool
 
 	// EnablePMTUDiscovery indicates whether to send ICMP fragmentation-needed
 	// replies to the client (when needed).
@@ -1944,7 +1935,7 @@ type DaemonConfig struct {
 	// BPFMapEventBuffers has configuration on what BPF map event buffers to enabled
 	// and configuration options for those.
 	BPFMapEventBuffers          map[string]string
-	BPFMapEventBuffersValidator func(val string) (string, error) `json:"-"`
+	BPFMapEventBuffersValidator Validator `json:"-"`
 	bpfMapEventConfigs          BPFEventBufferConfigs
 
 	// BPFDistributedLRU enables per-CPU distributed backend memory
@@ -2021,6 +2012,9 @@ type DaemonConfig struct {
 
 	// ConnectivityProbeFrequencyRatio is the ratio of the connectivity probe frequency vs resource consumption
 	ConnectivityProbeFrequencyRatio float64
+
+	// EnableExtendedIPProtocols controls whether traffic with extended IP protocols is supported in datapath
+	EnableExtendedIPProtocols bool
 }
 
 var (
@@ -2240,11 +2234,6 @@ func (c *DaemonConfig) IPv4Enabled() bool {
 // IPv6Enabled returns true if IPv6 is enabled
 func (c *DaemonConfig) IPv6Enabled() bool {
 	return c.EnableIPv6
-}
-
-// LBProtoDiffEnabled returns true if LoadBalancerProtocolDifferentiation is enabled
-func (c *DaemonConfig) LBProtoDiffEnabled() bool {
-	return c.LoadBalancerProtocolDifferentiation
 }
 
 // IPv6NDPEnabled returns true if IPv6 NDP support is enabled
@@ -2676,7 +2665,6 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 	c.EnableIPMasqAgent = vp.GetBool(EnableIPMasqAgent)
 	c.EnableEgressGateway = vp.GetBool(EnableEgressGateway) || vp.GetBool(EnableIPv4EgressGateway)
 	c.EnableEnvoyConfig = vp.GetBool(EnableEnvoyConfig)
-	c.IPMasqAgentConfigPath = vp.GetString(IPMasqAgentConfigPath)
 	c.AgentHealthRequireK8sConnectivity = vp.GetBool(AgentHealthRequireK8sConnectivity)
 	c.InstallIptRules = vp.GetBool(InstallIptRules)
 	c.IPSecKeyFile = vp.GetString(IPSecKeyFileName)
@@ -2731,6 +2719,7 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 	c.BPFConntrackAccounting = vp.GetBool(BPFConntrackAccounting)
 	c.EnableIPSecEncryptedOverlay = vp.GetBool(EnableIPSecEncryptedOverlay)
 	c.BootIDFile = vp.GetString(BootIDFilename)
+	c.EnableExtendedIPProtocols = vp.GetBool(EnableExtendedIPProtocols)
 
 	c.ServiceNoBackendResponse = vp.GetString(ServiceNoBackendResponse)
 	switch c.ServiceNoBackendResponse {
@@ -2840,7 +2829,7 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 	// toFQDNs options
 	c.DNSMaxIPsPerRestoredRule = vp.GetInt(DNSMaxIPsPerRestoredRule)
 	c.DNSPolicyUnloadOnShutdown = vp.GetBool(DNSPolicyUnloadOnShutdown)
-	c.FQDNRegexCompileLRUSize = vp.GetInt(FQDNRegexCompileLRUSize)
+	c.FQDNRegexCompileLRUSize = vp.GetUint(FQDNRegexCompileLRUSize)
 	c.ToFQDNsMaxIPsPerHost = vp.GetInt(ToFQDNsMaxIPsPerHost)
 	if maxZombies := vp.GetInt(ToFQDNsMaxDeferredConnectionDeletes); maxZombies >= 0 {
 		c.ToFQDNsMaxDeferredConnectionDeletes = vp.GetInt(ToFQDNsMaxDeferredConnectionDeletes)
@@ -3019,12 +3008,11 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 	}
 
 	// Hidden options
-	c.CompilerFlags = vp.GetStringSlice(CompilerFlags)
 	c.ConfigFile = vp.GetString(ConfigFile)
 	c.HTTP403Message = vp.GetString(HTTP403Message)
 	c.K8sNamespace = vp.GetString(K8sNamespaceName)
 	c.AgentNotReadyNodeTaintKey = vp.GetString(AgentNotReadyNodeTaintKeyName)
-	c.MaxControllerInterval = vp.GetInt(MaxCtrlIntervalName)
+	c.MaxControllerInterval = vp.GetUint(MaxCtrlIntervalName)
 	c.EndpointQueueSize = sanitizeIntParam(logger, vp, EndpointQueueSize, defaults.EndpointQueueSize)
 	c.EnableICMPRules = vp.GetBool(EnableICMPRules)
 	c.UseCiliumInternalIPForIPsec = vp.GetBool(UseCiliumInternalIPForIPsec)
@@ -3061,7 +3049,6 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 		c.IdentityRestoreGracePeriod = defaults.IdentityRestoreGracePeriodKvstore
 	}
 
-	c.LoadBalancerProtocolDifferentiation = vp.GetBool(LoadBalancerProtocolDifferentiation)
 	c.EnableInternalTrafficPolicy = vp.GetBool(EnableInternalTrafficPolicy)
 	c.EnableSourceIPVerification = vp.GetBool(EnableSourceIPVerification)
 
