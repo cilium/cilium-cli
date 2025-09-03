@@ -25,6 +25,7 @@ import (
 	cmtypes "github.com/cilium/cilium/pkg/clustermesh/types"
 	"github.com/cilium/cilium/pkg/container/cache"
 	"github.com/cilium/cilium/pkg/hive"
+	"github.com/cilium/cilium/pkg/u8proto"
 )
 
 // InitWaitFunc is provided by the load-balancing cell to wait until the
@@ -381,12 +382,14 @@ const (
 // Valid transition states for a backend -
 // BackendStateActive -> BackendStateTerminating, BackendStateQuarantined, BackendStateMaintenance
 // BackendStateTerminating -> No valid state transition
+// BackendStateTerminatingNotServing -> No valid state transition
 // BackendStateQuarantined -> BackendStateActive, BackendStateTerminating
 // BackendStateMaintenance -> BackendStateActive
 //
 // Sources setting the states -
 // BackendStateActive - Kubernetes events, service API
 // BackendStateTerminating - Kubernetes events
+// BackendStateTerminatingNotServing - Kubernetes events
 // BackendStateQuarantined - service API
 // BackendStateMaintenance - service API
 const (
@@ -395,9 +398,15 @@ const (
 	// Backends in this state can be health-checked.
 	BackendStateActive BackendState = iota
 	// BackendStateTerminating refers to the terminating backend state so that
-	// it can be gracefully removed.
+	// it can be gracefully removed. Backend in this state can be used as a fallback
+	// if no active backends exist.
 	// Backends in this state won't be health-checked.
 	BackendStateTerminating
+	// BackendStateTerminatingNotServing refers to the terminating backend state
+	// for a backend that can be gracefully removed but cannot be used as fallback.
+	// Backends in this state won't be health-checked. In the BPF backend map this
+	// is the same as [BackendStateTerminating].
+	BackendStateTerminatingNotServing
 	// BackendStateQuarantined refers to the backend state when it's unreachable,
 	// and will not be selected for load-balancing traffic.
 	// Backends in this state can be health-checked.
@@ -428,7 +437,7 @@ func NewBackendFlags(state BackendState) BackendStateFlags {
 	switch state {
 	case BackendStateActive:
 		flags = BackendStateActiveFlag
-	case BackendStateTerminating:
+	case BackendStateTerminating, BackendStateTerminatingNotServing:
 		flags = BackendStateTerminatingFlag
 	case BackendStateQuarantined:
 		flags = BackendStateQuarantinedFlag
@@ -471,6 +480,29 @@ func L4TypeAsByte(l4 L4Type) byte {
 		return 'S'
 	default:
 		return '?'
+	}
+}
+
+// Given an L4Type, return the underlying Layer 4 protocol number as
+// defined by IANA.
+//
+// This routine can be used by other components to translate something like
+// Frontend.Address.Protocol into the underlying IANA number, without having
+// to roll their own.
+//
+// Eventually, perhaps this should be pushed into the U8Proto component and
+// stored as that type instead. This routine would then go away.
+func L4TypeAsProtocolNumber(l4 L4Type) u8proto.U8proto {
+	switch l4 {
+	case TCP:
+		return u8proto.TCP
+	case UDP:
+		return u8proto.UDP
+	case SCTP:
+		return u8proto.SCTP
+	default:
+		// For the default case we'll use ANY for now, so we can't error
+		return u8proto.ANY
 	}
 }
 
@@ -670,6 +702,8 @@ func (state BackendState) String() (string, error) {
 		return models.BackendAddressStateActive, nil
 	case BackendStateTerminating:
 		return models.BackendAddressStateTerminating, nil
+	case BackendStateTerminatingNotServing:
+		return models.BackendAddressStateTerminatingDashNotDashServing, nil
 	case BackendStateQuarantined:
 		return models.BackendAddressStateQuarantined, nil
 	case BackendStateMaintenance:

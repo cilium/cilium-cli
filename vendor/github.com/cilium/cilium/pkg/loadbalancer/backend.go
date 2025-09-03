@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"iter"
 	"strings"
+	"unsafe"
 
 	"github.com/cilium/statedb"
 	"github.com/cilium/statedb/index"
@@ -35,11 +36,8 @@ type BackendParams struct {
 	// a node.
 	NodeName string
 
-	// Zone where backend is located.
-	Zone string
-
-	// ForZones where this backend should be consumed in
-	ForZones []string
+	// Optional zone information for topology-aware routing.
+	Zone *BackendZone
 
 	// ClusterID of the cluster in which the backend is located. 0 for local cluster.
 	ClusterID uint32
@@ -56,9 +54,38 @@ type BackendParams struct {
 	// zero value to mean that the backend is healthy.
 	Unhealthy bool
 
-	// UnhealthyUpdatedAt is the timestamp for when [Unhealthy] was last updated. Zero
-	// value if never updated.
-	UnhealthyUpdatedAt time.Time
+	// UnhealthyUpdatedAt is the timestamp for when [Unhealthy] was last updated.
+	UnhealthyUpdatedAt *time.Time
+}
+
+const maxBackendParamsSize = 110
+
+// Assert on the size of [BackendParams] to keep changes to it at check.
+// If you're adding more fields to [BackendParams] and they're most of the time
+// not set, please consider putting them behind a separate struct and referring to
+// it by pointer. This way we use less memory for the majority of use-cases.
+var _ = func() struct{} {
+	if size := unsafe.Sizeof(BackendParams{}); size > maxBackendParamsSize {
+		panic(fmt.Sprintf("BackendParams has size %d, maximum set to %d\n", size, maxBackendParamsSize))
+	}
+	return struct{}{}
+}()
+
+func (bep *BackendParams) GetZone() string {
+	if bep.Zone == nil {
+		return ""
+	}
+	return bep.Zone.Zone
+}
+
+// BackendZone locates the backend to a specific zone and specifies what zones
+// the backend should be used in for topology aware routing.
+type BackendZone struct {
+	// Zone where backend is located.
+	Zone string
+
+	// ForZones where this backend should be consumed in
+	ForZones []string
 }
 
 // Backend is a composite of the per-service backend instances that share the same
@@ -291,13 +318,10 @@ var (
 )
 
 func NewBackendsTable(db *statedb.DB) (statedb.RWTable[*Backend], error) {
-	tbl, err := statedb.NewTable(
+	return statedb.NewTable(
+		db,
 		BackendTableName,
 		backendAddrIndex,
 		backendServiceIndex,
 	)
-	if err != nil {
-		return nil, err
-	}
-	return tbl, db.RegisterTable(tbl)
 }

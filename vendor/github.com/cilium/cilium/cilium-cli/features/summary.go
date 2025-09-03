@@ -24,7 +24,7 @@ import (
 	"github.com/cilium/cilium/api/v1/models"
 	"github.com/cilium/cilium/cilium-cli/defaults"
 
-	"github.com/google/go-github/v73/github"
+	"github.com/google/go-github/v74/github"
 	"golang.org/x/oauth2"
 )
 
@@ -242,6 +242,8 @@ func extractZip(zipPath, destDir string) error {
 			}
 			continue
 		}
+		// Create directories
+		os.MkdirAll(filepath.Dir(destPath), os.ModePerm)
 
 		// Extract files
 		destFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())

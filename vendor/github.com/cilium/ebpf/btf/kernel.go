@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"github.com/cilium/ebpf/internal"
 	"github.com/cilium/ebpf/internal/linux"
 	"github.com/cilium/ebpf/internal/platform"
+	"github.com/cilium/ebpf/internal/unix"
 )
 
 // globalCache amortises decoding BTF across all users of the library.
@@ -58,6 +60,11 @@ func loadCachedKernelSpec() (*Spec, error) {
 	globalCache.Lock()
 	defer globalCache.Unlock()
 
+	// check again, to prevent race between multiple callers
+	if globalCache.kernel != nil {
+		return globalCache.kernel, nil
+	}
+
 	spec, err := loadKernelSpec()
 	if err != nil {
 		return nil, err
@@ -101,6 +108,11 @@ func loadCachedKernelModuleSpec(module string) (*Spec, error) {
 	globalCache.Lock()
 	defer globalCache.Unlock()
 
+	// check again, to prevent race between multiple callers
+	if spec := globalCache.modules[module]; spec != nil {
+		return spec, nil
+	}
+
 	spec, err = loadKernelModuleSpec(module, base)
 	if err != nil {
 		return nil, err
@@ -110,7 +122,7 @@ func loadCachedKernelModuleSpec(module string) (*Spec, error) {
 	return spec, nil
 }
 
-func loadKernelSpec() (_ *Spec, _ error) {
+func loadKernelSpec() (*Spec, error) {
 	if platform.IsWindows {
 		return nil, internal.ErrNotSupportedOnOS
 	}
@@ -119,8 +131,31 @@ func loadKernelSpec() (_ *Spec, _ error) {
 	if err == nil {
 		defer fh.Close()
 
-		spec, err := loadRawSpec(fh, internal.NativeEndian, nil)
-		return spec, err
+		info, err := fh.Stat()
+		if err != nil {
+			return nil, fmt.Errorf("stat vmlinux: %w", err)
+		}
+
+		// NB: It's not safe to mmap arbitrary files because mmap(2) doesn't
+		// guarantee that changes made after mmap are not visible in the mapping.
+		//
+		// This is not a problem for vmlinux, since it is always a read-only file.
+		raw, err := unix.Mmap(int(fh.Fd()), 0, int(info.Size()), unix.PROT_READ, unix.MAP_PRIVATE)
+		if err != nil {
+			return LoadSplitSpecFromReader(fh, nil)
+		}
+
+		spec, err := loadRawSpec(raw, nil)
+		if err != nil {
+			_ = unix.Munmap(raw)
+			return nil, fmt.Errorf("load vmlinux: %w", err)
+		}
+
+		runtime.SetFinalizer(spec.decoder.sharedBuf, func(_ *sharedBuf) {
+			_ = unix.Munmap(raw)
+		})
+
+		return spec, nil
 	}
 
 	file, err := findVMLinux()
@@ -149,7 +184,7 @@ func loadKernelModuleSpec(module string, base *Spec) (*Spec, error) {
 	}
 	defer fh.Close()
 
-	return loadRawSpec(fh, internal.NativeEndian, base)
+	return LoadSplitSpecFromReader(fh, base)
 }
 
 // findVMLinux scans multiple well-known paths for vmlinux kernel images.
