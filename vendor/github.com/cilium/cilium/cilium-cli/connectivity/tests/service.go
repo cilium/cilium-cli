@@ -108,14 +108,17 @@ func (s *podToIngress) Run(ctx context.Context, t *check.Test) {
 				continue
 			}
 
-			t.NewAction(s, fmt.Sprintf("curl-%d", i), &pod, svc, features.IPFamilyAny).Run(func(a *check.Action) {
-				a.ExecInPod(ctx, a.CurlCommand(svc))
+			t.ForEachIPFamily(func(ipFam features.IPFamily) {
+				t.NewAction(s, fmt.Sprintf("curl-%s-%d", ipFam, i), &pod, svc, ipFam).Run(func(a *check.Action) {
+					a.ExecInPod(ctx, a.CurlCommand(svc))
 
-				a.ValidateFlows(ctx, pod, a.GetEgressRequirements(check.FlowParameters{
-					DNSRequired: true,
-					AltDstPort:  svc.Port(),
-				}))
+					a.ValidateFlows(ctx, pod, a.GetEgressRequirements(check.FlowParameters{
+						DNSRequired: true,
+						AltDstPort:  svc.Port(),
+					}))
+				})
 			})
+
 			i++
 		}
 	}
@@ -286,7 +289,7 @@ func (s *outsideToNodePort) Run(ctx context.Context, t *check.Test) {
 	// With kube-proxy doing N/S LB it is not possible to see the original client
 	// IP, as iptables rules do the LB SNAT/DNAT before the packet hits any
 	// of Cilium's datapath BPF progs. So, skip the flow validation in that case.
-	status, ok := t.Context().Feature(features.KPRNodePort)
+	status, ok := t.Context().Feature(features.KPR)
 	validateFlows := ok && status.Enabled
 
 	for _, svc := range t.Context().EchoServices() {

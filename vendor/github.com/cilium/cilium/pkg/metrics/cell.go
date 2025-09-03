@@ -17,7 +17,7 @@ import (
 // Cell provides metrics registry and the 'metrics*' shell commands.
 var Cell = cell.Module("metrics", "Metrics",
 	// Provide registry to hive, but also invoke if case no cells decide to use as dependency
-	cell.Provide(NewRegistry),
+	cell.Provide(NewAgentRegistry),
 	cell.Config(defaultRegistryConfig),
 	cell.Config(defaultSamplerConfig),
 	cell.Provide(
@@ -49,6 +49,12 @@ var AgentCell = cell.Group(
 
 		},
 	),
+)
+
+var OperatorCell = cell.Module("operator-metrics", "Operator Metrics",
+	cell.Config(defaultSamplerConfig),
+	cell.Provide(NewRegistry),
+	cell.Provide(metricsCommands, newSampler),
 )
 
 // Metric constructs a new metric cell.

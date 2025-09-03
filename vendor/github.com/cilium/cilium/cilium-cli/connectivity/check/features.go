@@ -79,9 +79,13 @@ func (ct *ConnectivityTest) extractFeaturesFromRuntimeConfig(ctx context.Context
 		Enabled: cfg.EnableHealthChecking && cfg.EnableEndpointHealthChecking,
 	}
 
-	result[features.EncryptionNode] = features.Status{
-		Enabled: cfg.EncryptNode,
-		Mode:    cfg.NodeEncryptionOptOutLabelsString,
+	// Before v1.19, NodeEncryptionOptOutLabels are stored in DaemonConfig.
+	// See [extractFeaturesFromCiliumStatus] for above versions.
+	if ct.CiliumVersion.LT(semver.MustParse("1.19.0")) {
+		result[features.EncryptionNode] = features.Status{
+			Enabled: cfg.EncryptNode,
+			Mode:    cfg.NodeEncryptionOptOutLabelsString,
+		}
 	}
 
 	result[features.KNP] = features.Status{
@@ -162,31 +166,14 @@ func (ct *ConnectivityTest) extractFeaturesFromCiliumStatus(ctx context.Context,
 	if kpr := st.KubeProxyReplacement; kpr != nil {
 		mode = strings.ToLower(kpr.Mode)
 		if f := kpr.Features; f != nil {
-			if f.ExternalIPs != nil {
-				result[features.KPRExternalIPs] = features.Status{Enabled: f.ExternalIPs.Enabled}
-			}
-			if f.HostPort != nil {
-				result[features.KPRHostPort] = features.Status{Enabled: f.HostPort.Enabled}
-			}
-			if f.NodePort != nil {
-				result[features.KPRNodePort] = features.Status{Enabled: f.NodePort.Enabled}
-				acceleration := strings.ToLower(f.NodePort.Acceleration)
-				result[features.KPRNodePortAcceleration] = features.Status{
-					Enabled: mode != "false" && acceleration != "disabled",
-					Mode:    mode,
-				}
-			}
-			if f.SessionAffinity != nil {
-				result[features.KPRSessionAffinity] = features.Status{Enabled: f.SessionAffinity.Enabled}
-			}
 			if f.SocketLB != nil {
 				result[features.KPRSocketLB] = features.Status{Enabled: f.SocketLB.Enabled}
 				result[features.KPRSocketLBHostnsOnly] = features.Status{Enabled: f.BpfSocketLBHostnsOnly}
 			}
 		}
 	}
-	result[features.KPRMode] = features.Status{
-		Enabled: mode != "false" && mode != "disabled",
+	result[features.KPR] = features.Status{
+		Enabled: mode == "true" || mode == "strict",
 		Mode:    mode,
 	}
 
@@ -194,6 +181,18 @@ func (ct *ConnectivityTest) extractFeaturesFromCiliumStatus(ctx context.Context,
 	mode = "disabled"
 	if enc := st.Encryption; enc != nil {
 		mode = strings.ToLower(enc.Mode)
+
+		// After v1.19, NodeEncryptionOptOutLabels are stored in the Wireguard Agent config.
+		// See [extractFeaturesFromRuntimeConfig] for below versions.
+		if ct.CiliumVersion.GE(semver.MustParse("1.19.0")) {
+			// Node-to-node encryption applies only to WireGuard.
+			if wg := enc.Wireguard; wg != nil {
+				result[features.EncryptionNode] = features.Status{
+					Enabled: wg.NodeEncryption != "Disabled",
+					Mode:    wg.NodeEncryptOptOutLabels,
+				}
+			}
+		}
 	}
 	result[features.EncryptionPod] = features.Status{
 		Enabled: mode != "disabled",
@@ -323,37 +322,43 @@ func (ct *ConnectivityTest) detectFeatures(ctx context.Context) error {
 	if cm.Data == nil {
 		return fmt.Errorf("ConfigMap %q does not contain any configuration", defaults.ConfigMapName)
 	}
-	for _, ciliumPod := range ct.ciliumPods {
-		features := features.Set{}
 
-		// If unsure from which source to retrieve the information from,
-		// prefer "CiliumStatus" over "ConfigMap" over "RuntimeConfig".
-		// See the corresponding functions for more information.
-		features.ExtractFromVersionedConfigMap(ct.CiliumVersion, cm)
-		features.ExtractFromConfigMap(cm)
+	// Extract cluster-wide features once outside the loop
+	clusterFeatures := features.Set{}
+	clusterFeatures.ExtractFromCiliumVersion(ct.CiliumVersion)
+	clusterFeatures.ExtractFromConfigMap(cm)
+	clusterFeatures.ExtractFromNodes(ct.nodesWithoutCilium)
+	ct.extractFeaturesFromK8sCluster(ctx, clusterFeatures)
+	err = ct.extractFeaturesFromCRDs(ctx, clusterFeatures)
+	if err != nil {
+		return err
+	}
+	err = ct.extractFeaturesFromDNSConfig(ctx, clusterFeatures)
+	if err != nil {
+		return err
+	}
+	err = ct.extractFeaturesFromClusterRole(ctx, ct.client, clusterFeatures)
+	if err != nil {
+		return err
+	}
+
+	for _, ciliumPod := range ct.ciliumPods {
+		// Start with cluster-wide features
+		features := make(features.Set)
+		for k, v := range clusterFeatures {
+			features[k] = v
+		}
+
+		// Extract pod-specific features
 		err = ct.extractFeaturesFromRuntimeConfig(ctx, ciliumPod, features)
 		if err != nil {
 			return err
 		}
-		features.ExtractFromNodes(ct.nodesWithoutCilium)
 		err = ct.extractFeaturesFromCiliumStatus(ctx, ciliumPod, features)
 		if err != nil {
 			return err
 		}
-		err = ct.extractFeaturesFromClusterRole(ctx, ciliumPod.K8sClient, features)
-		if err != nil {
-			return err
-		}
-		ct.extractFeaturesFromK8sCluster(ctx, features)
 		err = features.DeriveFeatures()
-		if err != nil {
-			return err
-		}
-		err = ct.extractFeaturesFromCRDs(ctx, features)
-		if err != nil {
-			return err
-		}
-		err = ct.extractFeaturesFromDNSConfig(ctx, features)
 		if err != nil {
 			return err
 		}
