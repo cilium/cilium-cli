@@ -127,6 +127,12 @@ const (
 	// PolicyEntriesOld is a set of old policy map keys and values
 	PolicyEntriesOld = "policyEntriesOld"
 
+	// PolicyLogCookie is a policy log cookie.
+	PolicyLogCookie = "policyLogCookie"
+
+	// PolicyLogString is a policy log string.
+	PolicyLogString = "policyLogString"
+
 	// DatapathPolicyRevision is the policy revision currently running in
 	// the datapath
 	DatapathPolicyRevision = "datapathPolicyRevision"
@@ -525,6 +531,12 @@ const (
 
 	// EndpointSelector is a selector for Endpoints
 	EndpointSelector = "EndpointSelector"
+
+	// PodSelector is a selector for Pods
+	PodSelector = "PodSelector"
+
+	// NamespaceSelector is a selector for Namespaces
+	NamespaceSelector = "NamespaceSelector"
 
 	// Path is a filesystem path. It can be a file or directory.
 	// Note: pkg/proxy/accesslog points to this variable so be careful when
@@ -1686,8 +1698,6 @@ const (
 
 	Section = "section"
 
-	Instruction = "instruction"
-
 	Reference = "reference"
 
 	MapRenames = "mapRenames"
@@ -1812,4 +1822,10 @@ const (
 
 	// CESFeatureEnabled indicates whether CiliumEndpointSlice feature is enabled.
 	CESFeatureEnabled = "cesEnabled"
+
+	// Matches is a list of pools that match a pod.
+	Matches = "matches"
+
+	// CompiledPools is a map of pools that use podSelectors
+	CompiledPools = "compiledPools"
 )
