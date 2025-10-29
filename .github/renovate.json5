@@ -18,9 +18,13 @@
   ignorePresets: [
     ':prHourlyLimit2',
   ],
-  separateMajorMinor: true,
+  // We don't want to separate major and minor upgrades in separate PRs since
+  // we can upgrade them together in a single PR.
+  separateMajorMinor: false,
+  // We don't want to separate minor patch upgrades in separate PRs since
+  // we can upgrade them together in a single PR.
+  separateMinorPatch: false,
   separateMultipleMajor: true,
-  separateMinorPatch: true,
   pruneStaleBranches: true,
   baseBranches: [
     'main',
@@ -49,14 +53,6 @@
         'patch',
         'pin',
         'pinDigest',
-      ],
-    },
-    {
-      // Images that directly use docker.io/library/golang for building.
-      groupName: 'golang-images',
-      matchFileNames: [
-        'Dockerfile',
-        'Makefile',
       ],
     },
     {
