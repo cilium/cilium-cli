@@ -19,7 +19,7 @@ TEST_TIMEOUT ?= 5s
 RELEASE_UID ?= $(shell id -u)
 RELEASE_GID ?= $(shell id -g)
 
-# renovate: datasource=docker depName=go
+# renovate: datasource=docker depName=golang
 GO_IMAGE_VERSION = 1.25.3-alpine3.21
 GO_IMAGE_SHA = sha256:0c9f3e09a50a6c11714dbc37a6134fd0c474690030ed07d23a61755afd3a812f
 
