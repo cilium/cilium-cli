@@ -4,6 +4,7 @@
 package policy
 
 import (
+	"cmp"
 	"encoding/json"
 	"log/slog"
 	"maps"
@@ -52,8 +53,7 @@ type PolicyRepository interface {
 	GetSelectorCache() *SelectorCache
 	Iterate(f func(rule *types.PolicyEntry))
 	ReplaceByResource(rules types.PolicyEntries, resource ipcachetypes.ResourceID) (affectedIDs *set.Set[identity.NumericIdentity], rev uint64, oldRevCnt int)
-	ReplaceByLabels(rules types.PolicyEntries, searchLabelsList []labels.LabelArray) (affectedIDs *set.Set[identity.NumericIdentity], rev uint64, oldRevCnt int)
-	Search(lbls labels.LabelArray) (types.PolicyEntries, uint64)
+	Search() (types.PolicyEntries, uint64)
 }
 
 type GetPolicyStatistics interface {
@@ -73,8 +73,7 @@ type Repository struct {
 	rulesByResource  map[ipcachetypes.ResourceID]map[ruleKey]*rule
 
 	// We will need a way to synthesize a rule key for rules without a resource;
-	// these are - in practice - very rare, as they only come from the local API,
-	// never via k8s.
+	// This is only used for testing.
 	nextID uint
 
 	// revision is the revision of the policy repository. It will be
@@ -134,21 +133,20 @@ func NewPolicyRepository(
 	return repo
 }
 
-func (p *Repository) Search(lbls labels.LabelArray) (types.PolicyEntries, uint64) {
+func (p *Repository) Search() (types.PolicyEntries, uint64) {
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
-	return p.searchRLocked(lbls), p.GetRevision()
+	return p.searchRLocked(), p.GetRevision()
 }
 
 // searchRLocked searches the policy repository for rules which match the
 // specified labels and will return an array of all rules which matched.
-func (p *Repository) searchRLocked(lbls labels.LabelArray) types.PolicyEntries {
-	result := types.PolicyEntries{}
+func (p *Repository) searchRLocked() types.PolicyEntries {
+	result := make(types.PolicyEntries, 0, len(p.rules))
 
 	for _, r := range p.rules {
-		if r.Labels.Contains(lbls) {
-			result = append(result, &r.PolicyEntry)
-		}
+		result = append(result, &r.PolicyEntry)
+
 	}
 
 	return result
@@ -285,8 +283,7 @@ func (p *Repository) GetRulesList() *models.Policy {
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
 
-	lbls := labels.ParseSelectLabelArrayFromArray([]string{})
-	ruleList := p.searchRLocked(lbls)
+	ruleList := p.searchRLocked()
 
 	return &models.Policy{
 		Revision: int64(p.GetRevision()),
@@ -327,7 +324,8 @@ func (p *Repository) resolvePolicyLocked(securityIdentity *identity.Identity) (*
 	}
 
 	if ingressEnabled {
-		newL4IngressPolicy, err := matchingRules.resolveL4IngressPolicy(&policyCtx)
+		policyCtx.SetIngress(true)
+		newL4IngressPolicy, err := matchingRules.resolveL4Policy(&policyCtx)
 		if err != nil {
 			return nil, err
 		}
@@ -335,7 +333,8 @@ func (p *Repository) resolvePolicyLocked(securityIdentity *identity.Identity) (*
 	}
 
 	if egressEnabled {
-		newL4EgressPolicy, err := matchingRules.resolveL4EgressPolicy(&policyCtx)
+		policyCtx.SetIngress(false)
+		newL4EgressPolicy, err := matchingRules.resolveL4Policy(&policyCtx)
 		if err != nil {
 			return nil, err
 		}
@@ -390,6 +389,18 @@ func (p *Repository) computePolicyEnforcementAndRules(securityIdentity *identity
 			}
 		}
 	}
+
+	// Always sort matched rules to get a stable policy order.
+	// It's not the order per se that is important, just that it's always in the same order when the
+	// elements are the same. In most cases this should be a small list so the overhead should be pretty minimal.
+	// This is very useful for subsystems like the dnsproxy that can reuse the same regex during recompilation
+	// if the list of FQDNs is the same.
+	slices.SortFunc(matchingRules, func(a, b *rule) int {
+		if sign := cmp.Compare(a.key.resource, b.key.resource); sign != 0 {
+			return sign
+		}
+		return cmp.Compare(a.key.idx, b.key.idx)
+	})
 
 	// If policy enforcement is enabled for the daemon, then it has to be
 	// enabled for the endpoint.
@@ -530,46 +541,6 @@ func (p *Repository) ReplaceByResource(rules types.PolicyEntries, resource ipcac
 	// we may release the old ones.
 	for _, r := range oldRules {
 		p.releaseRule(r)
-	}
-
-	return affectedIDs, p.BumpRevision(), len(oldRules)
-}
-
-// ReplaceByLabels implements the somewhat awkward REST local API for providing network policy,
-// where the "key" is a list of labels, possibly multiple, that should be removed before
-// installing the new rules.
-func (p *Repository) ReplaceByLabels(rules types.PolicyEntries, searchLabelsList []labels.LabelArray) (affectedIDs *set.Set[identity.NumericIdentity], rev uint64, oldRuleCnt int) {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
-
-	var oldRules []*rule
-	affectedIDs = &set.Set[identity.NumericIdentity]{}
-
-	// determine outgoing rules
-	for ruleKey, rule := range p.rules {
-		if slices.ContainsFunc(searchLabelsList, rule.Labels.Contains) {
-			p.del(ruleKey)
-			oldRules = append(oldRules, rule)
-		}
-	}
-
-	// Insert new rules, allocating a subject selector
-	for _, r := range rules {
-		newRule := p.newRule(*r, ruleKey{idx: p.nextID})
-		p.insert(newRule)
-		p.nextID++
-
-		for _, nid := range newRule.getSubjects() {
-			affectedIDs.Insert(nid)
-		}
-	}
-
-	// Now that subject selectors have been allocated, release the old rules.
-	for _, oldRule := range oldRules {
-		for _, nid := range oldRule.getSubjects() {
-			affectedIDs.Insert(nid)
-		}
-		p.releaseRule(oldRule)
 	}
 
 	return affectedIDs, p.BumpRevision(), len(oldRules)
