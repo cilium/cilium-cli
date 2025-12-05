@@ -13,6 +13,9 @@ jobs:
     if: github.repository == 'cilium/cilium-cli'
     runs-on: ubuntu-24.04
     steps:
+      - name: Cleanup Disk space in runner
+        uses: cilium/cilium/.github/actions/disk-cleanup@main
+
       - name: Checkout code
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
