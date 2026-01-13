@@ -22,8 +22,18 @@ type EgressCommonRule struct {
 	// Any endpoint with the label "role=frontend" can communicate with any
 	// endpoint carrying the label "role=backend".
 	//
+	// Note that while an empty non-nil ToEndpoints does not select anything,
+	// nil ToEndpoints is implicitly treated as a wildcard selector if ToPorts
+	// are also specified.
+	// To select everything, use one EndpointSelector without any match requirements.
+	//
 	// +kubebuilder:validation:Optional
 	ToEndpoints []EndpointSelector `json:"toEndpoints,omitempty"`
+
+	// Deprecated.
+	//
+	// +kubebuilder:validation:MaxItems=0
+	ToRequires []string `json:"toRequires,omitempty"`
 
 	// ToCIDR is a list of IP blocks which the endpoint subject to the rule
 	// is allowed to initiate connections. Only connections destined for
