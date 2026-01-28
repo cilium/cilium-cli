@@ -1,0 +1,89 @@
+name: Release Image Build
+
+# Any change in triggers needs to be reflected in the concurrency group.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.after }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: ${{ github.repository == 'cilium/cilium-cli' }}
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      repo_tags: ${{ steps.tag.outputs.repo_tags }}
+      digest: ${{ steps.docker_build.outputs.digest }}
+
+    steps:
+      - name: Getting image tag
+        id: tag
+        run: |
+          echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          echo "repo_tags=quay.io/${{ github.repository_owner }}/cilium-cli:latest,quay.io/${{ github.repository_owner }}/cilium-cli:${{ github.ref_name }}" >> $GITHUB_OUTPUT
+
+      # SECURITY: Checking out trusted code from a signed tag
+      # This workflow only runs on pushed tags to the main repository.
+      # Tags should be signed and verified before pushing to ensure code integrity.
+      - name: Checkout Source Code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Docker Build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        id: docker_build
+        with:
+          context: .
+          platforms: linux/arm64,linux/amd64
+          push: false
+          tags: ${{ steps.tag.outputs.repo_tags }}
+          outputs: type=oci,dest=/tmp/image.tar
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        with:
+          name: docker-image
+          path: /tmp/image.tar
+          retention-days: 1
+
+  push:
+    needs: build
+    if: ${{ github.repository == 'cilium/cilium-cli' }}
+    runs-on: ubuntu-24.04
+    environment: release
+
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: docker-image
+          path: /tmp
+
+      - name: Install skopeo
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y skopeo
+
+      - name: Push image to registry
+        env:
+          QUAY_USERNAME: ${{ secrets.QUAY_RELEASE_USERNAME }}
+          QUAY_PASSWORD: ${{ secrets.QUAY_RELEASE_TOKEN }}
+        run: |
+          for tag in $(echo "${{ needs.build.outputs.repo_tags }}" | tr ',' '\n'); do
+            skopeo copy \
+              --multi-arch all \
+              --dest-creds "${QUAY_USERNAME}:${QUAY_PASSWORD}" \
+              oci-archive:/tmp/image.tar \
+              "docker://${tag}"
+          done
