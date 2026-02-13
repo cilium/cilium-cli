@@ -60,6 +60,7 @@
     - [IPVersion](#flow-IPVersion)
     - [L7FlowType](#flow-L7FlowType)
     - [LostEventSource](#flow-LostEventSource)
+    - [SCTPChunkType](#flow-SCTPChunkType)
     - [SocketTranslationPoint](#flow-SocketTranslationPoint)
     - [TraceObservationPoint](#flow-TraceObservationPoint)
     - [TraceReason](#flow-TraceReason)
@@ -728,6 +729,7 @@ that happened before the events were captured by Hubble.
 | ----- | ---- | ----- | ----------- |
 | source_port | [uint32](#uint32) |  |  |
 | destination_port | [uint32](#uint32) |  |  |
+| chunk_type | [SCTPChunkType](#flow-SCTPChunkType) |  |  |
 
 
 
@@ -1179,6 +1181,7 @@ here.
 | DROP_EP_NOT_READY | 203 | A BPF program wants to tail call some endpoint&#39;s policy program in cilium_call_policy, but the program is not available. |
 | DROP_NO_EGRESS_IP | 204 | An Egress Gateway node matched a packet against an Egress Gateway policy that didn&#39;t select a valid Egress IP. |
 | DROP_PUNT_PROXY | 205 | Punt packet to a user space proxy. |
+| DROP_NO_DEVICE | 206 | A BPF program failed to look up information for a network device. |
 
 
 
@@ -1247,6 +1250,23 @@ This enum corresponds to Cilium&#39;s L7 accesslog [FlowType](https://github.com
 | PERF_EVENT_RING_BUFFER | 1 | PERF_EVENT_RING_BUFFER indicates that events were dropped in the BPF perf event ring buffer, indicating that userspace agent did not keep up with the events produced by the datapath. |
 | OBSERVER_EVENTS_QUEUE | 2 | OBSERVER_EVENTS_QUEUE indicates that events were dropped because the Hubble events queue was full, indicating that the Hubble observer did not keep up. |
 | HUBBLE_RING_BUFFER | 3 | HUBBLE_RING_BUFFER indicates that the event was dropped because it could not be read from Hubble&#39;s ring buffer in time before being overwritten. |
+
+
+
+<a name="flow-SCTPChunkType"></a>
+
+### SCTPChunkType
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| UNSUPPORTED | 0 |  |
+| INIT | 1 |  |
+| INIT_ACK | 2 |  |
+| SHUTDOWN | 3 |  |
+| SHUTDOWN_ACK | 4 |  |
+| SHUTDOWN_COMPLETE | 5 |  |
+| ABORT | 6 |  |
 
 
 

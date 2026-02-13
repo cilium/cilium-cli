@@ -19,8 +19,6 @@ import (
 	wgTypes "github.com/cilium/cilium/pkg/wireguard/types"
 )
 
-const preferPublicIP bool = true
-
 var (
 	addrs addresses
 
@@ -80,7 +78,7 @@ func setDefaultPrefix(logger *slog.Logger, cfg *option.DaemonConfig, device stri
 	if cfg.EnableIPv4 {
 		isIPv6 := false
 
-		ip, err := firstGlobalV4Addr(device, node.GetCiliumInternalIP(isIPv6), preferPublicIP)
+		ip, err := firstGlobalV4Addr(device, node.GetCiliumInternalIP(isIPv6))
 		if err != nil {
 			return
 		}
@@ -129,7 +127,7 @@ func setDefaultPrefix(logger *slog.Logger, cfg *option.DaemonConfig, device stri
 
 		if node.GetNodeIP(isIPv6) == nil {
 			// Find a IPv6 node address first
-			addr, _ := firstGlobalV6Addr(device, node.GetCiliumInternalIP(isIPv6), preferPublicIP)
+			addr, _ := firstGlobalV6Addr(device, node.GetCiliumInternalIP(isIPv6))
 			if addr == nil {
 				addr = makeIPv6HostIP(logger)
 			}
@@ -177,36 +175,6 @@ func setDefaultPrefix(logger *slog.Logger, cfg *option.DaemonConfig, device stri
 	}
 }
 
-func clone(ip net.IP) net.IP {
-	if ip == nil {
-		return nil
-	}
-	dup := make(net.IP, len(ip))
-	copy(dup, ip)
-	return dup
-}
-
-// GetIPv4AllocRange returns the IPv4 allocation prefix of this node
-func GetIPv4AllocRange(logger *slog.Logger) *cidr.CIDR {
-	return getLocalNode(logger).IPv4AllocCIDR.DeepCopy()
-}
-
-// GetIPv6AllocRange returns the IPv6 allocation prefix of this node
-func GetIPv6AllocRange(logger *slog.Logger) *cidr.CIDR {
-	return getLocalNode(logger).IPv6AllocCIDR.DeepCopy()
-}
-
-// GetIPv4 returns one of the IPv4 node address available with the following
-// priority:
-// - NodeInternalIP
-// - NodeExternalIP
-// - other IP address type.
-// It must be reachable on the network.
-func GetIPv4(logger *slog.Logger) net.IP {
-	n := getLocalNode(logger)
-	return clone(n.GetNodeIP(false))
-}
-
 // GetCiliumEndpointNodeIP is the node IP that will be referenced by CiliumEndpoints with endpoints
 // running on this node.
 func GetCiliumEndpointNodeIP(logger *slog.Logger) string {
@@ -215,14 +183,6 @@ func GetCiliumEndpointNodeIP(logger *slog.Logger) string {
 		return n.GetNodeIP(false).String()
 	}
 	return n.GetNodeIP(true).String()
-}
-
-// GetInternalIPv4Router returns the cilium internal IPv4 node address. This must not be conflated with
-// k8s internal IP as this IP address is only relevant within the Cilium-managed network (this means
-// within the node for direct routing mode and on the overlay for tunnel mode).
-func GetInternalIPv4Router(logger *slog.Logger) net.IP {
-	n := getLocalNode(logger)
-	return n.GetCiliumInternalIP(false)
 }
 
 // GetRouterInfo returns additional information for the router, the cilium_host interface.
@@ -293,65 +253,22 @@ func ValidatePostInit(logger *slog.Logger) error {
 	return nil
 }
 
-// GetIPv6 returns the IPv6 address of the node
-func GetIPv6(logger *slog.Logger) net.IP {
-	n := getLocalNode(logger)
-	return clone(n.GetNodeIP(true))
-}
-
-// GetIPv6Router returns the IPv6 address of the router, e.g. address
-// of cilium_host device.
-func GetIPv6Router(logger *slog.Logger) net.IP {
-	n := getLocalNode(logger)
-	return clone(n.GetCiliumInternalIP(true))
-}
-
-// GetEndpointHealthIPv4 returns the IPv4 cilium-health endpoint address.
-func GetEndpointHealthIPv4(logger *slog.Logger) net.IP {
-	return getLocalNode(logger).IPv4HealthIP
-}
-
-// GetEndpointHealthIPv6 returns the IPv6 cilium-health endpoint address.
-func GetEndpointHealthIPv6(logger *slog.Logger) net.IP {
-	return getLocalNode(logger).IPv6HealthIP
-}
-
-// GetIngressIPv4 returns the local IPv4 source address for Cilium Ingress.
-func GetIngressIPv4(logger *slog.Logger) net.IP {
-	return getLocalNode(logger).IPv4IngressIP
-}
-
-// GetIngressIPv6 returns the local IPv6 source address for Cilium Ingress.
-func GetIngressIPv6(logger *slog.Logger) net.IP {
-	return getLocalNode(logger).IPv6IngressIP
-}
-
 // GetEndpointEncryptKeyIndex returns the encryption key value for an endpoint
-// owned by the local node.
+// owned by the given local node.
 // With IPSec encryption, this is the ID of the currently loaded key.
 // With WireGuard, this returns a non-zero static value.
 // Note that the key index returned by this function is only valid for _endpoints_
 // of the local node. If you want to obtain the key index of the local node itself,
 // access the `EncryptionKey` field via the LocalNodeStore.
-func GetEndpointEncryptKeyIndex(logger *slog.Logger, wgEnabled, ipsecEnabled bool) uint8 {
+func GetEndpointEncryptKeyIndex(localNode LocalNode, wgEnabled, ipsecEnabled bool) uint8 {
 	switch {
 	case ipsecEnabled:
-		return getLocalNode(logger).EncryptionKey
+		return localNode.EncryptionKey
 	case wgEnabled:
 		return wgTypes.StaticEncryptKey
 
 	}
 	return 0
-}
-
-// WithTestLocalNodeStore sets the 'localNode' to a temporary instance and
-// runs the given test. Afterwards the 'localNode' is restored to nil.
-// This is a temporary workaround for tests until the LocalNodeStoreCell can be
-// used.
-func WithTestLocalNodeStore(runTest func()) {
-	SetTestLocalNodeStore()
-	defer UnsetTestLocalNodeStore()
-	runTest()
 }
 
 func SetTestLocalNodeStore() {
@@ -366,13 +283,4 @@ func SetTestLocalNodeStore() {
 
 func UnsetTestLocalNodeStore() {
 	localNode = nil
-}
-
-// UpdateLocalNodeInTest provides access to modifying the local node
-// information from tests that are not yet using hive and the LocalNodeStoreCell.
-func UpdateLocalNodeInTest(mod func(n *LocalNode)) {
-	if localNode == nil {
-		panic("localNode not set, use node.LocalNodeStoreCell or WithTestLocalNodeStore()?")
-	}
-	localNode.Update(mod)
 }
