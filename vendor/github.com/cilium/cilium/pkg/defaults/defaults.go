@@ -356,18 +356,12 @@ const (
 	// ENIGarbageCollectionTagClusterValue is part of the ENIGarbageCollectionTags default tag set
 	ENIGarbageCollectionTagClusterValue = ClusterName
 
-	// ENIGarbageCollectionInterval is the default interval for the ENIGarbageCollectionInterval operator flag
-	ENIGarbageCollectionInterval = 5 * time.Minute
-
 	// ENIGarbageCollectionMaxPerInterval is the maximum number of ENIs which might be garbage collected
 	// per GC interval
 	ENIGarbageCollectionMaxPerInterval = 25
 
 	// AWSResultsPerApiCall is the maximum number of objects to fetch per paginated API call
 	AWSResultsPerApiCall = 1000
-
-	// ParallelAllocWorkers is the default max number of parallel workers doing allocation in the operator
-	ParallelAllocWorkers = 50
 
 	// IPAMAPIBurst is the default burst value when rate limiting access to external APIs
 	IPAMAPIBurst = 20
@@ -449,7 +443,7 @@ const (
 	TunnelSourcePortRange = "0-0"
 
 	// UnderlayProtocol is the default IP family for the underlay.
-	UnderlayProtocol = "ipv4"
+	UnderlayProtocol = "auto"
 
 	// ServiceNoBackendResponse is the default response for services without backends
 	ServiceNoBackendResponse = "reject"
@@ -485,6 +479,9 @@ const (
 
 	// EnableK8sNetworkPolicy enables support for K8s NetworkPolicy.
 	EnableK8sNetworkPolicy = true
+
+	// EnableK8sClusterNetworkPolicy enables support for K8s ClusterNetworkPolicy.
+	EnableK8sClusterNetworkPolicy = false
 
 	// EnableCiliumNetworkPolicy enables support for Cilium Network Policy.
 	EnableCiliumNetworkPolicy = true
@@ -541,6 +538,9 @@ const (
 
 	// EnableCiliumNodeCRD is the default value for option.EnableCiliumNodeCRD
 	EnableCiliumNodeCRD = true
+
+	// PolicyAccouting is the default value for option.PolicyAccounting
+	PolicyAccounting = true
 )
 
 var (

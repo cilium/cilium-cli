@@ -657,6 +657,12 @@ const (
 	// K8sNetworkPolicyName is the name of a K8sPolicyObject
 	K8sNetworkPolicyName = "k8sNetworkPolicyName"
 
+	// K8sClusterNetworkPolicy is a k8s ClusterNetworkPolicy object.
+	K8sClusterNetworkPolicy = "k8sClusterNetworkPolicy"
+
+	// K8sClusterNetworkPolicyName is the name of a K8sPolicyObject
+	K8sClusterNetworkPolicyName = "k8sClusterNetworkPolicyName"
+
 	// K8sIngress is a k8s Ingress service object
 	K8sIngress = "k8sIngress"
 
@@ -1091,6 +1097,8 @@ const (
 
 	Link = "link"
 
+	LinkConfig = "linkConfig"
+
 	Hook = "hook"
 
 	DNSRedirect = "dnsRedirect"
@@ -1302,6 +1310,8 @@ const (
 	NumInterfaces = "numInterfaces"
 
 	NumSubnets = "numSubnets"
+
+	TargetedSubnets = "targetedSubnets"
 
 	NumRouteTables = "numRouteTables"
 
@@ -1583,7 +1593,7 @@ const (
 
 	RssBytes = "rssBytes"
 
-	BPFSPath = "bpffsPath"
+	BPFFSPath = "bpffsPath"
 
 	ProgName = "progName"
 
@@ -1859,4 +1869,8 @@ const (
 	ReloadCAError = "reloadCAError"
 
 	ExtendedMessage = "extendedMessage"
+
+	BackendTLSPolicyName = "backendTLSPolicyName"
+
+	ConfigMapName = "configMapName"
 )

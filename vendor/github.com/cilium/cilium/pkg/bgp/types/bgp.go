@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/netip"
 	"strings"
+	"time"
 
 	"github.com/osrg/gobgp/v3/pkg/packet/bgp"
 
@@ -66,11 +67,11 @@ type Path struct {
 // of GoBGP's Peer object, but only contains minimal fields required for Cilium
 // usecases.
 type Neighbor struct {
+	Name            string
 	Address         netip.Addr
 	ASN             uint32
 	AuthPassword    string
 	EbgpMultihop    *NeighborEbgpMultihop
-	RouteReflector  *NeighborRouteReflector
 	Timers          *NeighborTimers
 	Transport       *NeighborTransport
 	GracefulRestart *NeighborGracefulRestart
@@ -96,11 +97,6 @@ type NeighborTimers struct {
 type NeighborGracefulRestart struct {
 	Enabled     bool
 	RestartTime uint32
-}
-
-type NeighborRouteReflector struct {
-	Client    bool
-	ClusterID string
 }
 
 // SoftResetDirection defines the direction in which a BGP soft reset should be performed
@@ -141,6 +137,31 @@ type ResetAllNeighborsRequest struct {
 	Soft               bool
 	SoftResetDirection SoftResetDirection
 	AdminCommunication string
+}
+
+// PeerState contains status information for a BGP peer
+type PeerState struct {
+	// Name of the peer
+	Name string
+
+	// BGP peer state
+	SessionState SessionState
+
+	// The rest of the fields are only valid if SessionState is Established
+
+	// Time since the BGP session was established
+	Uptime time.Duration
+
+	// BGP peer address family states. All configured address families are present here.
+	Families []PeerFamilyState
+}
+
+// PeerFamilyState contains status information for a specific address family.
+type PeerFamilyState struct {
+	Family
+	ReceivedRoutes   uint64
+	AcceptedRoutes   uint64
+	AdvertisedRoutes uint64
 }
 
 // PathRequest contains parameters for advertising or withdrawing a Path
@@ -421,8 +442,16 @@ type RoutePolicyRequest struct {
 	Policy              *RoutePolicy
 }
 
-// GetPeerStateResponse contains state of peers configured in given instance
+// GetPeerStateRequest contains parameters for retrieving BGP peer states
+type GetPeerStateRequest struct{}
+
+// GetPeerStateResponse contains state of peers configured in given instances
 type GetPeerStateResponse struct {
+	Peers []PeerState
+}
+
+// GetPeerStateLegacyResponse contains state of peers configured in given instance
+type GetPeerStateLegacyResponse struct {
 	Peers []*models.BgpPeer
 }
 
@@ -549,7 +578,10 @@ type Router interface {
 	RemoveRoutePolicy(ctx context.Context, p RoutePolicyRequest) error
 
 	// GetPeerState returns status of BGP peers
-	GetPeerState(ctx context.Context) (GetPeerStateResponse, error)
+	GetPeerState(ctx context.Context, r *GetPeerStateRequest) (*GetPeerStateResponse, error)
+
+	// GetPeerStateLegacy returns status of BGP peers
+	GetPeerStateLegacy(ctx context.Context) (GetPeerStateLegacyResponse, error)
 
 	// GetRoutes retrieves routes from the RIB of underlying router
 	GetRoutes(ctx context.Context, r *GetRoutesRequest) (*GetRoutesResponse, error)
