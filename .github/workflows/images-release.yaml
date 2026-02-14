@@ -47,7 +47,7 @@ jobs:
           context: .
           platforms: linux/arm64,linux/amd64
           push: false
-          tags: ${{ steps.tag.outputs.repo_tags }}
+          tags: quay.io/${{ github.repository_owner }}/cilium-cli:${{ steps.tag.outputs.tag }}
           outputs: type=oci,dest=/tmp/image.tar
 
       - name: Upload image artifact
