@@ -17,7 +17,7 @@ env:
   TIMEOUT: 2m
   LOG_TIME: 30m
   # renovate: datasource=github-releases depName=cilium/cilium
-  cilium_version: v1.18.6
+  cilium_version: v1.19.0
 
 jobs:
   installation-and-connectivity:
@@ -240,7 +240,8 @@ jobs:
             --version=${{ env.cilium_version }} \
             --set clustermesh.useAPIServer=true \
             --set clustermesh.apiserver.service.type=NodePort \
-            --set clustermesh.apiserver.tls.server.extraDnsNames={"$CLUSTER1.mesh.cilium.io,$CLUSTER2.mesh.cilium.io"}
+            --set clustermesh.apiserver.tls.server.extraDnsNames={"$CLUSTER1.mesh.cilium.io,$CLUSTER2.mesh.cilium.io"} \
+            --set=clustermesh.apiserver.tls.authMode=legacy
 
       - name: Copy CA cert from cluster 1 to cluster 2
         run: |
@@ -257,7 +258,8 @@ jobs:
             --version=${{ env.cilium_version }} \
             --set clustermesh.useAPIServer=true \
             --set clustermesh.apiserver.service.type=NodePort \
-            --set clustermesh.apiserver.tls.server.extraDnsNames={"$CLUSTER1.mesh.cilium.io,$CLUSTER2.mesh.cilium.io"}
+            --set clustermesh.apiserver.tls.server.extraDnsNames={"$CLUSTER1.mesh.cilium.io,$CLUSTER2.mesh.cilium.io"} \
+            --set=clustermesh.apiserver.tls.authMode=legacy
 
       - name: Rename the secrets expected by the clustermesh connect command
         run: |
