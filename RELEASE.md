@@ -8,8 +8,9 @@ recent supported versions.
 
 ## Check issues and PRs
 
-- Merge all [PRs marked as ready to
-  merge](https://github.com/cilium/cilium-cli/labels/ready-to-merge)
+- Merge all PRs marked as ready to merge [in the cilium-cli
+  repository](https://github.com/cilium/cilium-cli/labels/ready-to-merge)
+  and [in the cilium repository](https://github.com/cilium/cilium/pulls?q=state%3Aopen%20label%3Aready-to-merge%20label%3Acilium-cli)
 - Make sure there are no [open issues or PRs labeled as release
   blocker](https://github.com/cilium/cilium-cli/labels/priority%2Frelease-blocker)
   in the cilium-cli repository
