@@ -91,6 +91,9 @@ var (
 	//go:embed manifests/client-egress-tls-sni-double-wildcard.yaml
 	clientEgressTLSSNIDoubleWildcardPolicyYAML string
 
+	//go:embed manifests/client-egress-tls-sni-random-wildcard.yaml
+	clientEgressTLSSNIRandomWildcardPolicyYAML string
+
 	//go:embed manifests/client-egress-tls-sni-other.yaml
 	clientEgressTLSSNIOtherPolicyYAML string
 
@@ -307,6 +310,7 @@ func concurrentTests(connTests []*check.ConnectivityTest) error {
 		echoIngressMutualAuthSpiffe{},
 		podToIngressService{},
 		outsideToIngressService{},
+		serviceLoopback{},
 		l7LB{},
 		dnsOnly{},
 		toFqdns{},
@@ -366,6 +370,7 @@ func renderTemplates(clusterNameLocal, clusterNameRemote string, param check.Par
 		"clientEgressToFQDNsAndHTTPGetPolicyYAML":                    clientEgressToFQDNsAndHTTPGetPolicyYAML,
 		"clientEgressTLSSNIPolicyYAML":                               clientEgressTLSSNIPolicyYAML,
 		"clientEgressTLSSNIWildcardPolicyYAML":                       clientEgressTLSSNIWildcardPolicyYAML,
+		"clientEgressTLSSNIRandomWildcardPolicyYAML":                 clientEgressTLSSNIRandomWildcardPolicyYAML,
 		"clientEgressTLSSNIDoubleWildcardPolicyYAML":                 clientEgressTLSSNIDoubleWildcardPolicyYAML,
 		"clientEgressTLSSNIOtherPolicyYAML":                          clientEgressTLSSNIOtherPolicyYAML,
 		"clientEgressL7TLSSNIPolicyYAML":                             clientEgressL7TLSSNIPolicyYAML,

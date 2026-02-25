@@ -1573,8 +1573,6 @@ const (
 
 	BootTime = "bootTime"
 
-	BootstrapTime = "bootstrapTime"
-
 	Socket = "socket"
 
 	Filter = "filter"
@@ -1622,8 +1620,6 @@ const (
 	NewLocally = "newLocally"
 
 	Released = "released"
-
-	DNSRulesV2 = "dnsRulesV2"
 
 	BPFHeaderfileHashOld = "old-" + "bpfHeaderfileHash"
 
@@ -1873,4 +1869,8 @@ const (
 	BackendTLSPolicyName = "backendTLSPolicyName"
 
 	ConfigMapName = "configMapName"
+
+	AttachType = "attachType"
+
+	WithFrags = "withFrags"
 )
