@@ -75,7 +75,8 @@ Then tag and push the release:
 
     git tag -a $RELEASE -m "$RELEASE release" $COMMIT_SHA && git push origin $RELEASE
 
-Review and approve the image build workflow run https://github.com/cilium/cilium-cli/actions/workflows/images.yaml
+Review and approve the [release image build workflow
+run](https://github.com/cilium/cilium-cli/actions/workflows/images-release.yaml)
 to push the release image to https://quay.io/repository/cilium/cilium-cli?tab=tags&tag=latest.
 
 ## Update the GitHub release notes
