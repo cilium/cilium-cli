@@ -606,6 +606,10 @@ const (
 	// EnableSRv6 is the name of the option to enable SRv6 encapsulation support
 	EnableSRv6 = "enable-srv6"
 
+	// EnableFibTableIDAnnotation is the name of the option to enable
+	// parsing of the network.cilium.io/fib-table-id pod annotation.
+	EnableFibTableIDAnnotation = "fib-table-id-annotation"
+
 	// SRv6EncapModeName is the name of the option to specify the SRv6 encapsulation mode
 	SRv6EncapModeName = "srv6-encap-mode"
 
@@ -1362,6 +1366,10 @@ type DaemonConfig struct {
 	// EnableSRv6 is true when SRv6 encapsulation support is enabled
 	EnableSRv6 bool
 
+	// EnableFibTableIDAnnotation is true when parsing of the
+	// network.cilium.io/fib-table-id pod annotation is enabled.
+	EnableFibTableIDAnnotation bool
+
 	// SRv6EncapMode is the encapsulation mode for SRv6
 	SRv6EncapMode string
 
@@ -1753,7 +1761,7 @@ type DaemonConfig struct {
 	EnableVTEP bool
 
 	// VtepMask VTEP Mask
-	VtepCidrMask net.IP
+	VtepCidrMask netip.Addr
 
 	// TCFilterPriority sets the priority of the cilium tc filter, enabling other
 	// filters to be inserted prior to the cilium filter.
@@ -2404,6 +2412,7 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 	c.EnableIPv6 = vp.GetBool(EnableIPv6Name)
 	c.EnableIPv6NDP = vp.GetBool(EnableIPv6NDPName)
 	c.EnableSRv6 = vp.GetBool(EnableSRv6)
+	c.EnableFibTableIDAnnotation = vp.GetBool(EnableFibTableIDAnnotation)
 	c.SRv6EncapMode = vp.GetString(SRv6EncapModeName)
 	c.EnableSCTP = vp.GetBool(EnableSCTPName)
 	c.IPv6MCastDevice = vp.GetString(IPv6MCastDevice)
@@ -3263,9 +3272,9 @@ func getPossibleCPUs(logger *slog.Logger) int {
 func (c *DaemonConfig) validateVTEP(vp *viper.Viper) error {
 	vtepCidrMask := vp.GetString(VtepMask)
 
-	mask := net.ParseIP(vtepCidrMask)
-	if mask == nil {
-		return fmt.Errorf("Invalid VTEP CIDR Mask: %v", vtepCidrMask)
+	mask, err := netip.ParseAddr(vtepCidrMask)
+	if err != nil {
+		return fmt.Errorf("invalid VTEP CIDR Mask: %w", err)
 	}
 	c.VtepCidrMask = mask
 
