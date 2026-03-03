@@ -17,7 +17,7 @@ RUN --mount=type=bind,readwrite,target=/go/src/github.com/cilium/cilium-cli \
     --mount=type=cache,target=/go/pkg \
     make GOARCH=${TARGETARCH} DESTDIR=/out/${TARGETOS}/${TARGETARCH} install
 
-FROM gcr.io/distroless/static:latest@sha256:eca24e67792afe660769e84c85332d9939772e7f76071597d179af96ac4e9e4f AS release
+FROM gcr.io/distroless/static:latest@sha256:28efbe90d0b2f2a3ee465cc5b44f3f2cf5533514cf4d51447a977a5dc8e526d0 AS release
 LABEL maintainer="maintainer@cilium.io"
 ENTRYPOINT []
 WORKDIR /root/app
