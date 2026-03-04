@@ -17,6 +17,8 @@ recent supported versions.
 - Make sure there are no [release blockers](https://github.com/cilium/cilium/labels/release-blocker%2Fcilium-cli)
   in the cilium repository
 - Make sure there are no [Dependabot alerts](https://github.com/cilium/cilium-cli/security/dependabot)
+- Make sure the optional CI workflows for Cloud environments (eg. GKE, AKS) pass for the
+  `main` branch in the cilium repository.
 
 ## Prepare environment variables
 
