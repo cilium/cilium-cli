@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Cleanup Disk space in runner
-        uses: cilium/cilium/.github/actions/disk-cleanup@0f7ddbfefa4ea22fd3e013775837826b8870b3f8 # main
+        uses: cilium/cilium/.github/actions/disk-cleanup@143928b393dae8d1c8fe1748db0934fde36769ff # main
 
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
