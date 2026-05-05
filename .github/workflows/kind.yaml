@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 50
     steps:
       - name: Cleanup Disk space in runner
-        uses: cilium/cilium/.github/actions/disk-cleanup@41774fc244e1e6c960323c2c3778570e55a2057e # main
+        uses: cilium/cilium/.github/actions/disk-cleanup@71eacde5bfbe4a904f35728dc0aee626d8c3810c # main
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -180,7 +180,7 @@ jobs:
 
     steps:
       - name: Cleanup Disk space in runner
-        uses: cilium/cilium/.github/actions/disk-cleanup@41774fc244e1e6c960323c2c3778570e55a2057e # main
+        uses: cilium/cilium/.github/actions/disk-cleanup@71eacde5bfbe4a904f35728dc0aee626d8c3810c # main
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
