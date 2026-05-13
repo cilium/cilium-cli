@@ -19,9 +19,9 @@ TEST_TIMEOUT ?= 5s
 RELEASE_UID ?= $(shell id -u)
 RELEASE_GID ?= $(shell id -g)
 
-# renovate: datasource=docker depName=golang
-GO_IMAGE_VERSION = 1.25.5-alpine3.21
-GO_IMAGE_SHA = sha256:b4dbd292a0852331c89dfd64e84d16811f3e3aae4c73c13d026c4d200715aff6
+# renovate: datasource=docker depName=docker.io/library/golang
+GO_IMAGE_VERSION = 1.26.3-alpine3.23
+GO_IMAGE_SHA = sha256:91eda9776261207ea25fd06b5b7fed8d397dd2c0a283e77f2ab6e91bfa71079d
 
 # renovate: datasource=docker depName=golangci/golangci-lint
 GOLANGCILINT_WANT_VERSION = v2.12.1
@@ -40,7 +40,7 @@ release:
 		--workdir /cilium \
 		--volume `pwd`:/cilium docker.io/library/golang:$(GO_IMAGE_VERSION)@$(GO_IMAGE_SHA) \
 		sh -c "apk add --no-cache curl setpriv make git zip && \
-			/usr/bin/setpriv --reuid=$(RELEASE_UID) --regid=$(RELEASE_GID) --clear-groups make GOCACHE=/tmp/gocache local-release"
+			/bin/setpriv --reuid=$(RELEASE_UID) --regid=$(RELEASE_GID) --clear-groups make GOCACHE=/tmp/gocache local-release"
 
 local-release: clean
 	set -o errexit; \
