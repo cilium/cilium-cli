@@ -39,6 +39,10 @@ func (c *FakeCiliumV2alpha1) CiliumCIDRGroups() v2alpha1.CiliumCIDRGroupInterfac
 	return newFakeCiliumCIDRGroups(c)
 }
 
+func (c *FakeCiliumV2alpha1) CiliumDatapathPlugins() v2alpha1.CiliumDatapathPluginInterface {
+	return newFakeCiliumDatapathPlugins(c)
+}
+
 func (c *FakeCiliumV2alpha1) CiliumEndpointSlices() v2alpha1.CiliumEndpointSliceInterface {
 	return newFakeCiliumEndpointSlices(c)
 }
@@ -53,10 +57,6 @@ func (c *FakeCiliumV2alpha1) CiliumL2AnnouncementPolicies() v2alpha1.CiliumL2Ann
 
 func (c *FakeCiliumV2alpha1) CiliumLoadBalancerIPPools() v2alpha1.CiliumLoadBalancerIPPoolInterface {
 	return newFakeCiliumLoadBalancerIPPools(c)
-}
-
-func (c *FakeCiliumV2alpha1) CiliumNodeConfigs(namespace string) v2alpha1.CiliumNodeConfigInterface {
-	return newFakeCiliumNodeConfigs(c, namespace)
 }
 
 func (c *FakeCiliumV2alpha1) CiliumPodIPPools() v2alpha1.CiliumPodIPPoolInterface {

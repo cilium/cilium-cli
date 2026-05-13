@@ -574,6 +574,9 @@ func (ct *ConnectivityTest) report() error {
 			ct.LogOwners(allScenarios...)
 		}
 
+		if ct.params.ExitZeroOnFailure {
+			return nil
+		}
 		return fmt.Errorf("[%s] %d tests failed", ct.params.TestNamespace, nf)
 	}
 
@@ -808,24 +811,72 @@ func (ct *ConnectivityTest) detectNodesWithoutCiliumIPs() error {
 	return nil
 }
 
-func (ct *ConnectivityTest) modifyStaticRoutesForNodesWithoutCilium(ctx context.Context, verb string) error {
+type ipRouteVerb string
+
+const (
+	verbAdd ipRouteVerb = "add"
+	verbDel ipRouteVerb = "del"
+)
+
+func (ct *ConnectivityTest) modifyStaticRoutesForNodesWithoutCilium(ctx context.Context, verb ipRouteVerb) error {
 	for _, e := range ct.params.PodCIDRs {
 		for withoutCilium := range ct.nodesWithoutCilium {
 			pod := ct.hostNetNSPodsByNode[withoutCilium]
 			_, err := ct.client.ExecInPod(ctx, pod.Pod.Namespace, pod.Pod.Name, hostNetNSDeploymentNameNonCilium,
-				[]string{"ip", "route", verb, e.CIDR, "via", e.HostIP},
+				[]string{"ip", "route", string(verb), e.CIDR, "via", e.HostIP},
 			)
 			ct.Debugf("Modifying (%s) static route on nodes without Cilium (%v): %v",
 				verb, withoutCilium,
-				[]string{"ip", "route", verb, e.CIDR, "via", e.HostIP},
+				[]string{"ip", "route", string(verb), e.CIDR, "via", e.HostIP},
 			)
 			if err != nil {
+				if verb == verbDel {
+					// Ignore errors when deleting routes, as the route may not exist.
+					ct.Debugf("Ignoring error deleting static route: %v", err)
+					continue
+				}
 				return fmt.Errorf("failed to %s static route: %w", verb, err)
 			}
 		}
 	}
 
 	return nil
+}
+
+// NeedsStaticRoutes checks whether any test requires static ip routes
+// installed.
+func (ct *ConnectivityTest) NeedsStaticRoutes() bool {
+	// Static routes are only needed when running unsafe tests.
+	if !ct.params.IncludeUnsafeTests {
+		return false
+	}
+
+	// Static routes are only needed on kind. Cloud platforms have pod IP -> node IP
+	// connectivity.
+	if f, ok := ct.Feature(features.Flavor); ok && f.Enabled && f.Mode != "kind" {
+		return false
+	}
+
+	return slices.ContainsFunc(ct.tests, func(t *Test) bool {
+		return t.installIPRoutesFromOutsideToPodCIDRs
+	})
+}
+
+// SetupStaticRoutes idempotently sets up static routes for nodes without Cilium.
+func (ct *ConnectivityTest) SetupStaticRoutes(ctx context.Context) error {
+	if !ct.NeedsStaticRoutes() {
+		return nil
+	}
+	ct.modifyStaticRoutesForNodesWithoutCilium(ctx, verbDel)
+	return ct.modifyStaticRoutesForNodesWithoutCilium(ctx, verbAdd)
+}
+
+// TeardownStaticRoutes tears down static routes for nodes without Cilium.
+func (ct *ConnectivityTest) TeardownStaticRoutes(ctx context.Context) error {
+	if !ct.NeedsStaticRoutes() {
+		return nil
+	}
+	return ct.modifyStaticRoutesForNodesWithoutCilium(ctx, verbDel)
 }
 
 // multiClusterClientLock protects K8S client instantiation (Scheme registration)
@@ -1345,6 +1396,13 @@ func (ct *ConnectivityTest) ForEachIPFamily(do func(features.IPFamily)) {
 			}
 		}
 	}
+}
+
+func (ct *ConnectivityTest) ShouldRunConnDisrupt() bool {
+	return ct.params.IncludeConnDisruptTest ||
+		ct.ShouldRunConnDisruptNSTraffic() ||
+		ct.ShouldRunConnDisruptL7Traffic() ||
+		ct.ShouldRunConnDisruptEgressGateway()
 }
 
 func (ct *ConnectivityTest) ShouldRunConnDisruptNSTraffic() bool {

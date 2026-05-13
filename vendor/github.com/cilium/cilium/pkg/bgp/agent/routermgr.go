@@ -32,18 +32,24 @@ type BGPRouterManager interface {
 	// instances of BGP daemon running locally, then peers can be
 	// differentiated based on local AS number.
 	//
-	// This is a legacy method used by the REST API and will be replaced in
-	// the future.
+	// Deprecated: This is a legacy method used by the REST API and will be removed in the future.
 	GetPeersLegacy(ctx context.Context) ([]*models.BgpPeer, error)
 
 	// GetRoutesLegacy fetches BGP routes from underlying routing daemon's RIBs.
+	//
+	// Deprecated: This is a legacy method used by the REST API and will be removed in the future.
 	GetRoutesLegacy(ctx context.Context, params restapi.GetBgpRoutesParams) ([]*models.BgpRoute, error)
 
 	// GetRoutes fetches BGP routes from underlying routing daemon's RIBs.
 	GetRoutes(ctx context.Context, req *GetRoutesRequest) (*GetRoutesResponse, error)
 
 	// GetRoutePolicies fetches BGP routing policies from underlying routing daemon.
-	GetRoutePolicies(ctx context.Context, params restapi.GetBgpRoutePoliciesParams) ([]*models.BgpRoutePolicy, error)
+	GetRoutePolicies(ctx context.Context, params *GetRoutePoliciesRequest) (*GetRoutePoliciesResponse, error)
+
+	// GetRoutePoliciesLegacy fetches BGP routing policies from underlying routing daemon.
+	//
+	// Deprecated: This is a legacy method used by the REST API and will be removed in the future.
+	GetRoutePoliciesLegacy(ctx context.Context, params restapi.GetBgpRoutePoliciesParams) ([]*models.BgpRoutePolicy, error)
 
 	// Stop will stop all BGP instances and clean up local state.
 	Stop(ctx cell.HookContext) error
@@ -59,8 +65,8 @@ type GetPeersResponse struct {
 
 // InstancePeerStates holds peer states for a specific BGP instance.
 type InstancePeerStates struct {
-	Name  string
-	Peers []types.PeerState
+	Name  string            `json:"name,omitempty"`
+	Peers []types.PeerState `json:"peers,omitempty"`
 }
 
 // GetRoutesRequest is a request for GetRoutes method.
@@ -72,6 +78,22 @@ type GetRoutesRequest struct {
 // GetRoutesResponse is the response type for GetRoutes method.
 type GetRoutesResponse struct {
 	Instances []InstanceRoutes
+}
+
+// GetRoutePoliciesRequest is a request for GetRoutePolicies method.
+type GetRoutePoliciesRequest struct {
+	InstanceName string
+}
+
+// GetRoutePoliciesResponse is the response type for GetRoutePolicies method.
+type GetRoutePoliciesResponse struct {
+	Instances []InstanceRoutePolicies
+}
+
+// InstanceRoutePolicies holds route policies for a specific BGP instance.
+type InstanceRoutePolicies struct {
+	Name          string
+	RoutePolicies []*types.RoutePolicy
 }
 
 // InstanceRoutes holds routes for a specific BGP instance.

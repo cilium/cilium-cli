@@ -5,11 +5,18 @@ package policy
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"maps"
+	"os"
+	"strconv"
 	"sync/atomic"
 
+	"github.com/cilium/hive/script"
 	cilium "github.com/cilium/proxy/go/cilium/api"
+	"github.com/cilium/stream"
+	"github.com/davecgh/go-spew/spew"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/cilium/cilium/api/v1/models"
@@ -20,6 +27,8 @@ import (
 	"github.com/cilium/cilium/pkg/identity/identitymanager"
 	ipcachetypes "github.com/cilium/cilium/pkg/ipcache/types"
 	k8sConst "github.com/cilium/cilium/pkg/k8s/apis/cilium.io"
+	v2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
+	"github.com/cilium/cilium/pkg/k8s/testutils"
 	"github.com/cilium/cilium/pkg/labels"
 	"github.com/cilium/cilium/pkg/lock"
 	"github.com/cilium/cilium/pkg/logging/logfields"
@@ -36,13 +45,18 @@ type PolicyRepository interface {
 	GetAuthTypes(localID identity.NumericIdentity, remoteID identity.NumericIdentity) AuthTypes
 	GetEnvoyHTTPRules(l7Rules *api.L7Rules, ns string) (*cilium.HttpNetworkPolicyRules, bool)
 
-	// GetSelectorPolicy computes the SelectorPolicy for a given identity.
+	// GetSelectorPolicy computes the SelectorPolicy for a given identity. It
+	// is only used in unit tests.
 	//
 	// It returns nil if skipRevision is >= than the already calculated version.
 	// This is used to skip policy calculation when a certain revision delta is
 	// known to not affect the given identity. Pass a skipRevision of 0 to force
 	// calculation.
 	GetSelectorPolicy(id *identity.Identity, skipRevision uint64, stats GetPolicyStatistics, endpointID uint64) (SelectorPolicy, uint64, error)
+
+	// ComputeSelectorPolicy computes the SelectorPolicy for a given identity,
+	// if it needs recomputing.
+	ComputeSelectorPolicy(id *identity.Identity, skipRevision uint64) (SelectorPolicy, uint64, SelectorPolicy, bool, error)
 
 	// GetPolicySnapshot returns a map of all the SelectorPolicies in the repository.
 	GetPolicySnapshot() map[identity.NumericIdentity]SelectorPolicy
@@ -53,6 +67,8 @@ type PolicyRepository interface {
 	Iterate(f func(rule *types.PolicyEntry))
 	ReplaceByResource(rules types.PolicyEntries, resource ipcachetypes.ResourceID) (affectedIDs *set.Set[identity.NumericIdentity], rev uint64, oldRevCnt int)
 	Search() (types.PolicyEntries, uint64)
+
+	PolicyCacheObservable() stream.Observable[PolicyCacheChange]
 }
 
 type GetPolicyStatistics interface {
@@ -465,78 +481,72 @@ func (p *Repository) computePolicyEnforcementAndRules(securityIdentity *identity
 	// Insert a wildcard rule if there are any ingress rules
 	if len(rulesIngress) > 0 {
 		if !hasIngressDefaultDeny {
-			defaultRule := rulesIngress.wildcardRule(securityIdentity, LabelsAllowAnyIngress, types.Allow, hasIngressPassVerdict)
+			rulesIngress = rulesIngress.addDefaultRule(securityIdentity, types.WildcardSelectors, LabelsAllowAnyIngress, types.Allow)
 			p.logger.Debug("Only default-allow policies, synthesizing ingress wildcard-allow rule",
 				logfields.Identity, securityIdentity,
-				logfields.Tier, defaultRule.Tier,
-				logfields.Priority, defaultRule.Priority,
 			)
-			rulesIngress = append(rulesIngress, defaultRule)
-		} else if hasIngressPassVerdict {
-			// Explicit default deny is only needed for PASS verdict compatibility
-			defaultRule := rulesIngress.wildcardRule(securityIdentity, LabelsDenyAnyIngress, types.Deny, hasIngressPassVerdict)
-			p.logger.Debug("Only default-deny policies, synthesizing ingress wildcard-deny rule",
-				logfields.Identity, securityIdentity,
-				logfields.Tier, defaultRule.Tier,
-				logfields.Priority, defaultRule.Priority,
-			)
-			rulesIngress = append(rulesIngress, defaultRule)
+		} else {
+			// insert localhost allow for k8s if the policy subject is not the host
+			if option.Config.AlwaysAllowLocalhost() && securityIdentity.ID != identity.ReservedIdentityHost {
+				rulesIngress = rulesIngress.addDefaultRule(securityIdentity, types.HostSelectors, LabelsLocalHostIngress, types.Allow)
+				p.logger.Debug("Localhost allowed for k8s, synthesizing ingress host-allow rule",
+					logfields.Identity, securityIdentity,
+				)
+			}
+			if hasIngressPassVerdict {
+				// Explicit default deny is only needed for PASS verdict compatibility
+				rulesIngress = rulesIngress.addDefaultRule(securityIdentity, types.WildcardSelectors, LabelsDenyAnyIngress, types.Deny)
+				p.logger.Debug("Only default-deny policies, synthesizing ingress wildcard-deny rule",
+					logfields.Identity, securityIdentity,
+				)
+			}
 		}
 	}
 
 	// Same for egress -- synthesize a wildcard rule
 	if len(rulesEgress) > 0 {
 		if !hasEgressDefaultDeny {
-			defaultRule := rulesEgress.wildcardRule(securityIdentity, LabelsAllowAnyEgress, types.Allow, hasEgressPassVerdict)
+			rulesEgress = rulesEgress.addDefaultRule(securityIdentity, types.WildcardSelectors, LabelsAllowAnyEgress, types.Allow)
 			p.logger.Debug("Only default-allow policies, synthesizing egress wildcard-allow rule",
 				logfields.Identity, securityIdentity,
-				logfields.Tier, defaultRule.Tier,
-				logfields.Priority, defaultRule.Priority,
 			)
-			rulesEgress = append(rulesEgress, defaultRule)
 		} else if hasEgressPassVerdict {
 			// Explicit default deny is only needed for PASS verdict compatibility
-			defaultRule := rulesEgress.wildcardRule(securityIdentity, LabelsDenyAnyEgress, types.Deny, hasEgressPassVerdict)
+			rulesEgress = rulesEgress.addDefaultRule(securityIdentity, types.WildcardSelectors, LabelsDenyAnyEgress, types.Deny)
 			p.logger.Debug("Only default-deny policies, synthesizing egress wildcard-deny rule",
 				logfields.Identity, securityIdentity,
-				logfields.Tier, defaultRule.Tier,
-				logfields.Priority, defaultRule.Priority,
 			)
-			rulesEgress = append(rulesEgress, defaultRule)
 		}
 	}
 
 	return
 }
 
-// wildcardRule generates a wildcard rule that only selects the given subject identity.
-func (rules ruleSlice) wildcardRule(subject *identity.Identity, lbls labels.LabelArray, verdict types.Verdict, hasPassVerdict bool) *rule {
-	// User the lowest tier and priority
+// addDefaultRule appends a default policy tier wildcard rule that only selects the given subject
+// identity.
+func (rules ruleSlice) addDefaultRule(subject *identity.Identity, peers types.Selectors, lbls labels.LabelArray, verdict types.Verdict) ruleSlice {
+	var priority float64
 	lastRule := rules[len(rules)-1]
-	ingress := lastRule.Ingress
-	tier, priority := lastRule.Tier, lastRule.Priority
-
-	// Keep the tier and priority as zeroes for backwards compatibility if the last rule
-	// is at tier and priority 0.
-	if hasPassVerdict || tier > 0 || priority > 0 {
-		tier++
-		priority = 0
+	if lastRule.Tier == types.DefaultPolicy {
+		priority = lastRule.Priority + 1
 	}
+	ingress := lastRule.Ingress
 
-	return &rule{
+	return append(rules, &rule{
 		PolicyEntry: types.PolicyEntry{
-			Tier:     tier,
+			Tier:     types.DefaultPolicy,
 			Priority: priority,
 			Verdict:  verdict,
 			Ingress:  ingress,
 			Subject:  types.NewLabelSelectorFromLabels(subject.LabelArray...),
-			L3:       types.WildcardSelectors,
+			L3:       peers,
 			Labels:   lbls,
 		},
-	}
+	})
 }
 
-// GetSelectorPolicy computes the SelectorPolicy for a given identity.
+// GetSelectorPolicy computes the SelectorPolicy for a given identity. It is
+// only used in unit tests.
 //
 // It returns nil if skipRevision is >= than the already calculated version.
 // This is used to skip policy calculation when a certain revision delta is
@@ -559,7 +569,7 @@ func (r *Repository) GetSelectorPolicy(id *identity.Identity, skipRevision uint6
 	stats.SelectorPolicyCalculation().Start()
 	// This may call back in to the (locked) repository to generate the
 	// selector policy
-	sp, updated, err := r.policyCache.updateSelectorPolicy(id, endpointID)
+	sp, _, updated, err := r.policyCache.updateSelectorPolicy(id, endpointID)
 	stats.SelectorPolicyCalculation().EndError(err)
 
 	// If we hit cache, reset the statistics.
@@ -568,6 +578,21 @@ func (r *Repository) GetSelectorPolicy(id *identity.Identity, skipRevision uint6
 	}
 
 	return sp, rev, err
+}
+
+// ComputeSelectorPolicy computes the SelectorPolicy for a given identity, if
+// it needs recomputing.
+func (r *Repository) ComputeSelectorPolicy(id *identity.Identity, skipRevision uint64) (SelectorPolicy, uint64, SelectorPolicy, bool, error) {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+
+	rev := r.GetRevision()
+	sp, old, release, err := r.policyCache.updateSelectorPolicy(id, 0)
+	if err != nil {
+		return nil, 0, nil, release, err
+	}
+
+	return sp, rev, old, release, err
 }
 
 // ReplaceByResource replaces all rules by resource, returning the complete set of affected endpoints.
@@ -619,4 +644,96 @@ func (p *Repository) GetPolicySnapshot() map[identity.NumericIdentity]SelectorPo
 	defer p.mutex.RUnlock()
 
 	return p.policyCache.GetPolicySnapshot()
+}
+
+func (p *Repository) PolicyCacheObservable() stream.Observable[PolicyCacheChange] {
+	return p.policyCache
+}
+
+func RepositoryScriptCmds(p *Repository) map[string]script.Cmd {
+	return map[string]script.Cmd{
+		"policyrepo/list": script.Command(
+			script.CmdUsage{
+				Summary: "List all policies in the policy repository",
+			},
+			func(s *script.State, args ...string) (script.WaitFunc, error) {
+				return func(s *script.State) (stdout string, stderr string, err error) {
+					policies := p.GetRulesList()
+					return string(policies.Policy), "", nil
+				}, nil
+			},
+		),
+		"policyrepo/selectorcache": script.Command(
+			script.CmdUsage{
+				Summary: "Dump the selector cache model",
+			},
+			func(s *script.State, args ...string) (script.WaitFunc, error) {
+				return func(s *script.State) (stdout string, stderr string, err error) {
+					model := p.GetSelectorCache().GetModel()
+					return spew.Sprint(model), "", nil
+				}, nil
+			},
+		),
+		"policyrepo/add": script.Command(
+			script.CmdUsage{
+				Summary: "Add a policy to the policy repository",
+				Args:    "'policy'",
+			},
+			func(s *script.State, args ...string) (script.WaitFunc, error) {
+				if len(args) != 1 {
+					return nil, fmt.Errorf("expected one arg but got %v, see usage details", len(args))
+				}
+				return func(s *script.State) (stdout string, stderr string, err error) {
+					file := args[0]
+
+					b, err := os.ReadFile(s.Path(file))
+					if err != nil {
+						b, err = os.ReadFile(file)
+					}
+					if err != nil {
+						return "", "", fmt.Errorf("failed to read %s: %w", file, err)
+					}
+					obj, _, err := testutils.DecodeObjectGVK(b)
+					if err != nil {
+						return "", "", fmt.Errorf("decode: %w", err)
+					}
+					robj, _ := testutils.DecodeObject(b)
+					objMeta, err := meta.Accessor(obj)
+					if err != nil {
+						return "", "", fmt.Errorf("accessor: %w", err)
+					}
+
+					var (
+						rules api.Rules
+						rev   uint64
+					)
+					if objMeta.GetNamespace() == "" {
+						ccnp := robj.(*v2.CiliumClusterwideNetworkPolicy)
+						rules, err = ccnp.Parse(p.logger, "")
+						if err != nil {
+							return "", "", fmt.Errorf("ccnp parse: %w", err)
+						}
+					} else {
+						cnp := robj.(*v2.CiliumNetworkPolicy)
+						rules, err = cnp.Parse(p.logger, "")
+						if err != nil {
+							return "", "", fmt.Errorf("cnp parse: %w", err)
+						}
+					}
+					_, rev = p.MustAddList(rules)
+					return fmt.Sprintf("Added rules, revision=%d\n", rev), "", nil
+				}, nil
+			},
+		),
+		"policyrepo/bump-revision": script.Command(
+			script.CmdUsage{
+				Summary: "Bump revision of the policy repository",
+			},
+			func(s *script.State, args ...string) (script.WaitFunc, error) {
+				return func(s *script.State) (stdout string, stderr string, err error) {
+					return "Bumped revision to " + strconv.FormatUint(p.BumpRevision(), 10) + "\n", "", nil
+				}, nil
+			},
+		),
+	}
 }

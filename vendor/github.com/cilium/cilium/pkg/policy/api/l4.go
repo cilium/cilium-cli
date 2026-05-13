@@ -3,10 +3,6 @@
 
 package api
 
-import (
-	"github.com/cilium/proxy/pkg/policy/api/kafka"
-)
-
 // L4Proto is a layer 4 protocol name
 type L4Proto string
 
@@ -20,7 +16,13 @@ const (
 	ProtoICMPv6 L4Proto = "ICMPV6"
 	ProtoVRRP   L4Proto = "VRRP"
 	ProtoIGMP   L4Proto = "IGMP"
-	ProtoAny    L4Proto = "ANY"
+	// Tunnel/Encapsulation protocols (no transport-layer ports)
+	ProtoGRE  L4Proto = "GRE"  // Generic Routing Encapsulation (protocol 47)
+	ProtoIPIP L4Proto = "IPIP" // IP-in-IP Encapsulation (protocol 4)
+	ProtoIPv6 L4Proto = "IPV6" // IPv6 Encapsulation / 6in4 (protocol 41)
+	ProtoESP  L4Proto = "ESP"  // Encapsulating Security Payload / IPsec (protocol 50)
+	ProtoAH   L4Proto = "AH"   // Authentication Header / IPsec (protocol 51)
+	ProtoAny  L4Proto = "ANY"
 
 	PortProtocolAny = "0/ANY"
 )
@@ -54,14 +56,19 @@ type PortProtocol struct {
 	// Protocol is the L4 protocol. If "ANY", omitted or empty, any protocols
 	// with transport ports (TCP, UDP, SCTP) match.
 	//
-	// Accepted values: "TCP", "UDP", "SCTP", "VRRP", "IGMP", "ANY"
+	// Accepted values: "TCP", "UDP", "SCTP", "VRRP", "IGMP", "GRE", "IPIP",
+	// "IPV6", "ESP", "AH", "ANY"
+	//
+	// Tunnel/encapsulation protocols (GRE, IPIP, IPV6, ESP, AH) and other
+	// extended IP protocols (VRRP, IGMP) require the --enable-extended-ip-protocols
+	// flag to be set. These protocols do not use transport-layer ports.
 	//
 	// Matching on ICMP is not supported.
 	//
 	// Named port specified for a container may narrow this down, but may not
 	// contradict this.
 	//
-	// +kubebuilder:validation:Enum=TCP;UDP;SCTP;VRRP;IGMP;ANY
+	// +kubebuilder:validation:Enum=TCP;UDP;SCTP;VRRP;IGMP;GRE;IPIP;IPV6;ESP;AH;ANY
 	// +kubebuilder:validation:Optional
 	Protocol L4Proto `json:"protocol,omitempty"`
 }
@@ -298,29 +305,11 @@ type L7Rules struct {
 	// +kubebuilder:validation:OneOf
 	HTTP PortRulesHTTP `json:"http,omitempty"`
 
-	// Kafka-specific rules.
-	// Deprecated: This beta feature is deprecated and will be removed in a future release.
-	//
-	// +kubebuilder:validation:Optional
-	// +kubebuilder:validation:OneOf
-	Kafka []kafka.PortRule `json:"kafka,omitempty"`
-
 	// DNS-specific rules.
 	//
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:OneOf
 	DNS PortRulesDNS `json:"dns,omitempty"`
-
-	// Name of the L7 protocol for which the Key-value pair rules apply.
-	//
-	// +kubebuilder:validation:Optional
-	// +kubebuilder:validation:OneOf
-	L7Proto string `json:"l7proto,omitempty"`
-
-	// Key-value pair rules.
-	//
-	// +kubebuilder:validation:Optional
-	L7 PortRulesL7 `json:"l7,omitempty"`
 }
 
 // Len returns the total number of rules inside `L7Rules`.
@@ -329,7 +318,7 @@ func (rules *L7Rules) Len() int {
 	if rules == nil {
 		return 0
 	}
-	return len(rules.HTTP) + len(rules.Kafka) + len(rules.DNS) + len(rules.L7)
+	return len(rules.HTTP) + len(rules.DNS)
 }
 
 // IsEmpty returns whether the `L7Rules` is nil or contains no rules.

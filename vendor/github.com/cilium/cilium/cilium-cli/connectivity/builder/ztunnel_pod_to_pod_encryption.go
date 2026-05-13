@@ -18,7 +18,7 @@ func (t ztunnelPodToPodEncryption) build(ct *check.ConnectivityTest, _ map[strin
 	// Encryption checks are always executed as a sanity check, asserting whether
 	// unencrypted packets shall, or shall not, be observed based on the feature set.
 	newTest("ztunnel-pod-to-pod-encryption", ct).
-		WithCondition(func() bool { return !ct.Params().SingleNode }).
+		WithMultiNodeOnly().
 		WithFeatureRequirements(
 			features.RequireEnabled(features.Ztunnel),
 			features.RequireMode(features.EncryptionPod, "ztunnel"),
@@ -31,6 +31,10 @@ func (t ztunnelPodToPodEncryption) build(ct *check.ConnectivityTest, _ map[strin
 			tests.ZTunnelEnrolledToEnrolledDifferentNode(),
 			tests.ZTunnelUnenrolledToUnenrolledSameNode(),
 			tests.ZTunnelUnenrolledToUnenrolledDifferentNode(),
+			tests.ZTunnelEnrolledToUnenrolledSameNode(),
+			tests.ZTunnelEnrolledToUnenrolledDifferentNode(),
+			tests.ZTunnelUnenrolledToEnrolledSameNode(),
+			tests.ZTunnelUnenrolledToEnrolledDifferentNode(),
 			tests.ZTunnelEnrolledToEnrolledCrossNamespaceSameNode(),
 			tests.ZTunnelEnrolledToEnrolledCrossNamespaceDifferentNode(),
 		)

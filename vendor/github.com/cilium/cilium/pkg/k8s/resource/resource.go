@@ -28,6 +28,7 @@ import (
 	"github.com/cilium/cilium/pkg/lock"
 	"github.com/cilium/cilium/pkg/metrics"
 	"github.com/cilium/cilium/pkg/promise"
+	"github.com/cilium/cilium/pkg/spanstat"
 )
 
 // Resource provides access to a Kubernetes resource through either
@@ -143,6 +144,7 @@ func New[T k8sRuntime.Object](lc cell.Lifecycle, lw cache.ListerWatcher, mp work
 		needed:          make(chan struct{}, 1),
 		lw:              lw,
 		metricsProvider: mp,
+		duration:        spanstat.Start(),
 	}
 	r.opts.sourceObj = func() k8sRuntime.Object {
 		var obj T
@@ -242,6 +244,8 @@ type resource[T k8sRuntime.Object] struct {
 	storeResolver promise.Resolver[Store[T]]
 
 	metricsProvider workqueue.MetricsProvider
+
+	duration *spanstat.SpanStat
 }
 
 var _ Resource[*corev1.Node] = &resource[*corev1.Node]{}
@@ -276,6 +280,7 @@ func (r *resource[T]) metricEventProcessed(eventKind EventKind, status bool) {
 	var action string
 	switch eventKind {
 	case Sync:
+		metrics.KubernetesResourceSyncDuration.WithLabelValues(r.opts.metricScope).Set(r.duration.End(status).Total().Seconds())
 		return
 	case Upsert:
 		action = "update"
@@ -425,9 +430,7 @@ func (r *resource[T]) Events(ctx context.Context, opts ...EventsOpt) <-chan Even
 	}
 
 	// Fork a goroutine to process the queued keys and pass them to the subscriber.
-	r.wg.Add(1)
-	go func() {
-		defer r.wg.Done()
+	r.wg.Go(func() {
 		defer close(out)
 
 		// Grab a handle to the store. Asynchronous as informer is started in the background.
@@ -464,20 +467,18 @@ func (r *resource[T]) Events(ctx context.Context, opts ...EventsOpt) <-chan Even
 		r.mu.Lock()
 		delete(r.subscribers, subId)
 		r.mu.Unlock()
-	}()
+	})
 
 	// Fork a goroutine to wait for either the subscriber cancelling or the resource
 	// shutting down.
-	r.wg.Add(1)
-	go func() {
-		defer r.wg.Done()
+	r.wg.Go(func() {
 		select {
 		case <-r.ctx.Done():
 		case <-ctx.Done():
 		}
 		subCancel()
 		sub.wq.ShutDownWithDrain()
-	}()
+	})
 
 	return out
 }

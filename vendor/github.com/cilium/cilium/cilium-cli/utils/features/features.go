@@ -90,6 +90,7 @@ const (
 	CNP  Feature = "cilium-network-policy"
 	CCNP Feature = "cilium-clusterwide-network-policy"
 	KNP  Feature = "k8s-network-policy"
+	KCNP Feature = "k8s-cluster-network-policy"
 
 	// Whether or not CIDR selectors can match node IPs
 	CIDRMatchNodes Feature = "cidr-match-nodes"
@@ -398,7 +399,7 @@ func (fs Set) ExtractFromConfigMap(cm *v1.ConfigMap) {
 	}
 
 	fs[EncryptionStrictModeEgress] = Status{
-		// EncryptionStrictMode is deprecated, but we still support it for backwards compatibility until Cilium 1.17
+		// EncryptionStrictMode is deprecated, but we still support it for backwards compatibility until Cilium 1.19
 		// is EOL.
 		Enabled: cm.Data[string(EncryptionStrictMode)] == "true" || cm.Data[string(EncryptionStrictModeEgress)] == "true",
 	}

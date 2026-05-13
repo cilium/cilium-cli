@@ -183,8 +183,6 @@ func GetFlowType(f *flowpb.Flow) string {
 		case *flowpb.Layer7_Dns:
 			l7Protocol = "dns"
 			l7Type += " " + l7.GetDns().GetObservationSource()
-		case *flowpb.Layer7_Kafka:
-			l7Protocol = "kafka"
 		}
 		return l7Protocol + "-" + l7Type
 	}
@@ -250,6 +248,13 @@ func (p Printer) getVerdict(f *flowpb.Flow) string {
 	case flowpb.Verdict_AUDIT:
 		if f.GetEventType().GetType() == api.MessageTypePolicyVerdict {
 			msg = "AUDITED"
+			if p.opts.policyNames {
+				if f.GetTrafficDirection() == flowpb.TrafficDirection_EGRESS {
+					msg += formatPolicyNames(f.GetEgressDeniedBy())
+				} else if f.GetTrafficDirection() == flowpb.TrafficDirection_INGRESS {
+					msg += formatPolicyNames(f.GetIngressDeniedBy())
+				}
+			}
 		}
 		return p.color.verdictAudit(msg)
 	case flowpb.Verdict_TRACED:

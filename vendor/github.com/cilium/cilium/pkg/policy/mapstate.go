@@ -16,7 +16,6 @@ import (
 	"github.com/cilium/cilium/pkg/labels"
 	"github.com/cilium/cilium/pkg/lock"
 	"github.com/cilium/cilium/pkg/logging/logfields"
-	"github.com/cilium/cilium/pkg/option"
 	"github.com/cilium/cilium/pkg/policy/trafficdirection"
 	"github.com/cilium/cilium/pkg/policy/types"
 )
@@ -50,8 +49,6 @@ func KeyForDirection(direction trafficdirection.TrafficDirection) Key {
 }
 
 var (
-	// localHostKey represents an ingress L3 allow from the local host.
-	localHostKey = IngressKey().WithIdentity(identity.ReservedIdentityHost)
 	// allKey represents a key for unknown traffic, i.e., all traffic.
 	// We have one for each traffic direction
 	allKey = [2]Key{
@@ -442,7 +439,7 @@ func (ms *mapState) lookup(key Key) (mapStateEntry, bool) {
 		// This also needs to reflect the logic in bpf/lib/policy.h __account_and_check().
 		if !entry.AuthRequirement.IsExplicit() &&
 			other.AuthRequirement.AuthType() > entry.AuthRequirement.AuthType() &&
-			other.AllowPrecedence() >= entry.AllowPrecedence() {
+			other.Precedence.AllowPrecedence() >= entry.Precedence.AllowPrecedence() {
 			entry.AuthRequirement = other.AuthRequirement.AsDerived()
 		}
 		return entry
@@ -650,7 +647,7 @@ func PassEntry(priority, tierPriority, nextTierPriority types.Priority, derivedF
 	return mapStateEntry{
 		passes: &passMetas{{
 			precedence:        priority.ToPassPrecedence(),
-			tierMaxPrecedence: tierPriority.ToTierMaxPrecedence(),
+			tierMaxPrecedence: tierPriority.ToDenyPrecedence(),
 			tierMinPrecedence: nextTierPriority.ToPassPrecedence() + 0x100,
 		}},
 		MapStateEntry:    types.InvalidEntry(),
@@ -1522,7 +1519,7 @@ func (ms *mapState) authPreferredInsert(newKey Key, newEntry mapStateEntry, feat
 		if !derived && !newEntryHasExplicitAuth &&
 			!k.PortProtoIsEqual(newKey) &&
 			v.AuthRequirement.IsExplicit() &&
-			v.AllowPrecedence() >= newEntry.AllowPrecedence() {
+			v.Precedence.AllowPrecedence() >= newEntry.Precedence.AllowPrecedence() {
 			// AuthType from the most specific covering key is applied to 'newEntry' as
 			// derived auth type.
 			newEntry.AuthRequirement = v.AuthRequirement.AsDerived()
@@ -1580,17 +1577,6 @@ func (changes *ChangeState) insertOldIfNotExists(key Key, entry mapStateEntry) b
 	return false
 }
 
-// determineAllowLocalhostIngress determines whether communication should be allowed
-// from the localhost. It inserts the Key corresponding to the localhost in
-// the desiredPolicyKeys if the localhost is allowed to communicate with the
-// endpoint. Authentication for localhost traffic is not required.
-func (ms *mapState) determineAllowLocalhostIngress(features policyFeatures) {
-	if option.Config.AlwaysAllowLocalhost() {
-		entry := newAllowEntryWithLabels(LabelsLocalHostIngress)
-		ms.insertWithChanges(types.Priority(0).ToTierMaxPrecedence(), localHostKey, entry, features, ChangeState{})
-	}
-}
-
 // allowAllIdentities translates all identities in selectorCache to their
 // corresponding Keys in the specified direction (ingress, egress) which allows
 // all at L3.
@@ -1641,7 +1627,7 @@ type MapChange struct {
 // need to be added/deleted for that identity are accumulated before 'SyncMapChanges' is called, so
 // that when the changes are applied, all keys for that identity are applied at the same time.
 func (mc *MapChanges) AccumulateMapChanges(tier types.Tier, basePriority types.Priority, adds, deletes []identity.NumericIdentity, keys []Key, value mapStateEntry) {
-	tierMaxPrecedence := basePriority.ToTierMaxPrecedence()
+	tierMaxPrecedence := basePriority.ToDenyPrecedence()
 	mc.mutex.Lock()
 	defer mc.mutex.Unlock()
 	for _, id := range adds {

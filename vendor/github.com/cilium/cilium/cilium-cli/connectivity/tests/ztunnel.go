@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"net"
+	"strconv"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -129,6 +131,54 @@ func ZTunnelUnenrolledToUnenrolledDifferentNode() check.Scenario {
 		serverEnrollment: unenrolled,
 		location:         differentNode,
 		sameNamespace:    true,
+		expectEncryption: false,
+	})
+}
+
+// ZTunnelEnrolledToUnenrolledSameNode tests plain traffic from enrolled client to unenrolled server on same node
+func ZTunnelEnrolledToUnenrolledSameNode() check.Scenario {
+	return newZTunnelTest(scenarioConfig{
+		name:             "enrolled-to-unenrolled-same-node",
+		clientEnrollment: enrolled,
+		serverEnrollment: unenrolled,
+		location:         sameNode,
+		sameNamespace:    false,
+		expectEncryption: false,
+	})
+}
+
+// ZTunnelEnrolledToUnenrolledDifferentNode tests plain traffic from enrolled client to unenrolled server on different nodes
+func ZTunnelEnrolledToUnenrolledDifferentNode() check.Scenario {
+	return newZTunnelTest(scenarioConfig{
+		name:             "enrolled-to-unenrolled-different-node",
+		clientEnrollment: enrolled,
+		serverEnrollment: unenrolled,
+		location:         differentNode,
+		sameNamespace:    false,
+		expectEncryption: false,
+	})
+}
+
+// ZTunnelUnenrolledToEnrolledSameNode tests plain traffic from unenrolled client to enrolled server on same node
+func ZTunnelUnenrolledToEnrolledSameNode() check.Scenario {
+	return newZTunnelTest(scenarioConfig{
+		name:             "unenrolled-to-enrolled-same-node",
+		clientEnrollment: unenrolled,
+		serverEnrollment: enrolled,
+		location:         sameNode,
+		sameNamespace:    false,
+		expectEncryption: false,
+	})
+}
+
+// ZTunnelUnenrolledToEnrolledDifferentNode tests plain traffic from unenrolled client to enrolled server on different nodes
+func ZTunnelUnenrolledToEnrolledDifferentNode() check.Scenario {
+	return newZTunnelTest(scenarioConfig{
+		name:             "unenrolled-to-enrolled-different-node",
+		clientEnrollment: unenrolled,
+		serverEnrollment: enrolled,
+		location:         differentNode,
+		sameNamespace:    false,
 		expectEncryption: false,
 	})
 }
@@ -607,12 +657,7 @@ func (s *ztunnelTestBase) executeTrafficTest(ctx context.Context, t *check.Test,
 func (s *ztunnelTestBase) executeTrafficForIPFamily(ctx context.Context, t *check.Test, ipFamily features.IPFamily,
 	encryptedSniffers, plainTextSniffers map[string]*sniff.Sniffer,
 ) {
-	var url string
-	if ipFamily == features.IPFamilyV4 {
-		url = fmt.Sprintf("http://%s:%d/", s.server.Address(ipFamily), echoServerPort)
-	} else {
-		url = fmt.Sprintf("http://[%s]:%d/", s.server.Address(ipFamily), echoServerPort)
-	}
+	url := fmt.Sprintf("http://%s/", net.JoinHostPort(s.server.Address(ipFamily), strconv.Itoa(echoServerPort)))
 
 	// Retry loop for curl command
 	var lastErr error

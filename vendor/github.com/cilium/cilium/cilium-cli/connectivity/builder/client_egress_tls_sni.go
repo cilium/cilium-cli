@@ -5,8 +5,8 @@ package builder
 
 import (
 	"fmt"
-	"strings"
 
+	"github.com/cilium/cilium/cilium-cli/connectivity/builder/manifests/template"
 	"github.com/cilium/cilium/cilium-cli/connectivity/check"
 	"github.com/cilium/cilium/cilium-cli/connectivity/tests"
 	"github.com/cilium/cilium/cilium-cli/utils/features"
@@ -30,7 +30,11 @@ func clientEgressTlsSniTest(ct *check.ConnectivityTest, templates map[string]str
 		WithCiliumPolicy(yamlFile).                                   // L7 allow policy TLS SNI enforcement for external target
 		WithCiliumPolicy(templates["clientEgressOnlyDNSPolicyYAML"]). // DNS resolution only
 		WithScenarios(
-			tests.PodToWorld(ct.Params().ExternalTargetIPv6Capable, tests.WithRetryAll())).
+			tests.PodToWorld(
+				ct.Params().ExternalTargetIPv6Capable,
+				false,
+				tests.WithRetryAll(),
+			)).
 		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
 			if a.Destination().Port() == 443 {
 				return check.ResultOK, check.ResultNone
@@ -38,14 +42,21 @@ func clientEgressTlsSniTest(ct *check.ConnectivityTest, templates map[string]str
 			return check.ResultDefaultDenyEgressDrop, check.ResultNone
 		})
 
+	differentExternalTargets := func() bool {
+		return ct.Params().ExternalTarget != ct.Params().ExternalOtherTarget
+	}
 	yamlFile = templates["clientEgressTLSSNIOtherPolicyYAML"]
 	newTest(fmt.Sprintf("%s-denied", testName), ct).
+		WithCondition(differentExternalTargets).
 		WithCiliumVersion("!1.15.9 !1.15.10 !1.16.2 !1.16.3").
 		WithFeatureRequirements(features.RequireEnabled(features.L7Proxy)).
 		WithFeatureRequirements(features.RequireDisabled(features.RHEL)).
-		WithCiliumPolicy(yamlFile).                                             // L7 allow policy TLS SNI enforcement for external target
-		WithCiliumPolicy(templates["clientEgressOnlyDNSPolicyYAML"]).           // DNS resolution only
-		WithScenarios(tests.PodToWorld(ct.Params().ExternalTargetIPv6Capable)). // External Target is not allowed
+		WithCiliumPolicy(yamlFile).                                   // L7 allow policy TLS SNI enforcement for external target
+		WithCiliumPolicy(templates["clientEgressOnlyDNSPolicyYAML"]). // DNS resolution only
+		WithScenarios(tests.PodToWorld(                               // External Target is not allowed
+			ct.Params().ExternalTargetIPv6Capable,
+			false,
+		)).
 		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
 			if a.Destination().Port() == 443 {
 				// SSL error as another external target (e.g. cilium.io) SNI is not allowed
@@ -54,15 +65,28 @@ func clientEgressTlsSniTest(ct *check.ConnectivityTest, templates map[string]str
 			return check.ResultDefaultDenyEgressDrop, check.ResultNone
 		})
 
+	// targetOpLabels are the DNS target labels where wildcard replacement will be done.
+	targetOpLabels, _ := template.SplitCommonSuffix(ct.Params().ExternalTarget, ct.Params().ExternalOtherTarget, ".")
+	// If the template performed wildcard replacement on labels filtered above,
+	// external other target will be implicitly disallowed.
+	wildcardPatternOperableTarget := func() bool {
+		return len(targetOpLabels) > 1
+	}
+
 	yamlFile = templates["clientEgressTLSSNIWildcardPolicyYAML"]
 	newTest(fmt.Sprintf("%s-wildcard", testName), ct).
+		WithCondition(wildcardPatternOperableTarget).
 		WithCiliumVersion(">=1.18.0").
 		WithFeatureRequirements(features.RequireEnabled(features.L7Proxy)).
 		WithFeatureRequirements(features.RequireDisabled(features.RHEL)).
 		WithCiliumPolicy(yamlFile).                                   // L7 allow policy TLS SNI enforcement for external target
 		WithCiliumPolicy(templates["clientEgressOnlyDNSPolicyYAML"]). // DNS resolution only
 		WithScenarios(
-			tests.PodToWorld(ct.Params().ExternalTargetIPv6Capable, tests.WithRetryAll())).
+			tests.PodToWorld(
+				ct.Params().ExternalTargetIPv6Capable,
+				ct.Params().ExternalTargetFakeDNS,
+				tests.WithRetryAll(),
+			)).
 		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
 			if a.Destination().Port() == 443 {
 				return check.ResultOK, check.ResultNone
@@ -72,12 +96,16 @@ func clientEgressTlsSniTest(ct *check.ConnectivityTest, templates map[string]str
 
 	yamlFile = templates["clientEgressTLSSNIWildcardPolicyYAML"]
 	newTest(fmt.Sprintf("%s-wildcard-denied", testName), ct).
+		WithCondition(wildcardPatternOperableTarget).
 		WithCiliumVersion(">=1.18.0").
 		WithFeatureRequirements(features.RequireEnabled(features.L7Proxy)).
 		WithFeatureRequirements(features.RequireDisabled(features.RHEL)).
 		WithCiliumPolicy(yamlFile).                                   // L7 allow policy TLS SNI enforcement for external target
 		WithCiliumPolicy(templates["clientEgressOnlyDNSPolicyYAML"]). // DNS resolution only
-		WithScenarios(tests.PodToWorld2(ct.Params().ExternalTargetIPv6Capable)).
+		WithScenarios(tests.PodToWorld2(
+			ct.Params().ExternalTargetIPv6Capable,
+			ct.Params().ExternalTargetFakeDNS,
+		)).
 		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
 			if a.Destination().Port() == 443 {
 				// SSL error as another external target (e.g. cilium.io) SNI is not allowed
@@ -88,13 +116,18 @@ func clientEgressTlsSniTest(ct *check.ConnectivityTest, templates map[string]str
 
 	yamlFile = templates["clientEgressTLSSNIRandomWildcardPolicyYAML"]
 	newTest(fmt.Sprintf("%s-random-wildcard", testName), ct).
+		WithCondition(wildcardPatternOperableTarget).
 		WithCiliumVersion(">=1.20.0").
 		WithFeatureRequirements(features.RequireEnabled(features.L7Proxy)).
 		WithFeatureRequirements(features.RequireDisabled(features.RHEL)).
 		WithCiliumPolicy(yamlFile).                                   // L7 allow policy TLS SNI enforcement for external target
 		WithCiliumPolicy(templates["clientEgressOnlyDNSPolicyYAML"]). // DNS resolution only
 		WithScenarios(
-			tests.PodToWorld(ct.Params().ExternalTargetIPv6Capable, tests.WithRetryAll())).
+			tests.PodToWorld(
+				ct.Params().ExternalTargetIPv6Capable,
+				ct.Params().ExternalTargetFakeDNS,
+				tests.WithRetryAll(),
+			)).
 		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
 			if a.Destination().Port() == 443 {
 				return check.ResultOK, check.ResultNone
@@ -104,12 +137,16 @@ func clientEgressTlsSniTest(ct *check.ConnectivityTest, templates map[string]str
 
 	yamlFile = templates["clientEgressTLSSNIRandomWildcardPolicyYAML"]
 	newTest(fmt.Sprintf("%s-random-wildcard-denied", testName), ct).
+		WithCondition(wildcardPatternOperableTarget).
 		WithCiliumVersion(">=1.20.0").
 		WithFeatureRequirements(features.RequireEnabled(features.L7Proxy)).
 		WithFeatureRequirements(features.RequireDisabled(features.RHEL)).
 		WithCiliumPolicy(yamlFile).                                   // L7 allow policy TLS SNI enforcement for external target
 		WithCiliumPolicy(templates["clientEgressOnlyDNSPolicyYAML"]). // DNS resolution only
-		WithScenarios(tests.PodToWorld2(ct.Params().ExternalTargetIPv6Capable)).
+		WithScenarios(tests.PodToWorld2(
+			ct.Params().ExternalTargetIPv6Capable,
+			ct.Params().ExternalTargetFakeDNS,
+		)).
 		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
 			if a.Destination().Port() == 443 {
 				// SSL error as another external target (e.g. cilium.io) SNI is not allowed
@@ -118,41 +155,46 @@ func clientEgressTlsSniTest(ct *check.ConnectivityTest, templates map[string]str
 			return check.ResultDefaultDenyEgressDrop, check.ResultNone
 		})
 
-	// Only the double wildcard related tests if the external is long enough
-	// e.g. google.com. or k8s.io. will be skipped
-	if len(strings.Split(ct.Params().ExternalTarget, ".")) > 3 {
-		yamlFile = templates["clientEgressTLSSNIDoubleWildcardPolicyYAML"]
-		newTest(fmt.Sprintf("%s-double-wildcard", testName), ct).
-			WithCiliumVersion(">=1.18.0").
-			WithFeatureRequirements(features.RequireEnabled(features.L7Proxy)).
-			WithFeatureRequirements(features.RequireDisabled(features.RHEL)).
-			WithCiliumPolicy(yamlFile).                                   // L7 allow policy TLS SNI enforcement for external target
-			WithCiliumPolicy(templates["clientEgressOnlyDNSPolicyYAML"]). // DNS resolution only
-			WithScenarios(
-				tests.PodToWorld(ct.Params().ExternalTargetIPv6Capable, tests.WithRetryAll())).
-			WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
-				if a.Destination().Port() == 443 {
-					return check.ResultOK, check.ResultNone
-				}
-				return check.ResultDefaultDenyEgressDrop, check.ResultNone
-			})
+	yamlFile = templates["clientEgressTLSSNIDoubleWildcardPolicyYAML"]
+	newTest(fmt.Sprintf("%s-double-wildcard", testName), ct).
+		WithCondition(wildcardPatternOperableTarget).
+		WithCiliumVersion(">=1.18.0").
+		WithFeatureRequirements(features.RequireEnabled(features.L7Proxy)).
+		WithFeatureRequirements(features.RequireDisabled(features.RHEL)).
+		WithCiliumPolicy(yamlFile).                                   // L7 allow policy TLS SNI enforcement for external target
+		WithCiliumPolicy(templates["clientEgressOnlyDNSPolicyYAML"]). // DNS resolution only
+		WithScenarios(
+			tests.PodToWorld(
+				ct.Params().ExternalTargetIPv6Capable,
+				ct.Params().ExternalTargetFakeDNS,
+				tests.WithRetryAll(),
+			)).
+		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			if a.Destination().Port() == 443 {
+				return check.ResultOK, check.ResultNone
+			}
+			return check.ResultDefaultDenyEgressDrop, check.ResultNone
+		})
 
-		yamlFile = templates["clientEgressTLSSNIDoubleWildcardPolicyYAML"]
-		newTest(fmt.Sprintf("%s-double-wildcard-denied", testName), ct).
-			WithCiliumVersion(">=1.18.0").
-			WithFeatureRequirements(features.RequireEnabled(features.L7Proxy)).
-			WithFeatureRequirements(features.RequireDisabled(features.RHEL)).
-			WithCiliumPolicy(yamlFile).                                   // L7 allow policy TLS SNI enforcement for external target
-			WithCiliumPolicy(templates["clientEgressOnlyDNSPolicyYAML"]). // DNS resolution only
-			WithScenarios(tests.PodToWorld2(ct.Params().ExternalTargetIPv6Capable)).
-			WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
-				if a.Destination().Port() == 443 {
-					// SSL error as another external target (e.g. cilium.io) SNI is not allowed
-					return check.ResultCurlSSLError, check.ResultNone
-				}
-				return check.ResultDefaultDenyEgressDrop, check.ResultNone
-			})
-	}
+	yamlFile = templates["clientEgressTLSSNIDoubleWildcardPolicyYAML"]
+	newTest(fmt.Sprintf("%s-double-wildcard-denied", testName), ct).
+		WithCondition(wildcardPatternOperableTarget).
+		WithCiliumVersion(">=1.18.0").
+		WithFeatureRequirements(features.RequireEnabled(features.L7Proxy)).
+		WithFeatureRequirements(features.RequireDisabled(features.RHEL)).
+		WithCiliumPolicy(yamlFile).                                   // L7 allow policy TLS SNI enforcement for external target
+		WithCiliumPolicy(templates["clientEgressOnlyDNSPolicyYAML"]). // DNS resolution only
+		WithScenarios(tests.PodToWorld2(
+			ct.Params().ExternalTargetIPv6Capable,
+			ct.Params().ExternalTargetFakeDNS,
+		)).
+		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			if a.Destination().Port() == 443 {
+				// SSL error as another external target (e.g. cilium.io) SNI is not allowed
+				return check.ResultCurlSSLError, check.ResultNone
+			}
+			return check.ResultDefaultDenyEgressDrop, check.ResultNone
+		})
 }
 
 func clientEgressL7TlsSniTest(ct *check.ConnectivityTest, templates map[string]string) {

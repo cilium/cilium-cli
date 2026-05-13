@@ -15,8 +15,8 @@ import (
 	cilium "github.com/cilium/proxy/go/cilium/api"
 
 	"github.com/cilium/cilium/pkg/endpoint/regeneration"
+	"github.com/cilium/cilium/pkg/identity"
 	"github.com/cilium/cilium/pkg/logging/logfields"
-	"github.com/cilium/cilium/pkg/option"
 	"github.com/cilium/cilium/pkg/policy/api"
 	"github.com/cilium/cilium/pkg/policy/types"
 	"github.com/cilium/cilium/pkg/time"
@@ -26,10 +26,6 @@ import (
 // PolicyContext is an interface policy resolution functions use to access the Repository.
 // This way testing code can run without mocking a full Repository.
 type PolicyContext interface {
-	// AllowLocalhost returns true if policy should allow ingress from local host.
-	// Always returns false for egress.
-	AllowLocalhost() bool
-
 	// return the namespace in which the policy rule is being resolved
 	GetNamespace() string
 
@@ -89,10 +85,6 @@ type policyContext struct {
 }
 
 var _ PolicyContext = &policyContext{}
-
-func (p *policyContext) AllowLocalhost() bool {
-	return option.Config.AlwaysAllowLocalhost()
-}
 
 // GetNamespace() returns the namespace for the policy rule being resolved
 func (p *policyContext) GetNamespace() string {
@@ -168,6 +160,9 @@ type SelectorPolicy interface {
 	// DistillPolicy returns the policy in terms of connectivity to peer
 	// Identities.
 	DistillPolicy(logger *slog.Logger, owner PolicyOwner, redirects map[string]uint16) *EndpointPolicy
+
+	// GetSelectorSnapshot returns a selector snapshot if available and valid
+	GetSelectorSnapshot() SelectorSnapshot
 }
 
 // selectorPolicy is a structure which contains the resolved policy for a
@@ -191,6 +186,10 @@ type selectorPolicy struct {
 	// EgressPolicyEnabled specifies whether this policy contains any policy
 	// at egress.
 	EgressPolicyEnabled bool
+}
+
+func (p *selectorPolicy) GetSelectorSnapshot() SelectorSnapshot {
+	return p.SelectorCache.GetSelectorSnapshot()
 }
 
 func (p *selectorPolicy) Attach(ctx PolicyContext) {
@@ -270,7 +269,7 @@ func (p *EndpointPolicy) CopyMapStateFrom(m MapStateMap) {
 // PolicyOwner is anything which consumes a EndpointPolicy.
 type PolicyOwner interface {
 	GetID() uint64
-	GetNamedPort(ingress bool, name string, proto u8proto.U8proto) uint16
+	GetNamedPort(ingress bool, name string, proto u8proto.U8proto, destIdentities iter.Seq[identity.NumericIdentity]) uint16
 	PolicyDebug(msg string, attrs ...any)
 	IsHost() bool
 	PreviousMapState() *MapState
@@ -360,10 +359,6 @@ func (p *selectorPolicy) DistillPolicy(logger *slog.Logger, policyOwner PolicyOw
 	// after the computation of PolicyMapState has started.
 	p.L4Policy.Ingress.toMapState(logger, calculatedPolicy)
 	p.L4Policy.Egress.toMapState(logger, calculatedPolicy)
-
-	if !policyOwner.IsHost() {
-		calculatedPolicy.policyMapState.determineAllowLocalhostIngress(p.L4Policy.Ingress.features)
-	}
 
 	return calculatedPolicy
 }

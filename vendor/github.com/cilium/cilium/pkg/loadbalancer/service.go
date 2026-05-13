@@ -105,10 +105,24 @@ const (
 	// TrafficDistributionDefault will ignore any topology aware hints for choosing the backends.
 	TrafficDistributionDefault = TrafficDistribution("")
 
-	// TrafficDistributionPreferClose Indicates preference for routing traffic to topologically close backends,
-	// that is to backends that are in the same zone.
+	// TrafficDistributionPreferSameZone indicates preference for routing traffic to backends
+	// in the same zone as the client.
+	TrafficDistributionPreferSameZone = TrafficDistribution("PreferSameZone")
+
+	// TrafficDistributionPreferClose is a deprecated alias for PreferSameZone.
 	TrafficDistributionPreferClose = TrafficDistribution("PreferClose")
+
+	// TrafficDistributionPreferSameNode indicates preference for routing traffic to backends
+	// on the same node as the client.
+	TrafficDistributionPreferSameNode = TrafficDistribution("PreferSameNode")
 )
+
+// RequiresZoneUpdate returns true if the traffic distribution policy
+// depends on node topology zone changes.
+func (td TrafficDistribution) RequiresZoneUpdate() bool {
+	return td == TrafficDistributionPreferSameZone ||
+		td == TrafficDistributionPreferClose
+}
 
 func (svc *Service) DeepEqual(other *Service) bool {
 	return svc.deepEqual(other) &&
@@ -145,9 +159,10 @@ func (svc *Service) GetSourceRangesPolicy() SVCSourceRangesPolicy {
 func (svc *Service) GetSourceRangesEnabled(svcType SVCType, lbSourceRangeAllTypes bool) bool {
 	if lbSourceRangeAllTypes {
 		return len(svc.SourceRanges) > 0
-	} else {
-		return len(svc.SourceRanges) > 0 && svcType == SVCTypeLoadBalancer
 	}
+	// loadBalancerSourceRanges also applies to ExternalIPs frontends of a LoadBalancer service.
+	return len(svc.SourceRanges) > 0 &&
+		(svcType == SVCTypeLoadBalancer || svcType == SVCTypeExternalIPs)
 }
 
 func (svc *Service) GetAnnotations() map[string]string {
