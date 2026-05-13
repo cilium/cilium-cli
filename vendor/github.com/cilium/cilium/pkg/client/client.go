@@ -330,7 +330,7 @@ func FormatStatusResponse(w io.Writer, sr *models.StatusResponse, sd StatusDetai
 			sr.ContainerRuntime.State, sr.ContainerRuntime.Msg)
 	}
 
-	kubeProxyDevices := ""
+	var kubeProxyDevices strings.Builder
 	if sr.Kubernetes != nil {
 		fmt.Fprintf(w, "Kubernetes:\t%s\t%s\n", sr.Kubernetes.State, sr.Kubernetes.Msg)
 		if sr.Kubernetes.State != models.K8sStatusStateDisabled {
@@ -343,16 +343,16 @@ func FormatStatusResponse(w io.Writer, sr *models.StatusResponse, sd StatusDetai
 		devices := ""
 		if sr.KubeProxyReplacement.Mode != models.KubeProxyReplacementModeFalse {
 			for i, dev := range sr.KubeProxyReplacement.DeviceList {
-				kubeProxyDevices += fmt.Sprintf("%s %s", dev.Name, strings.Join(dev.IP, " "))
+				fmt.Fprintf(&kubeProxyDevices, "%s %s", dev.Name, strings.Join(dev.IP, " "))
 				if dev.Name == sr.KubeProxyReplacement.DirectRoutingDevice {
-					kubeProxyDevices += " (Direct Routing)"
+					kubeProxyDevices.WriteString(" (Direct Routing)")
 				}
 				if i+1 != len(sr.KubeProxyReplacement.Devices) {
-					kubeProxyDevices += ", "
+					kubeProxyDevices.WriteString(", ")
 				}
 			}
 			if len(sr.KubeProxyReplacement.DeviceList) > 0 {
-				devices = "[" + kubeProxyDevices + "]"
+				devices = "[" + kubeProxyDevices.String() + "]"
 			}
 		}
 		fmt.Fprintf(w, "KubeProxyReplacement:\t%s\t%s\n",
@@ -451,24 +451,24 @@ func FormatStatusResponse(w io.Writer, sr *models.StatusResponse, sd StatusDetai
 		FormatStatusResponseRemoteClusters(w, sr.ClusterMesh.Clusters, verbosity)
 	}
 
-	if sr.IPV4BigTCP != nil {
+	if sr.IPv4BigTCP != nil {
 		status := "Disabled"
-		if sr.IPV4BigTCP.Enabled {
-			max := fmt.Sprintf("[%d]", sr.IPV4BigTCP.MaxGSO)
-			if sr.IPV4BigTCP.MaxGRO != sr.IPV4BigTCP.MaxGSO {
-				max = fmt.Sprintf("[%d, %d]", sr.IPV4BigTCP.MaxGRO, sr.IPV4BigTCP.MaxGSO)
+		if sr.IPv4BigTCP.Enabled {
+			max := fmt.Sprintf("[%d]", sr.IPv4BigTCP.MaxGSO)
+			if sr.IPv4BigTCP.MaxGRO != sr.IPv4BigTCP.MaxGSO {
+				max = fmt.Sprintf("[%d, %d]", sr.IPv4BigTCP.MaxGRO, sr.IPv4BigTCP.MaxGSO)
 			}
 			status = fmt.Sprintf("Enabled\t%s", max)
 		}
 		fmt.Fprintf(w, "IPv4 BIG TCP:\t%s\n", status)
 	}
 
-	if sr.IPV6BigTCP != nil {
+	if sr.IPv6BigTCP != nil {
 		status := "Disabled"
-		if sr.IPV6BigTCP.Enabled {
-			max := fmt.Sprintf("[%d]", sr.IPV6BigTCP.MaxGSO)
-			if sr.IPV6BigTCP.MaxGRO != sr.IPV6BigTCP.MaxGSO {
-				max = fmt.Sprintf("[%d, %d]", sr.IPV6BigTCP.MaxGRO, sr.IPV6BigTCP.MaxGSO)
+		if sr.IPv6BigTCP.Enabled {
+			max := fmt.Sprintf("[%d]", sr.IPv6BigTCP.MaxGSO)
+			if sr.IPv6BigTCP.MaxGRO != sr.IPv6BigTCP.MaxGSO {
+				max = fmt.Sprintf("[%d, %d]", sr.IPv6BigTCP.MaxGRO, sr.IPv6BigTCP.MaxGSO)
 			}
 			status = fmt.Sprintf("Enabled\t%s", max)
 		}
@@ -548,7 +548,7 @@ func FormatStatusResponse(w io.Writer, sr *models.StatusResponse, sd StatusDetai
 
 		if sr.Masquerading.EnabledProtocols == nil {
 			status = enabled(sr.Masquerading.Enabled)
-		} else if !sr.Masquerading.EnabledProtocols.IPV4 && !sr.Masquerading.EnabledProtocols.IPV6 {
+		} else if !sr.Masquerading.EnabledProtocols.IPv4 && !sr.Masquerading.EnabledProtocols.IPv6 {
 			status = enabled(false)
 		} else {
 			if sr.Masquerading.Mode == models.MasqueradingModeBPF {
@@ -578,7 +578,7 @@ func FormatStatusResponse(w io.Writer, sr *models.StatusResponse, sd StatusDetai
 			}
 
 			status = fmt.Sprintf("%s [IPv4: %s, IPv6: %s]", status,
-				enabled(sr.Masquerading.EnabledProtocols.IPV4), enabled(sr.Masquerading.EnabledProtocols.IPV6))
+				enabled(sr.Masquerading.EnabledProtocols.IPv4), enabled(sr.Masquerading.EnabledProtocols.IPv6))
 		}
 		fmt.Fprintf(w, "Masquerading:\t%s\n", status)
 	}
@@ -765,8 +765,8 @@ func FormatStatusResponse(w io.Writer, sr *models.StatusResponse, sd StatusDetai
 		fmt.Fprintf(tab, "  Socket LB:\t%s\n", socketLB)
 		fmt.Fprintf(tab, "  Socket LB Tracing:\t%s\n", socketLBTracing)
 		fmt.Fprintf(tab, "  Socket LB Coverage:\t%s\n", socketLBCoverage)
-		if kubeProxyDevices != "" {
-			fmt.Fprintf(tab, "  Devices:\t%s\n", kubeProxyDevices)
+		if kubeProxyDevices.Len() > 0 {
+			fmt.Fprintf(tab, "  Devices:\t%s\n", kubeProxyDevices.String())
 		}
 		if mode != "" {
 			fmt.Fprintf(tab, "  Mode:\t%s\n", mode)

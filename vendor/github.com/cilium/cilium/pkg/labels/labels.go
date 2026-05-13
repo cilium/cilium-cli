@@ -58,16 +58,6 @@ const (
 	// with IDNameHost if the kube-apiserver is running on the local host.
 	IDNameKubeAPIServer = "kube-apiserver"
 
-	// IDNameEncryptedOverlay is the label used to identify encrypted overlay
-	// traffic.
-	//
-	// It is part of the reserved identity 11 and signals that overlay traffic
-	// with this identity must be IPSec encrypted before leaving the host.
-	//
-	// This identity should never be seen on the wire and is used only on the
-	// local host.
-	IDNameEncryptedOverlay = "overlay-to-encrypt"
-
 	// IDNameIngress is the label used to identify Ingress proxies. It is part
 	// of the reserved identity 8.
 	IDNameIngress = "ingress"
@@ -156,6 +146,10 @@ const (
 	// LabelSourceCIDRGroupKeyPrefix is the source as a k8s selector key prefix
 	LabelSourceCIDRGroupKeyPrefix = LabelSourceCIDRGroup + SourceDelimiter
 
+	// CIDRGroupEncodedSep is the separator for encoded key+value CIDRGroup labels.
+	// Safe because K8s label keys/values cannot contain "+".
+	CIDRGroupEncodedSep = "+"
+
 	// LabelSourceNode is the label source for remote-nodes.
 	LabelSourceNode = "node"
 
@@ -171,6 +165,12 @@ const (
 	// LabelSourceDirectory is the label source for policies read from files
 	LabelSourceDirectory = "directory"
 )
+
+// EncodedCIDRGroupLabel builds a label with the value baked into the key,
+// used for collision-free matching of CIDRGroup labels.
+func EncodedCIDRGroupLabel(key, val, source string) Label {
+	return Label{Key: key + CIDRGroupEncodedSep + val, Source: source}
+}
 
 type labelSourceDelimiter rune
 

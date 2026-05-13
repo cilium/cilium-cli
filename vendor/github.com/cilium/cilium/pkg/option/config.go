@@ -131,9 +131,6 @@ const (
 	// Add unreachable routes on pod deletion
 	EnableUnreachableRoutes = "enable-unreachable-routes"
 
-	// EncryptInterface enables encryption on specified interface
-	EncryptInterface = "encrypt-interface"
-
 	// EncryptNode enables node IP encryption
 	EncryptNode = "encrypt-node"
 
@@ -176,9 +173,6 @@ const (
 	// EnableK8s operation of Kubernetes-related services/controllers.
 	// Intended for operating cilium with CNI-compatible orchestrators other than Kubernetes. (default is true)
 	EnableK8s = "enable-k8s"
-
-	// K8sAPIServer is the kubernetes api address server (for https use --k8s-kubeconfig-path instead)
-	K8sAPIServer = "k8s-api-server"
 
 	// K8sAPIServerURLs is the kubernetes api address server url
 	K8sAPIServerURLs = "k8s-api-server-urls"
@@ -580,7 +574,8 @@ const (
 	LogSystemLoadConfigName = "log-system-load"
 
 	// DisableCiliumEndpointCRDName is the name of the option to disable
-	// use of the CEP CRD
+	// use of the CEP CRD. Can be used along with operator's 'ces-controller-mode=slim'
+	// mode to distribute endpoints without creating them.
 	DisableCiliumEndpointCRDName = "disable-endpoint-crd"
 
 	// MaxCtrlIntervalName and MaxCtrlIntervalNameEnv allow configuration
@@ -599,6 +594,9 @@ const (
 
 	// EnableIPv6Name is the name of the option to enable IPv6 support
 	EnableIPv6Name = "enable-ipv6"
+
+	// PreferIpv6Name is the name of the option to prefer IPv6 addresses
+	PreferIpv6Name = "prefer-ipv6"
 
 	// EnableIPv6NDPName is the name of the option to enable IPv6 NDP support
 	EnableIPv6NDPName = "enable-ipv6-ndp"
@@ -690,17 +688,6 @@ const (
 	// L2AnnouncerRetryPeriod, on renew failure, retry after X amount of time.
 	L2AnnouncerRetryPeriod = "l2-announcements-retry-period"
 
-	// EnableEncryptionStrictMode is the name of the option to enable strict encryption mode.
-	EnableEncryptionStrictMode = "enable-encryption-strict-mode"
-
-	// EncryptionStrictModeCIDR is the CIDR in which the strict encryption mode should be enforced.
-	EncryptionStrictModeCIDR = "encryption-strict-mode-cidr"
-
-	// EncryptionStrictModeAllowRemoteNodeIdentities allows dynamic lookup of remote node identities.
-	// This is required when tunneling is used
-	// or direct routing is used and the node CIDR and pod CIDR overlap.
-	EncryptionStrictModeAllowRemoteNodeIdentities = "encryption-strict-mode-allow-remote-node-identities"
-
 	// EnableEncryptionStrictModeEgress enables strict mode encryption enforcement for egress traffic.
 	// When enabled, all unencrypted pod-to-pod egress traffic will be dropped.
 	EnableEncryptionStrictModeEgress = "enable-encryption-strict-mode-egress"
@@ -754,6 +741,9 @@ const (
 
 	// EndpointRegenInterval is the interval of the periodic endpoint regeneration loop.
 	EndpointRegenInterval = "endpoint-regen-interval"
+
+	// EndpointPolicyUpdateTimeout is the timeout duration for Endpoint policy updates.
+	EndpointPolicyUpdateTimeout = "endpoint-policy-update-timeout"
 
 	// LocalRouterIPv4 is the link-local IPv4 address to use for Cilium router device
 	LocalRouterIPv4 = "local-router-ipv4"
@@ -998,6 +988,9 @@ const (
 
 	// EnableCiliumNodeCRD is the name of the option to enable use of the CiliumNode CRD
 	EnableCiliumNodeCRDName = "enable-ciliumnode-crd"
+
+	// EnableDatapathPlugins is the name of the option to enable datapath plugins.
+	EnableDatapathPlugins = "enable-datapath-plugins"
 )
 
 // Default string arguments
@@ -1094,6 +1087,30 @@ const (
 	BGPRouterIDAllocationModeIPPool = "ip-pool"
 )
 
+// IPSec-related options.
+const (
+	// EnableIPSec is the name of the option which enables the IPsec feature.
+	EnableIPSec = "enable-ipsec"
+
+	// Duration of the IPsec key rotation. After that time, we will clean the
+	// previous IPsec key from the node.
+	IPsecKeyRotationDuration = "ipsec-key-rotation-duration"
+
+	// Enable watcher for IPsec key. If disabled, a restart of the agent will
+	// be necessary on key rotations.
+	EnableIPsecKeyWatcher = "enable-ipsec-key-watcher"
+
+	// Enable caching for XfrmState for IPSec. Significantly reduces CPU usage
+	// in large clusters.
+	EnableIPSecXfrmStateCaching = "enable-ipsec-xfrm-state-caching"
+
+	// IPSecKeyFile is the name of the option for ipsec key file
+	IPSecKeyFile = "ipsec-key-file"
+
+	// Use the CiliumInternalIPs (vs. NodeInternalIPs) for IPsec encapsulation.
+	UseCiliumInternalIPForIPsec = "use-cilium-internal-ip-for-ipsec"
+)
+
 // getEnvName returns the environment variable to be used for the given option name.
 func getEnvName(option string) string {
 	under := strings.ReplaceAll(option, "-", "_")
@@ -1181,8 +1198,6 @@ type UnsafeDaemonConfig struct {
 
 	BPFSocketLBHostnsOnly bool
 
-	EncryptInterface []string // Set of network facing interface to encrypt over
-
 	// AllowLocalhost defines when to allows the local stack to local endpoints
 	// values: { auto | always | policy }
 	AllowLocalhost string
@@ -1197,14 +1212,13 @@ type DaemonConfig struct {
 	shaSum [32]byte
 
 	CreationTime       time.Time
-	BpfDir             string   // BPF template files directory
-	LibDir             string   // Cilium library files directory
-	RunDir             string   // Cilium runtime directory
-	ExternalEnvoyProxy bool     // Whether Envoy is deployed as external DaemonSet or not
-	EnableXDPPrefilter bool     // Enable XDP-based prefiltering
-	EnableTCX          bool     // Enable attaching endpoint programs using tcx if the kernel supports it
-	EncryptInterface   []string // Set of network facing interface to encrypt over
-	EncryptNode        bool     // Set to true for encrypting node IP traffic
+	BpfDir             string // BPF template files directory
+	LibDir             string // Cilium library files directory
+	RunDir             string // Cilium runtime directory
+	ExternalEnvoyProxy bool   // Whether Envoy is deployed as external DaemonSet or not
+	EnableXDPPrefilter bool   // Enable XDP-based prefiltering
+	EnableTCX          bool   // Enable attaching endpoint programs using tcx if the kernel supports it
+	EncryptNode        bool   // Set to true for encrypting node IP traffic
 
 	DatapathMode string // Datapath mode
 	RoutingMode  string // Routing mode
@@ -1356,6 +1370,10 @@ type DaemonConfig struct {
 
 	// EnableIPv6 is true when IPv6 is enabled
 	EnableIPv6 bool
+
+	// PreferIpv6 is true when IPv6 addresses should be preferred over
+	// IPv4 when both are available.
+	PreferIpv6 bool
 
 	// EnableNat46X64Gateway is true when L3 based NAT46 and NAT64 translation is enabled
 	EnableNat46X64Gateway bool
@@ -1866,6 +1884,9 @@ type DaemonConfig struct {
 
 	// EnableCiliumNodeCRD enables the use of CiliumNode CRD
 	EnableCiliumNodeCRD bool
+
+	// Enables datapath plugins features.
+	EnableDatapathPlugins bool
 }
 
 var (
@@ -1881,6 +1902,7 @@ var (
 		HealthCheckICMPFailureThreshold: defaults.HealthCheckICMPFailureThreshold,
 		EnableIPv4:                      defaults.EnableIPv4,
 		EnableIPv6:                      defaults.EnableIPv6,
+		PreferIpv6:                      defaults.PreferIpv6,
 		EnableIPv6NDP:                   defaults.EnableIPv6NDP,
 		EnableSCTP:                      defaults.EnableSCTP,
 		EnableL7Proxy:                   defaults.EnableL7Proxy,
@@ -1926,6 +1948,8 @@ var (
 		EnableCiliumNodeCRD: defaults.EnableCiliumNodeCRD,
 
 		PolicyAccounting: defaults.PolicyAccounting,
+
+		EnableDatapathPlugins: defaults.EnableDatapathPlugins,
 	}
 )
 
@@ -2410,6 +2434,7 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 	c.DebugVerbose = vp.GetStringSlice(DebugVerbose)
 	c.EnableIPv4 = vp.GetBool(EnableIPv4Name)
 	c.EnableIPv6 = vp.GetBool(EnableIPv6Name)
+	c.PreferIpv6 = vp.GetBool(PreferIpv6Name)
 	c.EnableIPv6NDP = vp.GetBool(EnableIPv6NDPName)
 	c.EnableSRv6 = vp.GetBool(EnableSRv6)
 	c.EnableFibTableIDAnnotation = vp.GetBool(EnableFibTableIDAnnotation)
@@ -2449,7 +2474,6 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 	c.CgroupPathMKE = vp.GetString(CgroupPathMKE)
 	c.EnableHostFirewall = vp.GetBool(EnableHostFirewall)
 	c.EnableLocalRedirectPolicy = vp.GetBool(EnableLocalRedirectPolicy)
-	c.UnsafeDaemonConfigOption.EncryptInterface = vp.GetStringSlice(EncryptInterface)
 	c.EncryptNode = vp.GetBool(EncryptNode)
 	c.IdentityChangeGracePeriod = vp.GetDuration(IdentityChangeGracePeriod)
 	c.CiliumIdentityMaxJitter = vp.GetDuration(CiliumIdentityMaxJitter)
@@ -2579,27 +2603,6 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 		if !c.EnableIPv4 || !c.EnableIPv6 {
 			logging.Fatal(logger, fmt.Sprintf("%s requires both --%s and --%s enabled", EnableNat46X64Gateway, EnableIPv4Name, EnableIPv6Name))
 		}
-	}
-
-	// This code block is for deprecated options and will be removed in Cilium 1.20.
-	encryptionStrictModeEnabled := vp.GetBool(EnableEncryptionStrictMode)
-	if encryptionStrictModeEnabled {
-		if c.EnableIPv6 {
-			logger.Info("Encryption strict mode only supports IPv4. IPv6 traffic is not protected and can be leaked.")
-		}
-
-		strictCIDR := vp.GetString(EncryptionStrictModeCIDR)
-		c.EncryptionStrictEgressCIDR, err = netip.ParsePrefix(strictCIDR)
-		if err != nil {
-			logging.Fatal(logger, fmt.Sprintf("Cannot parse CIDR %s from --%s option", strictCIDR, EncryptionStrictModeCIDR), logfields.Error, err)
-		}
-
-		if !c.EncryptionStrictEgressCIDR.Addr().Is4() {
-			logging.Fatal(logger, fmt.Sprintf("%s must be an IPv4 CIDR", EncryptionStrictModeCIDR))
-		}
-
-		c.EncryptionStrictEgressAllowRemoteNodeIdentities = vp.GetBool(EncryptionStrictModeAllowRemoteNodeIdentities)
-		c.EnableEncryptionStrictModeEgress = encryptionStrictModeEnabled
 	}
 
 	encryptionStrictModeEgressEnabled := vp.GetBool(EnableEncryptionStrictModeEgress)
@@ -2769,12 +2772,10 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 		logging.Fatal(logger, "Unable to parse excluded local addresses", logfields.Error, err)
 	}
 
-	// Ensure CiliumEndpointSlice is enabled only if CiliumEndpointCRD is enabled too.
+	// Relaxed: In operator-driven slim mode configurations, both CiliumEndpointSlices
+	// and DisableCiliumEndpointCRD can be true concurrently. The synchronization
+	// components skip standalone CEP creation in agent while leveraging CEPs.
 	c.EnableCiliumEndpointSlice = vp.GetBool(EnableCiliumEndpointSlice)
-	if c.EnableCiliumEndpointSlice && c.DisableCiliumEndpointCRD {
-		logging.Fatal(logger, fmt.Sprintf("Running Cilium with %s=%t requires %s set to false to enable CiliumEndpoint CRDs.",
-			EnableCiliumEndpointSlice, c.EnableCiliumEndpointSlice, DisableCiliumEndpointCRDName))
-	}
 
 	// To support K8s NetworkPolicy
 	c.EnableK8sNetworkPolicy = vp.GetBool(EnableK8sNetworkPolicy)
@@ -2803,7 +2804,7 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 			logger.Warn(fmt.Sprintf("Running Cilium with %q=%q requires identity allocation via CRDs. Changing %s to %q", KVStore, theKVStore, IdentityAllocationMode, IdentityAllocationModeCRD))
 			c.IdentityAllocationMode = IdentityAllocationModeCRD
 		}
-		if c.DisableCiliumEndpointCRD && NetworkPolicyEnabled(c) {
+		if c.DisableCiliumEndpointCRD && NetworkPolicyEnabled(c) && !c.EnableCiliumEndpointSlice {
 			logger.Warn(fmt.Sprintf("Running Cilium with %q=%q requires endpoint CRDs when network policy enforcement system is enabled. Changing %s to %t", KVStore, theKVStore, DisableCiliumEndpointCRDName, false))
 			c.DisableCiliumEndpointCRD = false
 		}
@@ -2883,6 +2884,9 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 		)
 		c.ConnectivityProbeFrequencyRatio = defaults.ConnectivityProbeFrequencyRatio
 	}
+
+	// Enable datapath plugins.
+	c.EnableDatapathPlugins = vp.GetBool(EnableDatapathPlugins)
 }
 
 func (c *DaemonConfig) PopulateEnableCiliumNodeCRD(logger *slog.Logger, vp *viper.Viper) {
@@ -3313,7 +3317,6 @@ func (c *DaemonConfig) checksum() [32]byte {
 	sumConfig := *c
 	// Ignore variable parts
 	sumConfig.Opts = nil
-	sumConfig.UnsafeDaemonConfigOption.EncryptInterface = nil
 	cBytes, err := json.Marshal(&sumConfig)
 	if err != nil {
 		return [32]byte{}
@@ -3370,8 +3373,7 @@ func (c *DaemonConfig) diffFromFile() error {
 
 		diff = cmp.Diff(&config, c, opts,
 			cmpopts.IgnoreTypes(&IntOptions{}),
-			cmpopts.IgnoreTypes(&OptionLibrary{}),
-			cmpopts.IgnoreFields(DaemonConfig{}, "EncryptInterface"))
+			cmpopts.IgnoreTypes(&OptionLibrary{}))
 	}
 	return fmt.Errorf("Config differs:\n%s", diff)
 }
@@ -3549,7 +3551,7 @@ func InitConfig(logger *slog.Logger, cmd *cobra.Command, programName, configName
 		// loading the configuration file since on configuration file read failure
 		// we will emit a debug log entry.
 		if vp.GetBool(DebugArg) {
-			logging.SetLogLevelToDebug()
+			logging.SetLogLevel(slog.LevelDebug)
 		}
 
 		// If a config file is found, read it in.
@@ -3568,7 +3570,7 @@ func InitConfig(logger *slog.Logger, cmd *cobra.Command, programName, configName
 		// Check for the debug flag again now that the configuration file may has
 		// been loaded, as it might have changed.
 		if vp.GetBool(DebugArg) {
-			logging.SetLogLevelToDebug()
+			logging.SetLogLevel(slog.LevelDebug)
 		}
 	}
 }

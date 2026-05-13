@@ -71,7 +71,16 @@ func (m *BpfMetadata) validate(all bool) error {
 
 	// no validation rules for EnforcePolicyOnL7Lb
 
-	// no validation rules for ProxyId
+	if m.GetProxyId() > 65535 {
+		err := BpfMetadataValidationError{
+			field:  "ProxyId",
+			reason: "value must be less than or equal to 65535",
+		}
+		if !all {
+			return err
+		}
+		errors = append(errors, err)
+	}
 
 	if all {
 		switch v := interface{}(m.GetPolicyUpdateWarningLimit()).(type) {
@@ -160,6 +169,35 @@ func (m *BpfMetadata) validate(all bool) error {
 		if err := v.Validate(); err != nil {
 			return BpfMetadataValidationError{
 				field:  "CacheGcInterval",
+				reason: "embedded message failed validation",
+				cause:  err,
+			}
+		}
+	}
+
+	if all {
+		switch v := interface{}(m.GetNpdsConfig()).(type) {
+		case interface{ ValidateAll() error }:
+			if err := v.ValidateAll(); err != nil {
+				errors = append(errors, BpfMetadataValidationError{
+					field:  "NpdsConfig",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		case interface{ Validate() error }:
+			if err := v.Validate(); err != nil {
+				errors = append(errors, BpfMetadataValidationError{
+					field:  "NpdsConfig",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		}
+	} else if v, ok := interface{}(m.GetNpdsConfig()).(interface{ Validate() error }); ok {
+		if err := v.Validate(); err != nil {
+			return BpfMetadataValidationError{
+				field:  "NpdsConfig",
 				reason: "embedded message failed validation",
 				cause:  err,
 			}

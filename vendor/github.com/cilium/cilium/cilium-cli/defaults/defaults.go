@@ -171,23 +171,23 @@ var (
 		// renovate: datasource=docker
 		"ConnectivityCheckJSONMockImage": "quay.io/cilium/json-mock:v1.3.9@sha256:c98b26177a5a60020e5aa404896d55f0ab573d506f42acfb4aa4f5705a5c6f56",
 		// renovate: datasource=docker
-		"ConnectivityDNSTestServerImage": "registry.k8s.io/coredns/coredns:v1.14.1@sha256:82b57287b29beb757c740dbbe68f2d4723da94715b563fffad5c13438b71b14a",
+		"ConnectivityDNSTestServerImage": "registry.k8s.io/coredns/coredns:v1.14.2@sha256:e7e6440cfd1e919280958f5b5a6ab2b184d385bba774c12ad2a9e1e4183f90d9",
 		// renovate: datasource=docker
 		"ConnectivityTestConnDisruptImage": "quay.io/cilium/test-connection-disruption:v0.0.17@sha256:62374cfd0e87e6541244331ccf477a21c527c3eefa9d841b97af79996939be0c",
 		// renovate: datasource=docker
-		"ConnectivityTestFRRImage": "quay.io/frrouting/frr:10.5.1@sha256:848482643a8d6f56452b659ea68f6138472bb57414a4f295a7c4107a0416269c",
+		"ConnectivityTestFRRImage": "quay.io/frrouting/frr:10.5.3@sha256:37b42d2b340c322edc5f20dc4598373adb6e813e95cc9d4a18f64f9a37c98a4c",
 		// renovate: datasource=docker
-		"ConnectivityTestSocatImage": "docker.io/alpine/socat:1.8.0.3@sha256:9a44e2731464d8eeb1c1d36fb25c0335fb166ce1064534a2ac53556c4dcd8fb5",
+		"ConnectivityTestSocatImage": "docker.io/alpine/socat:1.8.0.3@sha256:376403afeffc040ac30d8f3f67c43f47ccaf4d8916e80bfff2bc5736320abb10",
 	}
 
 	ConnectivityCheckOptionalImagesTest = map[string]string{
 		// renovate: datasource=docker
-		"ConnectivityTestEchoImage": "gcr.io/k8s-staging-gateway-api/echo-advanced:v20240412-v1.0.0-394-g40c666fd",
+		"ConnectivityTestEchoImage": "gcr.io/k8s-staging-gateway-api/echo-advanced:v20251204-v1.4.1",
 	}
 
 	ConnectivityCheckImagesPerf = map[string]string{
 		// renovate: datasource=docker
-		"ConnectivityPerformanceImage": "quay.io/cilium/network-perf:3.20-1770904331-3e75bfc@sha256:ff2dd8340f56f0fa08e6cdfb00de4f5b9cc11eba1c74c4e284b1b65cc601b4cb",
+		"ConnectivityPerformanceImage": "quay.io/cilium/network-perf:3.20-1772622563-6fd6a90@sha256:3bb01019a14a17d07b29bbc39cdd57da7c4115f5d1a626164f4b1f296f6a9001",
 	}
 
 	// The following variables are set at compile time via LDFLAGS.

@@ -26,6 +26,7 @@ const (
 	ciliumSPIREServerConfigMapName     = defaults.SPIREServerConfigMapName
 	ciliumSPIREAgentConfigMapName      = defaults.SPIREAgentConfigMapName
 	clustermeshApiserverDeploymentName = defaults.ClusterMeshDeploymentName
+	clustermeshCertgenCronJobName      = "clustermesh-apiserver-generate-certs"
 	gkeConfigMapsName                  = "gke-config-maps"
 	gkeHubbleConfigMap                 = "cilium-hubble-config"
 	gkeOverrideConfigMap               = "cilium-config-emergency-override"
@@ -65,6 +66,7 @@ const (
 	ciliumEtcdSecretFileName                 = "cilium-etcd-secrets-secret-<ts>.yaml"
 	ciliumIdentitiesFileName                 = "ciliumidentities-<ts>.yaml"
 	ciliumCIDRGroupsFileName                 = "ciliumcidrgroups-<ts>.yaml"
+	ciliumL2AnnouncementPoliciesFileName     = "ciliuml2announcementpolicies-<ts>.yaml"
 	ciliumLocalRedirectPoliciesFileName      = "ciliumlocalredirectpolicies-<ts>.yaml"
 	ciliumLogsFileName                       = "logs-%s-%s-<ts>.log"
 	ciliumPreviousLogsFileName               = "logs-%s-%s-<ts>-prev.log"
@@ -74,6 +76,8 @@ const (
 	ciliumOperatorDeploymentFileName         = "cilium-operator-deployment-<ts>.yaml"
 	ciliumPodIPPoolsFileName                 = "ciliumpodippools-<ts>.yaml"
 	clustermeshApiserverDeploymentFileName   = "clustermesh-apiserver-deployment-<ts>.yaml"
+	clustermeshCertgenCronJobFileName        = "clustermesh-generate-certs-cronjob-<ts>.yaml"
+	clustermeshCertManagerCertsFileName      = "clustermesh-certificates-<ts>.yaml"
 	metricsFileName                          = "metrics-%s-%s-<ts>.txt"
 	cniConfigMapFileName                     = "cni-configmap-<ts>.yaml"
 	cniConfigFileName                        = "cniconf-%s-%s-<ts>.txt"

@@ -192,6 +192,10 @@ const (
 	// EnableIPv6 is the default value for IPv6 enablement
 	EnableIPv6 = true
 
+	// PreferIpv6 is the default value for preferring IPv6 addresses
+	// over IPv4 when both are available.
+	PreferIpv6 = false
+
 	// EnableIPv6NDP is the default value for IPv6 NDP support enablement
 	EnableIPv6NDP = false
 
@@ -367,12 +371,6 @@ const (
 	// AWSResultsPerApiCall is the maximum number of objects to fetch per paginated API call
 	AWSResultsPerApiCall = 1000
 
-	// IPAMAPIBurst is the default burst value when rate limiting access to external APIs
-	IPAMAPIBurst = 20
-
-	// IPAMAPIQPSLimit is the default QPS limit when rate limiting access to external APIs
-	IPAMAPIQPSLimit = 4.0
-
 	// AutoCreateCiliumNodeResource enables automatic creation of a
 	// CiliumNode resource for the local node
 	AutoCreateCiliumNodeResource = true
@@ -545,6 +543,9 @@ const (
 
 	// PolicyAccouting is the default value for option.PolicyAccounting
 	PolicyAccounting = true
+
+	// EnableDatapathPlugins is the default value for option.EnableDatapathPlugins
+	EnableDatapathPlugins = false
 )
 
 var (

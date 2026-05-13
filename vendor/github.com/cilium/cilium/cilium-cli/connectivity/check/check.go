@@ -52,11 +52,13 @@ type Parameters struct {
 	AssumeCiliumVersion       string
 	CiliumNamespace           string
 	TestNamespace             string
+	SharedTestNamespace       string
 	TestNamespaceIndex        int
 	TestConcurrency           int
 	SingleNode                bool
 	PrintFlows                bool
 	ForceDeploy               bool
+	CleanupOnly               bool
 	Hubble                    bool
 	HubbleServer              string
 	K8sLocalHostTest          bool
@@ -91,6 +93,7 @@ type Parameters struct {
 	NamespaceLabels           map[string]string
 	NamespaceAnnotations      map[string]string
 	ExternalTargetIPv6Capable bool
+	ExternalTargetFakeDNS     bool
 	ExternalTarget            string
 	ExternalOtherTarget       string
 	ExternalCIDRv4            string
@@ -125,10 +128,12 @@ type Parameters struct {
 	ExpectedDropReasons []string
 	ExpectedXFRMErrors  []string
 
-	CodeOwners        []string
-	LogCodeOwners     bool
-	ExcludeCodeOwners []string
-	LogCheckLevels    []string
+	CodeOwners              []string
+	LogCodeOwners           bool
+	ExcludeCodeOwners       []string
+	LogCheckLevels          []string
+	LogCheckExtraExceptions []string
+	LogCheckOnlyTestTime    bool
 
 	FlushCT               bool
 	SecondaryNetworkIface string
@@ -145,6 +150,7 @@ type Parameters struct {
 	CurlInsecure   bool
 	CurlParallel   uint
 
+	ExitZeroOnFailure       bool
 	CollectSysdumpOnFailure bool
 	SysdumpOptions          sysdump.Options
 

@@ -88,19 +88,30 @@ func IsFrontendUpdated(fe *Frontend, newParams FrontendParams, newService *Servi
 
 // BackendsSeq2 is an iterator for sequence of backends that is also JSON and YAML
 // marshalable.
-type BackendsSeq2 iter.Seq2[BackendParams, statedb.Revision]
+type BackendsSeq2 iter.Seq2[*Backend, statedb.Revision]
 
 func (s BackendsSeq2) MarshalJSON() ([]byte, error) {
-	return json.Marshal(slices.Collect(statedb.ToSeq(iter.Seq2[BackendParams, statedb.Revision](s))))
+	return json.Marshal(slices.Collect(statedb.ToSeq(iter.Seq2[*Backend, statedb.Revision](s))))
 }
 
 func (s BackendsSeq2) MarshalYAML() (any, error) {
-	return slices.Collect(statedb.ToSeq(iter.Seq2[BackendParams, statedb.Revision](s))), nil
+	return slices.Collect(statedb.ToSeq(iter.Seq2[*Backend, statedb.Revision](s))), nil
 }
 
 func (fe *Frontend) Clone() *Frontend {
 	fe2 := *fe
 	return &fe2
+}
+
+// IsWildcardCandidate returns true if the frontend is structurally eligible
+// to parent a wildcard service entry.
+func IsWildcardCandidate(fe *Frontend) bool {
+	switch fe.Type {
+	case SVCTypeLoadBalancer, SVCTypeClusterIP:
+		return fe.Address.Scope() == ScopeExternal
+	default:
+		return false
+	}
 }
 
 func (fe *Frontend) TableHeader() []string {
@@ -167,7 +178,7 @@ func (fe *Frontend) ToModel() *models.Service {
 		spec.Flags.Cluster = svc.Name.Cluster()
 	}
 
-	backendModel := func(be BackendParams) *models.BackendAddress {
+	backendModel := func(be *Backend) *models.BackendAddress {
 		addrClusterStr := be.Address.AddrCluster().String()
 		state := be.State
 		if be.Unhealthy {

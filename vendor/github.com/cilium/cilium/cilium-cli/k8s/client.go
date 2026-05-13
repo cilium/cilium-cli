@@ -1011,12 +1011,16 @@ func (c *Client) ListCiliumNodes(ctx context.Context) (*ciliumv2.CiliumNodeList,
 	return c.CiliumClientset.CiliumV2().CiliumNodes().List(ctx, metav1.ListOptions{})
 }
 
-func (c *Client) ListCiliumNodeConfigs(ctx context.Context, namespace string, opts metav1.ListOptions) (*ciliumv2alpha1.CiliumNodeConfigList, error) {
-	return c.CiliumClientset.CiliumV2alpha1().CiliumNodeConfigs(namespace).List(ctx, opts)
+func (c *Client) ListCiliumNodeConfigs(ctx context.Context, namespace string, opts metav1.ListOptions) (*ciliumv2.CiliumNodeConfigList, error) {
+	return c.CiliumClientset.CiliumV2().CiliumNodeConfigs(namespace).List(ctx, opts)
 }
 
 func (c *Client) ListCiliumPodIPPools(ctx context.Context, opts metav1.ListOptions) (*ciliumv2alpha1.CiliumPodIPPoolList, error) {
 	return c.CiliumClientset.CiliumV2alpha1().CiliumPodIPPools().List(ctx, opts)
+}
+
+func (c *Client) ListCiliumL2AnnouncementPolicies(ctx context.Context, opts metav1.ListOptions) (*ciliumv2alpha1.CiliumL2AnnouncementPolicyList, error) {
+	return c.CiliumClientset.CiliumV2alpha1().CiliumL2AnnouncementPolicies().List(ctx, opts)
 }
 
 func (c *Client) GetLogs(ctx context.Context, namespace, name, container string, opts corev1.PodLogOptions, out io.Writer) error {
