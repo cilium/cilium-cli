@@ -40,6 +40,11 @@
   stopUpdatingLabel: 'renovate/stop-updating',
   packageRules: [
     {
+      // Dependency cooldown: skip versions published less than 5 days ago
+      matchUpdateTypes: ["major", "minor", "patch"],
+      minimumReleaseAge: "5 days"
+    },
+    {
       groupName: 'all github action dependencies',
       groupSlug: 'all-github-action',
       matchFileNames: [
