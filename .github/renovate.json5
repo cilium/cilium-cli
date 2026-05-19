@@ -45,6 +45,12 @@
       minimumReleaseAge: "5 days"
     },
     {
+      // Do not pin digests for cilium/cilium GitHub actions and reusable workflows.
+      matchManagers: [ "github-actions" ],
+      matchPackageNames: [ "cilium/cilium" ],
+      pinDigests: false
+    },
+    {
       groupName: 'all github action dependencies',
       groupSlug: 'all-github-action',
       matchFileNames: [
