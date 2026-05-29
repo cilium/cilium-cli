@@ -3,15 +3,15 @@ module github.com/cilium/cilium-cli
 go 1.26.0
 
 // Replace directives from github.com/cilium/cilium. Keep in sync when updating Cilium!
-// Copied from https://github.com/cilium/cilium/blob/v1.19.0-pre.3/go.mod#L331-L337
+// Copied from https://github.com/cilium/cilium/blob/99375b2ef599f3cd9082aef88972bbfa124b2ead/go.mod#L338-L344
 
 // Using private fork of controller-tools. See commit msg for more context
 // as to why we are using a private fork.
-replace sigs.k8s.io/controller-tools => github.com/cilium/controller-tools v0.16.5-1
+replace sigs.k8s.io/controller-tools => github.com/cilium/controller-tools v0.21.0-1
 
 // Using private fork of gobgp. See commit msg for more context as to why we
 // are using a private fork.
-replace github.com/osrg/gobgp/v3 => github.com/cilium/gobgp/v3 v3.0.0-20251113221723-3540251c0674
+replace github.com/osrg/gobgp/v3 => github.com/cilium/gobgp/v3 v3.0.0-20260130142103-27e5da2a39e6
 
 require github.com/cilium/cilium v1.20.0-pre.2.0.20260520131253-99375b2ef599
 
