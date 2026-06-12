@@ -88,15 +88,40 @@ runs:
         # to avoid building the binary as root, which would cause issues with caching.
         sudo mv ${TARGET} ${{ inputs.binary-dir }}/${{ inputs.binary-name }}
 
+    - name: Resolve Released Cilium CLI Archive
+      if: ${{ steps.target.outputs.release != '' }}
+      id: release-asset
+      shell: bash
+      run: |
+        case "${{ runner.os }}" in
+          Linux) os=linux ;;
+          macOS) os=darwin ;;
+          *)
+            echo "Unsupported runner OS for released cilium-cli binaries: ${{ runner.os }}"
+            exit 1
+            ;;
+        esac
+
+        case "${{ runner.arch }}" in
+          X64) arch=amd64 ;;
+          ARM64) arch=arm64 ;;
+          *)
+            echo "Unsupported runner architecture for released cilium-cli binaries: ${{ runner.arch }}"
+            exit 1
+            ;;
+        esac
+
+        echo "archive=cilium-${os}-${arch}.tar.gz" >> "$GITHUB_OUTPUT"
+
     - name: Install Released Cilium CLI
       if: ${{ steps.target.outputs.release != '' }}
       shell: bash
       run: |
-        curl -sSL --remote-name-all https://github.com/${{ inputs.repository }}/releases/download/${{ inputs.release-version }}/cilium-linux-amd64.tar.gz{,.sha256sum}
-        sha256sum --check cilium-linux-amd64.tar.gz.sha256sum
-        tar xzvfC cilium-linux-amd64.tar.gz /tmp
+        curl -sSL --remote-name-all https://github.com/${{ inputs.repository }}/releases/download/${{ inputs.release-version }}/${{ steps.release-asset.outputs.archive }}{,.sha256sum}
+        sha256sum --check ${{ steps.release-asset.outputs.archive }}.sha256sum
+        tar xzvfC ${{ steps.release-asset.outputs.archive }} /tmp
         sudo mv /tmp/cilium ${{ inputs.binary-dir }}/${{ inputs.binary-name }}
-        rm cilium-linux-amd64.tar.gz{,.sha256sum}
+        rm ${{ steps.release-asset.outputs.archive }}{,.sha256sum}
 
     - name: Install Cilium CLI from CI
       if: ${{ steps.target.outputs.ci_image != '' }}
