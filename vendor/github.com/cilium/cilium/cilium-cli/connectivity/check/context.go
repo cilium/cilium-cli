@@ -693,13 +693,13 @@ func (ct *ConnectivityTest) detectPodCIDRs() {
 		hostIPs := pod.Pod.Status.PodIPs
 
 		for _, cidr := range n.Spec.IPAM.PodCIDRs {
-			ct.params.PodCIDRs = append(ct.params.PodCIDRs, toPodCIDRs(cidr, hostIPs...)...)
+			ct.params.PodCIDRs = append(ct.params.PodCIDRs, toPodCIDRs(cidr.String(), hostIPs...)...)
 		}
 
 		// additional IP pools from multi-pool IPAM mode
 		for _, pool := range n.Spec.IPAM.Pools.Allocated {
 			for _, podCIDR := range pool.CIDRs {
-				ct.params.PodCIDRs = append(ct.params.PodCIDRs, toPodCIDRs(string(podCIDR), hostIPs...)...)
+				ct.params.PodCIDRs = append(ct.params.PodCIDRs, toPodCIDRs(podCIDR.String(), hostIPs...)...)
 			}
 		}
 	}

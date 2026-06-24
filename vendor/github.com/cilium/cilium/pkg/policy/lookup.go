@@ -9,11 +9,9 @@ package policy
 
 import (
 	"fmt"
-	"iter"
 	"log/slog"
 
 	"github.com/cilium/cilium/pkg/endpoint/regeneration"
-	"github.com/cilium/cilium/pkg/identity"
 	"github.com/cilium/cilium/pkg/identity/identitymanager"
 	"github.com/cilium/cilium/pkg/policy/types"
 	"github.com/cilium/cilium/pkg/spanstat"
@@ -119,19 +117,13 @@ func (ei *endpointInfo) GetID() uint64 {
 	return ei.ID
 }
 
-// GetNamedPort determines the named port of the *destination*. So, if ingress
-// is false, then this looks up the peer.
-func (ei *endpointInfo) GetNamedPort(ingress bool, name string, proto u8proto.U8proto, destIdentities iter.Seq[identity.NumericIdentity]) uint16 {
-	if !ingress && ei.remoteEndpoint != nil {
-		return ei.remoteEndpoint.GetNamedPort(true, name, proto, destIdentities)
-	}
+func (ei *endpointInfo) GetIngressNamedPort(name string, proto u8proto.U8proto) uint16 {
 	switch {
 	case proto == u8proto.TCP && ei.TCPNamedPorts != nil:
 		return ei.TCPNamedPorts[name]
 	case proto == u8proto.UDP && ei.UDPNamedPorts != nil:
 		return ei.UDPNamedPorts[name]
 	}
-
 	return 0
 }
 
@@ -159,13 +151,8 @@ func (ei *endpointInfo) RegenerateIfAlive(*regeneration.ExternalRegenerationMeta
 
 type dummyPolicyStats struct {
 	waitingForPolicyRepository spanstat.SpanStat
-	policyCalculation          spanstat.SpanStat
 }
 
 func (s *dummyPolicyStats) WaitingForPolicyRepository() *spanstat.SpanStat {
 	return &s.waitingForPolicyRepository
-}
-
-func (s *dummyPolicyStats) SelectorPolicyCalculation() *spanstat.SpanStat {
-	return &s.policyCalculation
 }

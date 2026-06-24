@@ -10,8 +10,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/cilium/cilium/api/v1/models"
-	alibabaCloudTypes "github.com/cilium/cilium/pkg/alibabacloud/eni/types"
-	eniTypes "github.com/cilium/cilium/pkg/aws/eni/types"
+	alibabaCloudTypes "github.com/cilium/cilium/pkg/alibabacloud/types"
+	awsTypes "github.com/cilium/cilium/pkg/aws/types"
 	azureTypes "github.com/cilium/cilium/pkg/azure/types"
 	ipamTypes "github.com/cilium/cilium/pkg/ipam/types"
 	"github.com/cilium/cilium/pkg/node/addressing"
@@ -440,7 +440,7 @@ type NodeSpec struct {
 	// ENI is the AWS ENI specific configuration.
 	//
 	// +kubebuilder:validation:Optional
-	ENI eniTypes.ENISpec `json:"eni,omitempty"`
+	ENI awsTypes.ENISpec `json:"eni,omitempty"`
 
 	// Azure is the Azure IPAM specific configuration.
 	//
@@ -488,7 +488,7 @@ type NodeStatus struct {
 	// ENI is the AWS ENI specific status of the node.
 	//
 	// +kubebuilder:validation:Optional
-	ENI eniTypes.ENIStatus `json:"eni,omitempty"`
+	ENI awsTypes.ENIStatus `json:"eni,omitempty"`
 
 	// Azure is the Azure specific status of the node.
 	//
@@ -525,13 +525,6 @@ func (n *CiliumNode) InstanceID() (instanceID string) {
 	}
 	return
 }
-
-// PoolsFromResourceFunc is the type of a function that returns the pool
-// specification in the CiliumNode that should be used by the multi pool
-// manager instance.
-// For multi pool pod IPAM this means referencing the .Spec.IPAM.Pools field
-// in the CiliumNode.
-type PoolsFromResourceFunc func(*CiliumNode) *ipamTypes.IPAMPoolSpec
 
 func (n NodeAddress) ToString() string {
 	return n.IP

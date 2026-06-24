@@ -1155,6 +1155,18 @@ func (c *Collector) Run() error {
 		},
 		{
 			CreatesSubtasks: true,
+			Description:     "Collecting the Cilium operator debug information",
+			Quick:           false,
+			Task: func(ctx context.Context) error {
+				err := c.submitCiliumOperatorDbgTasks(c.CiliumOperatorPods)
+				if err != nil {
+					return fmt.Errorf("failed to collect the Cilium operator debug information: %w", err)
+				}
+				return nil
+			},
+		},
+		{
+			CreatesSubtasks: true,
 			Description:     "Collecting the clustermesh debug information, metrics and gops stats",
 			Quick:           false,
 			Task: func(ctx context.Context) error {
@@ -2166,6 +2178,21 @@ func (c *Collector) getGatewayAPITasks() []Task {
 			},
 		},
 		{
+			Description: "Collecting BackendTLSPolicy entries",
+			Quick:       true,
+			Task: func(ctx context.Context) error {
+				n := corev1.NamespaceAll
+				v, err := c.Client.ListUnstructured(ctx, backendTLSPolicy, &n, metav1.ListOptions{})
+				if err != nil {
+					return fmt.Errorf("failed to collect BackendTLSPolicy entries: %w", err)
+				}
+				if err := c.WriteYAML(backendTLSPoliciesFileName, v); err != nil {
+					return fmt.Errorf("failed to collect BackendTLSPolicy entries: %w", err)
+				}
+				return nil
+			},
+		},
+		{
 			Description: "Collecting GRPCRoute entries",
 			Quick:       true,
 			Task: func(ctx context.Context) error {
@@ -2206,6 +2233,21 @@ func (c *Collector) getGatewayAPITasks() []Task {
 				}
 				if err := c.WriteYAML(udpRoutesFileName, v); err != nil {
 					return fmt.Errorf("failed to collect UDPRoute entries: %w", err)
+				}
+				return nil
+			},
+		},
+		{
+			Description: "Collecting CiliumGatewayClassConfig entries",
+			Quick:       true,
+			Task: func(ctx context.Context) error {
+				n := corev1.NamespaceAll
+				v, err := c.Client.ListUnstructured(ctx, ciliumGatewayClassConfig, &n, metav1.ListOptions{})
+				if err != nil {
+					return fmt.Errorf("failed to collect CiliumGatewayClassConfig entries: %w", err)
+				}
+				if err := c.WriteYAML(ciliumGatewayClassConfigsFileName, v); err != nil {
+					return fmt.Errorf("failed to collect CiliumGatewayClassConfig entries: %w", err)
 				}
 				return nil
 			},
@@ -2674,24 +2716,32 @@ func (c *Collector) SubmitCniConflistSubtask(pods []*corev1.Pod, containerName s
 	return nil
 }
 
-func (c *Collector) getGopsPID(ctx context.Context, pod *corev1.Pod, containerName string) (string, error) {
-	// Run 'gops' on the pod.
-	gopsOutput, err := c.Client.ExecInPod(ctx, pod.Namespace, pod.Name, containerName, []string{
-		gopsCommand,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to list processes %q (%q) in namespace %q: %w", pod.Name, containerName, pod.Namespace, err)
+func (c *Collector) getGopsPID(ctx context.Context, pod *corev1.Pod, containerName string) (cmd, pid string, err error) {
+	var gopsOutput bytes.Buffer
+
+	// Run 'gops' on the pod. Try both command paths, as the gops binary got
+	// moved in a9274570b9d1b6092bf07f598a310a2680391699.
+	for _, cmd = range []string{"/usr/bin/gops", "/bin/gops"} {
+		gopsOutput, err = c.Client.ExecInPod(ctx, pod.Namespace, pod.Name, containerName, []string{cmd})
+		if err == nil {
+			break
+		}
 	}
+
+	if err != nil {
+		return "", "", fmt.Errorf("failed to list processes %q (%q) in namespace %q: %w", pod.Name, containerName, pod.Namespace, err)
+	}
+
 	agentPID := gopsPID
 	if c.Options.DetectGopsPID {
 		var err error
 		outputStr := gopsOutput.String()
 		agentPID, err = extractGopsPID(outputStr)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 	}
-	return agentPID, nil
+	return cmd, agentPID, nil
 }
 
 // SubmitGopsSubtasks submits tasks to collect gops statistics from pods.
@@ -2703,7 +2753,7 @@ func (c *Collector) SubmitGopsSubtasks(pods []*corev1.Pod, containerName string)
 
 		for _, g := range gopsStats {
 			if err := c.Pool.Submit(fmt.Sprintf("gops-%s-%s", p.Name, g), func(ctx context.Context) error {
-				agentPID, err := c.getGopsPID(ctx, p, containerName)
+				gopsCommand, agentPID, err := c.getGopsPID(ctx, p, containerName)
 				if err != nil {
 					return err
 				}
@@ -2732,7 +2782,7 @@ func (c *Collector) SubmitProfilingGopsSubtasks(pods []*corev1.Pod, containerNam
 	for _, p := range pods {
 		for g := range gopsProfiling {
 			if err := c.Pool.Submit(fmt.Sprintf("gops-%s-%s", p.Name, g), func(ctx context.Context) error {
-				agentPID, err := c.getGopsPID(ctx, p, containerName)
+				gopsCommand, agentPID, err := c.getGopsPID(ctx, p, containerName)
 				if err != nil {
 					return err
 				}
@@ -2817,7 +2867,7 @@ func (c *Collector) SubmitStreamProfilingGopsSubtasks(pods []*corev1.Pod, contai
 func (c *Collector) SubmitTracingGopsSubtask(pods []*corev1.Pod, containerName string) error {
 	for _, p := range pods {
 		if err := c.Pool.Submit(fmt.Sprintf("gops-%s-%s", p.Name, gopsTrace), func(ctx context.Context) error {
-			agentPID, err := c.getGopsPID(ctx, p, containerName)
+			gopsCommand, agentPID, err := c.getGopsPID(ctx, p, containerName)
 			if err != nil {
 				return err
 			}
@@ -3031,6 +3081,60 @@ func (c *Collector) SubmitMetricsSubtask(pods []*corev1.Pod, containerName, port
 	return nil
 }
 
+func (c *Collector) submitCiliumOperatorDbgTasks(pods []*corev1.Pod) error {
+	tasks := []struct {
+		name string
+		ext  string
+		args []string
+	}{
+		{
+			name: "statedb-dump",
+			ext:  "json",
+			args: []string{"shell", "db/dump"},
+		},
+		{
+			name: "status-clustermesh",
+			ext:  "txt",
+			args: []string{"status", "clustermesh"},
+		},
+		{
+			name: "troubleshoot-kvstore",
+			ext:  "txt",
+			args: []string{"troubleshoot", "kvstore"},
+		},
+		{
+			name: "troubleshoot-clustermesh",
+			ext:  "txt",
+			args: []string{"troubleshoot", "clustermesh"},
+		},
+	}
+
+	for _, pod := range pods {
+		for _, task := range tasks {
+			// The name of the Cilium operator binary depends on the specific
+			// flavor. Let's infer it based on the specified command.
+			var cmd = "cilium-operator-generic"
+			for _, container := range pod.Spec.Containers {
+				if container.Name == defaults.OperatorContainerName {
+					if len(container.Command) > 0 {
+						cmd = container.Command[0]
+					}
+					break
+				}
+			}
+
+			if err := c.submitPodCommandTask(
+				pod, defaults.OperatorContainerName, task.name, task.ext,
+				append([]string{cmd}, task.args...),
+			); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 func (c *Collector) submitClusterMeshAPIServerDbgTasks(pods []*corev1.Pod) error {
 	tasks := []struct {
 		name      string
@@ -3047,6 +3151,18 @@ func (c *Collector) submitClusterMeshAPIServerDbgTasks(pods []*corev1.Pod) error
 			name:      "troubleshoot",
 			ext:       "txt",
 			cmd:       []string{defaults.ClusterMeshBinaryName, "clustermesh-dbg", "troubleshoot"},
+			container: defaults.ClusterMeshContainerName,
+		},
+		{
+			name:      "statedb-dump",
+			ext:       "json",
+			cmd:       []string{defaults.ClusterMeshBinaryName, "shell", "db/dump"},
+			container: defaults.ClusterMeshContainerName,
+		},
+		{
+			name:      "kvstore-list",
+			ext:       "txt",
+			cmd:       []string{defaults.ClusterMeshBinaryName, "shell", "kvstore/list"},
 			container: defaults.ClusterMeshContainerName,
 		},
 		{
@@ -3073,44 +3189,64 @@ func (c *Collector) submitClusterMeshAPIServerDbgTasks(pods []*corev1.Pod) error
 			cmd:       []string{defaults.ClusterMeshBinaryName, "kvstoremesh-dbg", "troubleshoot", "--include-local"},
 			container: defaults.ClusterMeshKVStoreMeshContainerName,
 		},
+		{
+			name:      "statedb-dump",
+			ext:       "json",
+			cmd:       []string{defaults.ClusterMeshBinaryName, "shell", "db/dump"},
+			container: defaults.ClusterMeshKVStoreMeshContainerName,
+		},
+		{
+			name:      "kvstore-list",
+			ext:       "txt",
+			cmd:       []string{defaults.ClusterMeshBinaryName, "shell", "kvstore/list"},
+			container: defaults.ClusterMeshKVStoreMeshContainerName,
+		},
 	}
 
 	for _, pod := range pods {
 		for _, task := range tasks {
-			if !podIsRunningAndHasContainer(pod, task.container) {
-				continue
-			}
-
-			filename := fmt.Sprintf("%s-%s-%s-<ts>.%s", pod.Name, task.container, task.name, task.ext)
-			if err := c.Pool.Submit(filename, func(ctx context.Context) error {
-				if err := c.WithFileSink(filename, func(out io.Writer) error {
-					var stderr bytes.Buffer
-
-					err := c.Client.ExecInPodWithWriters(ctx, nil, pod.Namespace, pod.Name, task.container, task.cmd, out, &stderr)
-					if err != nil {
-						stderrStr := stderr.String()
-						if strings.Contains(stderrStr, "Usage:") || strings.Contains(stderrStr, "unknown command") {
-							// The default cobra error tends to be misleading when both the
-							// command and the flags are not found, as it reports the missing
-							// flags rather than the missing command. Hence, let's just guess
-							// and output a generic unknown command error.
-							stderrStr = "unknown command - this is expected if not supported by this Cilium version"
-						}
-
-						return fmt.Errorf("%w: %s", err, stderrStr)
-					}
-
-					return nil
-				}); err != nil {
-					return fmt.Errorf("failed to collect clustermesh %s information from %s/%s (%s): %w",
-						task.name, pod.Namespace, pod.Name, task.container, err)
-				}
-
-				return nil
-			}); err != nil {
-				return fmt.Errorf("failed to submit %s task: %w", filename, err)
+			if err := c.submitPodCommandTask(pod, task.container, task.name, task.ext, task.cmd); err != nil {
+				return err
 			}
 		}
+	}
+
+	return nil
+}
+
+func (c *Collector) submitPodCommandTask(pod *corev1.Pod, container, task, ext string, cmd []string) error {
+	if !podIsRunningAndHasContainer(pod, container) {
+		return nil
+	}
+
+	filename := fmt.Sprintf("%s-%s-%s-<ts>.%s", pod.Name, container, task, ext)
+	if err := c.Pool.Submit(filename, func(ctx context.Context) error {
+		if err := c.WithFileSink(filename, func(out io.Writer) error {
+			var stderr bytes.Buffer
+
+			err := c.Client.ExecInPodWithWriters(ctx, nil, pod.Namespace, pod.Name, container, cmd, out, &stderr)
+			if err != nil {
+				stderrStr := stderr.String()
+				if strings.Contains(stderrStr, "Usage:") || strings.Contains(stderrStr, "unknown command") {
+					// The default cobra error tends to be misleading when both the
+					// command and the flags are not found, as it reports the missing
+					// flags rather than the missing command. Hence, let's just guess
+					// and output a generic unknown command error.
+					stderrStr = "unknown command - this is expected if not supported by this Cilium version"
+				}
+
+				return fmt.Errorf("%w: %s", err, stderrStr)
+			}
+
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to collect %s information from %s/%s (%s): %w",
+				task, pod.Namespace, pod.Name, container, err)
+		}
+
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to submit %s task: %w", filename, err)
 	}
 
 	return nil

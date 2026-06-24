@@ -4,10 +4,11 @@
 package types
 
 import (
+	"fmt"
 	"net/netip"
 	"slices"
 
-	"github.com/osrg/gobgp/v3/pkg/packet/bgp"
+	"github.com/osrg/gobgp/v4/pkg/packet/bgp"
 
 	ipamOption "github.com/cilium/cilium/pkg/ipam/option"
 )
@@ -30,7 +31,7 @@ func CanAdvertisePodCIDR(ipam string) bool {
 //
 // The next hop of the path will always be set to "0.0.0.0" for IPv4 and "::" for IPv6,
 // so the underlying BGP implementation selects appropriate actual nexthop address when advertising it.
-func NewPathForPrefix(prefix netip.Prefix) (path *Path) {
+func NewPathForPrefix(prefix netip.Prefix) (*Path, error) {
 	originAttr := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_IGP)
 
 	// Currently, we only support advertising locally originated paths (the paths generated in Cilium
@@ -51,28 +52,56 @@ func NewPathForPrefix(prefix netip.Prefix) (path *Path) {
 
 	switch {
 	case prefix.Addr().Is4():
-		nlri := bgp.NewIPAddrPrefix(uint8(prefix.Bits()), prefix.Addr().String())
-		nextHopAttr := bgp.NewPathAttributeNextHop("0.0.0.0")
-		path = &Path{
-			NLRI: nlri,
+		nlri, err := bgp.NewIPAddrPrefix(prefix)
+		if err != nil {
+			return nil, err
+		}
+		nextHopAttr, err := bgp.NewPathAttributeNextHop(netip.IPv4Unspecified())
+		if err != nil {
+			return nil, err
+		}
+		return &Path{
+			Family: Family{Afi: AfiIPv4, Safi: SafiUnicast},
+			NLRI:   nlri,
 			PathAttributes: []bgp.PathAttributeInterface{
 				originAttr,
 				nextHopAttr,
 			},
-		}
+		}, nil
 	case prefix.Addr().Is6():
-		nlri := bgp.NewIPv6AddrPrefix(uint8(prefix.Bits()), prefix.Addr().String())
-		mpReachNLRIAttr := bgp.NewPathAttributeMpReachNLRI("::", []bgp.AddrPrefixInterface{nlri})
-		path = &Path{
-			NLRI: nlri,
+		nlri, err := bgp.NewIPAddrPrefix(prefix)
+		if err != nil {
+			return nil, err
+		}
+		mpReachNLRIAttr, err := bgp.NewPathAttributeMpReachNLRI(
+			bgp.NewFamily(bgp.AFI_IP6, bgp.SAFI_UNICAST),
+			[]bgp.PathNLRI{{NLRI: nlri}},
+			netip.IPv6Unspecified(),
+		)
+		if err != nil {
+			return nil, err
+		}
+		return &Path{
+			Family: Family{Afi: AfiIPv6, Safi: SafiUnicast},
+			NLRI:   nlri,
 			PathAttributes: []bgp.PathAttributeInterface{
 				originAttr,
 				mpReachNLRIAttr,
 			},
-		}
+		}, nil
+	default:
+		return nil, fmt.Errorf("invalid prefix: %v", prefix)
 	}
+}
 
-	return
+// MustNewPathForPrefix returns a Path for prefix or panics if the path cannot
+// be created.
+func MustNewPathForPrefix(prefix netip.Prefix) *Path {
+	path, err := NewPathForPrefix(prefix)
+	if err != nil {
+		panic(err)
+	}
+	return path
 }
 
 // SetPathOriginAttrIncomplete ensures the given path has an ORIGIN path

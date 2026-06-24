@@ -20,7 +20,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/osrg/gobgp/v3/pkg/packet/bgp"
+	"github.com/osrg/gobgp/v4/pkg/packet/bgp"
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/cilium/cilium/api/v1/models"
@@ -284,7 +284,7 @@ func printRouteSummary(out io.Writer, routesPerNode map[string][]*models.BgpRout
 				}
 				fmt.Fprintf(w, "%s\t", path.NLRI)
 				fmt.Fprintf(w, "%s\t", nextHopFromPathAttributes(path.PathAttributes))
-				fmt.Fprintf(w, "%s\t", time.Duration(path.AgeNanoseconds).Round(time.Second))
+				fmt.Fprintf(w, "%s\t", path.Age().Round(time.Second))
 				fmt.Fprintf(w, "%s\t", path.PathAttributes)
 				fmt.Fprintf(w, "\n")
 			}

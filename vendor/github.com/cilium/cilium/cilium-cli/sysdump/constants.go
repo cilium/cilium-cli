@@ -121,7 +121,9 @@ const (
 	grpcRoutesFileName                       = "gatewayapi-grpcroutes-<ts>.yaml"
 	tcpRoutesFileName                        = "gatewayapi-tcroutes-<ts>.yaml"
 	udpRoutesFileName                        = "gatewayapi-udproutes-<ts>.yaml"
+	backendTLSPoliciesFileName               = "gatewayapi-backendtlspolicies-<ts>.yaml"
 	referenceGrantsFileName                  = "gatewayapi-referencegrants-<ts>.yaml"
+	ciliumGatewayClassConfigsFileName        = "ciliumgatewayclassconfigs-<ts>.yaml"
 	ingressClassesFileName                   = "ingressclasses-<ts>.yaml"
 	k8sResourceFileName                      = "%s-<ts>.yaml"
 )
@@ -130,7 +132,6 @@ const (
 	ciliumBugtoolCommand = "cilium-bugtool"
 	dirMode              = 0700
 	fileMode             = 0600
-	gopsCommand          = "/bin/gops"
 	gopsPID              = "1"
 	rmCommand            = "rm"
 	timeFormat           = "20060102-150405"
@@ -192,6 +193,12 @@ var (
 		Version:  "v1beta1",
 	}
 
+	backendTLSPolicy = schema.GroupVersionResource{
+		Group:    "gateway.networking.k8s.io",
+		Resource: "backendtlspolicies",
+		Version:  "v1",
+	}
+
 	httpRoute = schema.GroupVersionResource{
 		Group:    "gateway.networking.k8s.io",
 		Resource: "httproutes",
@@ -220,5 +227,11 @@ var (
 		Group:    "gateway.networking.k8s.io",
 		Resource: "grpcroutes",
 		Version:  "v1alpha2",
+	}
+
+	ciliumGatewayClassConfig = schema.GroupVersionResource{
+		Group:    "cilium.io",
+		Resource: "ciliumgatewayclassconfigs",
+		Version:  "v2alpha1",
 	}
 )
