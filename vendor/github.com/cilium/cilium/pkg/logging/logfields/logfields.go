@@ -1154,6 +1154,10 @@ const (
 
 	PoolName = "poolName"
 
+	AllowFirstIP = "allowFirstIP"
+
+	AllowLastIP = "allowLastIP"
+
 	MaxRetries = "maxRetries"
 
 	Retries = "retries"
@@ -1213,6 +1217,10 @@ const (
 	TLSRoute = "tlsRoute"
 
 	GRPCRoute = "grpcRoute"
+
+	TCPRoute = "tcpRoute"
+
+	UDPRoute = "udpRoute"
 
 	Secret = "secret"
 

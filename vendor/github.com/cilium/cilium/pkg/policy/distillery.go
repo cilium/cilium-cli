@@ -5,6 +5,7 @@ package policy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -15,6 +16,10 @@ import (
 
 	"github.com/cilium/stream"
 )
+
+// ErrSelectorPolicyNotCached cancels the policy computation retry because the
+// identity no longer exists.
+var ErrSelectorPolicyNotCached = errors.New("SelectorPolicy not found in cache")
 
 // policyCache represents a cache of resolved policies for identities.
 type policyCache struct {
@@ -118,7 +123,7 @@ func (cache *policyCache) delete(identity *identityPkg.Identity) bool {
 		delete(cache.policies, identity.ID)
 		selPolicy := cip.getPolicy()
 		if selPolicy != nil {
-			selPolicy.detach(true, 0)
+			selPolicy.Detach()
 		}
 	}
 	cache.emitChange(PolicyCacheChange{Kind: PolicyChangeDelete, ID: identity.ID})
@@ -142,7 +147,7 @@ func (cache *policyCache) delete(identity *identityPkg.Identity) bool {
 func (cache *policyCache) updateSelectorPolicy(identity *identityPkg.Identity, endpointID uint64) (*selectorPolicy, *selectorPolicy, bool, error) {
 	cip, ok := cache.lookup(identity)
 	if !ok {
-		return nil, nil, false, fmt.Errorf("SelectorPolicy not found in cache for ID %d", identity.ID)
+		return nil, nil, false, fmt.Errorf("%w for ID %d", ErrSelectorPolicyNotCached, identity.ID)
 	}
 
 	// As long as UpdatePolicy() is triggered from endpoint
@@ -287,15 +292,8 @@ func (cip *cachedSelectorPolicy) getPolicy() *selectorPolicy {
 }
 
 // setPolicy updates the reference to the SelectorPolicy that is cached.
-// Calls Detach() on the old policy, if any. It passes the endpointID of
-// the endpoint that initiated the old selector policy detach. Since detach
-// can trigger endpoint regenerations of all it users, this ensures
-// that endpoints do not continuously update themselves.
+// Callers are responsible for detaching the old policy as appropriate.
 func (cip *cachedSelectorPolicy) setPolicy(policy *selectorPolicy, endpointID uint64) *selectorPolicy {
 	oldPolicy := cip.policy.Swap(policy)
-	if oldPolicy != nil {
-		// Release the references the previous policy holds on the selector cache.
-		oldPolicy.detach(false, endpointID)
-	}
 	return oldPolicy
 }

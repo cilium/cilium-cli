@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/osrg/gobgp/v3/pkg/packet/bgp"
+	"github.com/osrg/gobgp/v4/pkg/packet/bgp"
 
 	"github.com/cilium/cilium/api/v1/models"
 )
@@ -53,15 +53,27 @@ type StateNotificationCh chan struct{}
 // but only contains minimal fields required for Cilium usecases.
 type Path struct {
 	// read/write
-	NLRI           bgp.AddrPrefixInterface
+	NLRI           bgp.NLRI
 	PathAttributes []bgp.PathAttributeInterface
-	Family         Family // can be empty, in which case it will be inferred from NLRI
+	Family         Family
 
 	// readonly
-	AgeNanoseconds int64 // time duration in nanoseconds since the Path was created
-	Best           bool
-	UUID           []byte // path identifier in underlying implementation
-	SourceASN      uint32
+	CreatedAt time.Time // time when the Path was created
+	Best      bool
+	UUID      []byte // path identifier in underlying implementation
+	SourceASN uint32
+}
+
+// Age returns the elapsed duration since the Path was created.
+func (p *Path) Age() time.Duration {
+	if p.CreatedAt.IsZero() {
+		return 0
+	}
+	age := time.Since(p.CreatedAt)
+	if age < 0 {
+		return 0
+	}
+	return age
 }
 
 // Neighbor is an object representing a single BGP neighbor. It is an analogue

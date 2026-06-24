@@ -8,8 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"time"
 
-	"github.com/osrg/gobgp/v3/pkg/packet/bgp"
+	"github.com/osrg/gobgp/v4/pkg/packet/bgp"
 
 	"github.com/cilium/cilium/api/v1/models"
 	restapi "github.com/cilium/cilium/api/v1/server/restapi/bgp"
@@ -78,7 +79,7 @@ func ToAPIFamilies(families []types.Family) []*models.BgpFamily {
 func ToAPIPath(p *types.Path) (*models.BgpPath, error) {
 	ret := &models.BgpPath{}
 
-	ret.AgeNanoseconds = p.AgeNanoseconds
+	ret.AgeNanoseconds = int64(p.Age())
 	ret.Best = p.Best
 
 	// We need this Base64 encoding because OpenAPI 2.0 spec doesn't support Union
@@ -95,8 +96,8 @@ func ToAPIPath(p *types.Path) (*models.BgpPath, error) {
 	ret.Nlri = &models.BgpNlri{Base64: base64.StdEncoding.EncodeToString(bin)}
 
 	if ret.Family, err = ToAPIFamily(&types.Family{
-		Afi:  types.Afi(p.NLRI.AFI()),
-		Safi: types.Safi(p.NLRI.SAFI()),
+		Afi:  p.Family.Afi,
+		Safi: p.Family.Safi,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to serialize address family: %w", err)
 	}
@@ -118,29 +119,27 @@ func ToAPIPath(p *types.Path) (*models.BgpPath, error) {
 func ToAgentPath(m *models.BgpPath) (*types.Path, error) {
 	p := &types.Path{}
 
-	p.AgeNanoseconds = m.AgeNanoseconds
+	if m.AgeNanoseconds > 0 {
+		p.CreatedAt = time.Now().Add(-time.Duration(m.AgeNanoseconds))
+	}
 	p.Best = m.Best
 
-	afi := types.ParseAfi(m.Family.Afi)
-	safi := types.ParseSafi(m.Family.Safi)
-
-	// Create empty NLRI structure. The underlying type will be set correctly by providing AFI/SAFI
-	nlri, err := bgp.NewPrefixFromRouteFamily(uint16(afi), uint8(safi))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create native NLRI struct from AFI/SAFI: %w", err)
-	}
-
-	// Decode serialized NLRI
+	// Decode serialized NLRI to bytes
 	bin, err := base64.StdEncoding.DecodeString(m.Nlri.Base64)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode base64-encoded NLRI: %w", err)
 	}
 
-	if err := nlri.DecodeFromBytes(bin); err != nil {
+	// Decode NLRI from bytes
+	afi := types.ParseAfi(m.Family.Afi)
+	safi := types.ParseSafi(m.Family.Safi)
+	nlri, err := bgp.NLRIFromSlice(bgp.NewFamily(uint16(afi), uint8(safi)), bin)
+	if err != nil {
 		return nil, fmt.Errorf("failed to decode NLRI: %w", err)
 	}
 
 	p.NLRI = nlri
+	p.Family = types.Family{Afi: afi, Safi: safi}
 
 	// Decode path attributes
 	for _, pattr := range m.PathAttributes {

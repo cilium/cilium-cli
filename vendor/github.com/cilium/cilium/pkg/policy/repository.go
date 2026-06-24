@@ -69,11 +69,12 @@ type PolicyRepository interface {
 	Search() (types.PolicyEntries, uint64)
 
 	PolicyCacheObservable() stream.Observable[PolicyCacheChange]
+
+	SetNamedPortsGetter(namedPortsGetter NamedPortsGetter)
 }
 
 type GetPolicyStatistics interface {
 	WaitingForPolicyRepository() *spanstat.SpanStat
-	SelectorPolicyCalculation() *spanstat.SpanStat
 }
 
 // Repository is a list of policy rules which in combination form the security
@@ -111,6 +112,9 @@ type Repository struct {
 
 	metricsManager    types.PolicyMetrics
 	l7RulesTranslator envoypolicy.EnvoyL7RulesTranslator
+
+	// Getter for egress named ports
+	namedPortsGetter NamedPortsGetter
 }
 
 func (p *Repository) GetEnvoyHTTPRules(l7Rules *api.L7Rules, ns string) (*cilium.HttpNetworkPolicyRules, bool) {
@@ -157,6 +161,13 @@ func NewPolicyRepository(
 	repo.revision.Store(1)
 	repo.policyCache = newPolicyCache(repo, idmgr)
 	return repo
+}
+
+// SetNamedPortsGetter must be called after NewPolicyRepository and before the repository is used.
+// This is late-bound to avoid making policy/cell construct the repository with IPCache, as IPCache
+// depends on the repository for identity updates.
+func (p *Repository) SetNamedPortsGetter(namedPortsGetter NamedPortsGetter) {
+	p.namedPortsGetter = namedPortsGetter
 }
 
 func (p *Repository) Search() (types.PolicyEntries, uint64) {
@@ -338,6 +349,7 @@ func (p *Repository) resolvePolicyLocked(securityIdentity *identity.Identity) (*
 	calculatedPolicy := &selectorPolicy{
 		Revision:             p.GetRevision(),
 		SelectorCache:        sc,
+		namedPortsGetter:     p.namedPortsGetter,
 		L4Policy:             NewL4Policy(p.GetRevision()),
 		IngressPolicyEnabled: ingressEnabled,
 		EgressPolicyEnabled:  egressEnabled,
@@ -566,15 +578,11 @@ func (r *Repository) GetSelectorPolicy(id *identity.Identity, skipRevision uint6
 		return nil, rev, nil
 	}
 
-	stats.SelectorPolicyCalculation().Start()
 	// This may call back in to the (locked) repository to generate the
 	// selector policy
-	sp, _, updated, err := r.policyCache.updateSelectorPolicy(id, endpointID)
-	stats.SelectorPolicyCalculation().EndError(err)
-
-	// If we hit cache, reset the statistics.
-	if !updated {
-		stats.SelectorPolicyCalculation().Reset()
+	sp, old, _, err := r.policyCache.updateSelectorPolicy(id, endpointID)
+	if old != nil {
+		old.Supersede()
 	}
 
 	return sp, rev, err
