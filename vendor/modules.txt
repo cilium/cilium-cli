@@ -1311,7 +1311,7 @@ golang.org/x/net/websocket
 ## explicit; go 1.25.0
 golang.org/x/oauth2
 golang.org/x/oauth2/internal
-# golang.org/x/sync v0.21.0
+# golang.org/x/sync v0.22.0
 ## explicit; go 1.25.0
 golang.org/x/sync/errgroup
 golang.org/x/sync/semaphore
@@ -1968,7 +1968,7 @@ k8s.io/utils/internal/third_party/forked/golang/net
 k8s.io/utils/net
 k8s.io/utils/ptr
 k8s.io/utils/trace
-# oras.land/oras-go/v2 v2.6.1
+# oras.land/oras-go/v2 v2.6.2
 ## explicit; go 1.25.0
 oras.land/oras-go/v2
 oras.land/oras-go/v2/content
