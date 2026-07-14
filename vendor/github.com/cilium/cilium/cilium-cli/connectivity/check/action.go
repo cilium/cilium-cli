@@ -26,6 +26,7 @@ import (
 	"github.com/cilium/cilium/api/v1/relay"
 	"github.com/cilium/cilium/cilium-cli/connectivity/filters"
 	"github.com/cilium/cilium/cilium-cli/defaults"
+	"github.com/cilium/cilium/cilium-cli/k8s"
 	"github.com/cilium/cilium/cilium-cli/utils/features"
 	hubprinter "github.com/cilium/cilium/hubble/pkg/printer"
 	"github.com/cilium/cilium/pkg/lock"
@@ -263,13 +264,73 @@ func (a *Action) WriteDataToPod(ctx context.Context, filePath string, data []byt
 	}
 	pod := a.src
 
-	output, err := pod.K8sClient.ExecInPod(ctx,
-		pod.Pod.Namespace, pod.Pod.Name, pod.Pod.Spec.Containers[0].Name,
-		[]string{"sh", "-c", fmt.Sprintf("echo %s | base64 -d > %s", encodedData, filePath)})
+	cmd := []string{"sh", "-c", fmt.Sprintf("echo %s | base64 -d > %s", encodedData, filePath)}
+
+	// Retry the exec on transport-level failures only. Unlike ExecInPod, this
+	// is a one-shot setup command with no curl-level --retry, so a transient
+	// failure to establish the exec stream (e.g. an apiserver/konnectivity
+	// upgrade-connection error on managed clusters) would otherwise fail the
+	// whole test before the actual command even runs. A non-zero exit code of
+	// the command itself is not retried: it is a real result and stays fatal.
+	var output bytes.Buffer
+	var err error
+	for i := 1; i <= testCommandRetries; i++ {
+		output, err = pod.K8sClient.ExecInPod(ctx,
+			pod.Pod.Namespace, pod.Pod.Name, pod.Pod.Spec.Containers[0].Name, cmd)
+		if err == nil || !isExecTransportError(err) {
+			break
+		}
+		a.Debugf("retrying writing data to pod due to exec transport error: %s", err)
+		select {
+		case <-ctx.Done():
+		case <-time.After(time.Second):
+		}
+	}
 
 	if err != nil {
 		a.Fatalf("Writing data to pod failed: %s: %s", err, output.String())
 	}
+}
+
+// isExecTransportError reports whether err is a failure to establish the
+// pod-exec stream (as opposed to a non-zero exit code from the command that
+// ran successfully). These are transient infrastructure errors on the path
+// between the apiserver and the kubelet — for example an
+// "unable to upgrade connection: ... error dialing backend: ... 502"
+// returned by the konnectivity/SPDY proxy on managed clusters — and are worth
+// retrying. The upstream error is a plain fmt.Errorf (it is not wrapped in
+// httpstream.UpgradeFailureError), so it is matched by substring.
+func isExecTransportError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "unable to upgrade connection") ||
+		strings.Contains(msg, "error dialing backend")
+}
+
+// execInPodWithTransportRetry runs a one-shot command in a pod, retrying only
+// on transport-level failures to establish the exec stream (see
+// isExecTransportError). Setup/teardown helpers use it because they have no
+// curl-level --retry of their own, so a single transient apiserver/konnectivity
+// upgrade-connection blip — common on managed clusters and under load — would
+// otherwise abort the whole test before the command ran. A non-zero exit of the
+// command itself is a real result and is returned on the first attempt.
+func (ct *ConnectivityTest) execInPodWithTransportRetry(ctx context.Context, client *k8s.Client, namespace, pod, container string, cmd []string) (bytes.Buffer, error) {
+	var output bytes.Buffer
+	var err error
+	for i := 1; i <= testCommandRetries; i++ {
+		output, err = client.ExecInPod(ctx, namespace, pod, container, cmd)
+		if err == nil || !isExecTransportError(err) {
+			break
+		}
+		ct.Debugf("retrying exec in pod %s/%s due to exec transport error: %s", namespace, pod, err)
+		select {
+		case <-ctx.Done():
+		case <-time.After(time.Second):
+		}
+	}
+	return output, err
 }
 
 func (a *Action) ExecInPod(ctx context.Context, cmd []string) {
@@ -306,6 +367,13 @@ func (a *Action) ExecInPod(ctx context.Context, cmd []string) {
 		if err == nil && strings.TrimSpace(pingHeaderPattern.ReplaceAllString(output.String(), "")) == "" {
 			a.Debugf("retrying command %s due to inconclusive results", cmdStr)
 			continue
+		} else if _, lost := lostCurlExitCode(output, errOutput); err == nil && lost {
+			// The exec stream reported success, but curl printed an error to
+			// its output: the command's real exit status was dropped by the
+			// apiserver<->kubelet exec transport. Retry to obtain a reliable
+			// status before interpreting the result.
+			a.Debugf("retrying command %s due to lost exit status", cmdStr)
+			continue
 		} else if err != nil {
 			exitCode, _ := a.extractExitCode(err)
 			if exitCode == ExitInvalidCode {
@@ -338,6 +406,18 @@ func (a *Action) ExecInPod(ctx context.Context, cmd []string) {
 				a.Failf("command %q failed with unexpected exit code: %s (expected %d, found %d)", cmdStr, err, expectedExitCode, exitCode)
 			}
 		}
+	} else if curlCode, lost := lostCurlExitCode(output, errOutput); lost {
+		// The exec transport reported success but curl itself printed an error:
+		// the real exit status was dropped somewhere between the apiserver and
+		// the kubelet (observed during agent rollouts on some clusters). Fall
+		// back to the exit code curl reported in its own output so that a
+		// genuinely failed command is not misread as an unexpected success.
+		if expectedExitCode == ExitAnyError || curlCode == expectedExitCode {
+			a.test.Debugf("command %q failed as expected (recovered from lost exit status): curl exit %d", cmdStr, curlCode)
+		} else {
+			a.Failf("command %q failed with unexpected exit code (recovered from lost exit status): expected %d, found %d", cmdStr, expectedExitCode, curlCode)
+			showOutput = true
+		}
 	} else {
 		if expectedExitCode != 0 {
 			// Command succeeded unexpectedly, display output.
@@ -355,6 +435,35 @@ func (a *Action) ExecInPod(ctx context.Context, cmd []string) {
 }
 
 var exitCodeRegex = regexp.MustCompile("exit code ([0-9]+)")
+
+// curlErrorRegex matches the error curl prints with --show-error, e.g.
+// "curl: (22) The requested URL returned error: 503". The captured number is
+// curl's own exit code.
+var curlErrorRegex = regexp.MustCompile(`curl: \(([0-9]+)\)`)
+
+// lostCurlExitCode detects the case where the pod-exec transport reported the
+// command as successful (err == nil) even though curl actually failed. This
+// happens when the terminating exit-status frame is dropped between the
+// apiserver and the kubelet (observed on some clusters during agent rollouts):
+// client-go then sees no error, but curl's --show-error message is still in the
+// captured output. It returns curl's reported exit code and true in that case,
+// so the caller can fall back to it instead of misreading the command as an
+// unexpected success. A command that genuinely succeeded prints no such marker,
+// so this returns false and the normal success handling applies.
+func lostCurlExitCode(stdout, stderr bytes.Buffer) (ExitCode, bool) {
+	for _, buf := range []string{stderr.String(), stdout.String()} {
+		m := curlErrorRegex.FindStringSubmatch(buf)
+		if len(m) != 2 {
+			continue
+		}
+		i, err := strconv.Atoi(m[1])
+		if err != nil || i < 1 || i > 255 {
+			continue
+		}
+		return ExitCode(i), true
+	}
+	return ExitInvalidCode, false
+}
 
 // extractExitCode extracts command exit code from ExecInPod() error output
 func (a *Action) extractExitCode(err error) (ExitCode, error) {

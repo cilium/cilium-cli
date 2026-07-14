@@ -702,7 +702,7 @@ const (
 
 	// EnableEncryptionStrictModeIngress enables strict mode encryption enforcement for ingress traffic.
 	// When enabled, all unencrypted pod-to-pod ingress traffic will be dropped.
-	// This option is only applicable when encryption and tunneling is enabled.
+	// This option is applicable when WireGuard encryption is enabled.
 	EnableEncryptionStrictModeIngress = "enable-encryption-strict-mode-ingress"
 
 	// KVstoreLeaseTTL is the time-to-live for lease in kvstore.
@@ -1417,7 +1417,7 @@ type DaemonConfig struct {
 
 	// EnableEncryptionStrictModeIngress enables strict mode encryption for ingress traffic.
 	// When enabled, all unencrypted pod-to-pod ingress traffic will be dropped.
-	// This option is only applicable when wireguard encryption and tunneling is enabled.
+	// This option is applicable when WireGuard encryption is enabled.
 	EnableEncryptionStrictModeIngress bool
 
 	// EnableL2Announcements enables L2 announcement of service IPs
@@ -2005,6 +2005,11 @@ func (c *DaemonConfig) TunnelingEnabled() bool {
 	return c.RoutingMode != RoutingModeNative
 }
 
+// RequiresNativeRouting returns true if the agent needs to use native routing to implement some features.
+func (c *DaemonConfig) RequiresNativeRouting() bool {
+	return c.RoutingMode == RoutingModeNative || c.RoutingMode == RoutingModeHybrid
+}
+
 // AreDevicesRequired returns true if the agent needs to attach to the native
 // devices to implement some features.
 func (c *DaemonConfig) AreDevicesRequired(kprCfg kpr.KPRConfig, wireguardEnabled, ipsecEnabled bool) bool {
@@ -2020,7 +2025,7 @@ func (c *DaemonConfig) NeedEgressOnWireGuardDevice(kprCfg kpr.KPRConfig, wiregua
 	}
 
 	// No need to handle rev-NAT xlations in wireguard with tunneling enabled.
-	if c.TunnelingEnabled() {
+	if !c.RequiresNativeRouting() {
 		return false
 	}
 
@@ -2108,12 +2113,6 @@ func (c *DaemonConfig) UnreachableRoutesEnabled() bool {
 	return c.EnableUnreachableRoutes
 }
 
-// CiliumNamespaceName returns the name of the namespace in which Cilium is
-// deployed in
-func (c *DaemonConfig) CiliumNamespaceName() string {
-	return c.K8sNamespace
-}
-
 // AgentNotReadyNodeTaintValue returns the value of the taint key that cilium agents
 // will manage on their nodes
 func (c *DaemonConfig) AgentNotReadyNodeTaintValue() string {
@@ -2138,6 +2137,10 @@ func (c *DaemonConfig) PolicyCIDRMatchesNodes() bool {
 	return slices.Contains(c.PolicyCIDRMatchMode, "nodes")
 }
 
+func (c *DaemonConfig) PolicyCIDRMatchesPods() bool {
+	return slices.Contains(c.PolicyCIDRMatchMode, "pods")
+}
+
 // PerNodeLabelsEnabled returns true if per-node labels feature
 // is enabled
 func (c *DaemonConfig) PerNodeLabelsEnabled() bool {
@@ -2145,10 +2148,10 @@ func (c *DaemonConfig) PerNodeLabelsEnabled() bool {
 }
 
 func (c *DaemonConfig) validatePolicyCIDRMatchMode() error {
-	// Currently, the only acceptable values is "nodes".
+	// Currently, the acceptable values are "nodes" and "pods".
 	for _, mode := range c.PolicyCIDRMatchMode {
 		switch mode {
-		case "nodes":
+		case "nodes", "pods":
 			continue
 		default:
 			return fmt.Errorf("unknown CIDR match mode: %s", mode)
@@ -2228,10 +2231,6 @@ func (c *DaemonConfig) Validate(vp *viper.Viper) error {
 		return fmt.Errorf("RouteMetric '%d' cannot be negative", c.RouteMetric)
 	}
 
-	if c.IPAM == ipamOption.IPAMENI && c.EnableIPv6 {
-		return fmt.Errorf("IPv6 cannot be enabled in ENI IPAM mode")
-	}
-
 	if c.EnableIPv6NDP {
 		if !c.EnableIPv6 {
 			return fmt.Errorf("IPv6NDP cannot be enabled when IPv6 is not enabled")
@@ -2242,10 +2241,10 @@ func (c *DaemonConfig) Validate(vp *viper.Viper) error {
 	}
 
 	switch c.RoutingMode {
-	case RoutingModeNative, RoutingModeTunnel:
+	case RoutingModeNative, RoutingModeTunnel, RoutingModeHybrid:
 	default:
-		return fmt.Errorf("invalid routing mode %q, valid modes = {%q, %q}",
-			c.RoutingMode, RoutingModeTunnel, RoutingModeNative)
+		return fmt.Errorf("invalid routing mode %q, valid modes = {%q, %q, %q}",
+			c.RoutingMode, RoutingModeTunnel, RoutingModeNative, RoutingModeHybrid)
 	}
 
 	cinfo := clustermeshTypes.ClusterInfo{
@@ -2603,6 +2602,10 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 		if !c.EnableIPv4 || !c.EnableIPv6 {
 			logging.Fatal(logger, fmt.Sprintf("%s requires both --%s and --%s enabled", EnableNat46X64Gateway, EnableIPv4Name, EnableIPv6Name))
 		}
+	}
+
+	if c.IPAMMode() == ipamOption.IPAMENI && c.EnableIPv6 {
+		logger.Warn("IPv6 support in the ENI IPAM mode (ipam.mode=eni, ipv6.enabled=true) is a beta feature. Please use it with caution and report any issues you encounter: https://github.com/cilium/cilium/issues/new?template=bug_report.yaml")
 	}
 
 	encryptionStrictModeEgressEnabled := vp.GetBool(EnableEncryptionStrictModeEgress)
@@ -2985,7 +2988,7 @@ func (c *DaemonConfig) checkIPv4NativeRoutingCIDR() error {
 	if c.EnableIPMasqAgent {
 		return nil
 	}
-	if c.TunnelingEnabled() {
+	if !c.RequiresNativeRouting() {
 		return nil
 	}
 	if c.IPAMMode() == ipamOption.IPAMENI || c.IPAMMode() == ipamOption.IPAMAlibabaCloud {
@@ -3012,7 +3015,7 @@ func (c *DaemonConfig) checkIPv6NativeRoutingCIDR() error {
 	if c.EnableIPMasqAgent {
 		return nil
 	}
-	if c.TunnelingEnabled() {
+	if !c.RequiresNativeRouting() {
 		return nil
 	}
 	return fmt.Errorf(
