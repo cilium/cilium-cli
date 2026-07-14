@@ -482,6 +482,8 @@ const (
 	// Envoy secrets
 	ResourceSecrets = "secrets"
 
+	ResourceType = "resourceType"
+
 	// Size of the buffer
 	BufferSize = "buffer-size"
 
@@ -628,6 +630,21 @@ const (
 
 	// XDSDetail is detail string included in XDS NACKs.
 	XDSDetail = "xdsDetail"
+
+	// XDSCurrentVersion is the current version of an xDS resource.
+	XDSCurrentVersion = "xdsCurrentVersion"
+
+	// XDSPushedVersion is the version of an xDS resource that has been pushed.
+	XDSPushedVersion = "xdsPushedVersion"
+
+	// XDSVersion is the version of an xDS resource.
+	XDSVersion = "xdsVersion"
+
+	// XDSResourceNames is the names of xDS resources.
+	XDSResourceNames = "xdsResourceNames"
+
+	// XDSNumResources is the number of xDS resources in a response.
+	XDSNumResources = "numResources"
 
 	// K8s-specific
 
@@ -1176,6 +1193,10 @@ const (
 
 	ClusterConfig = "clusterConfig"
 
+	ListenerName = "listenerName"
+
+	ListenerConfig = "listenerConfig"
+
 	NodeConfig = "nodeConfig"
 
 	Server = "server"
@@ -1311,6 +1332,10 @@ const (
 	EmptyInterfaceSlots = "emptyInterfaceSlots"
 
 	NeededIPs = "neededIPs"
+
+	NeededIPv6Prefixes = "neededIPv6Prefixes"
+
+	AvailableIPv6Prefixes = "availableIPv6Prefixes"
 
 	Releasing = "releasing"
 
@@ -1559,6 +1584,10 @@ const (
 	ExpectedPrevInterval = "expectedPrevInterval"
 
 	ActualPrevInterval = "actualPrevInterval"
+
+	ExpectedDuration = "expectedDuration"
+
+	ElapsedDuration = "elapsedDuration"
 
 	NewInterval = "newInterval"
 

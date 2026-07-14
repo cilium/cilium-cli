@@ -10,12 +10,13 @@ import (
 	"maps"
 	"os"
 	"strconv"
+	"sync"
 	"sync/atomic"
 
 	"github.com/cilium/hive/script"
 	cilium "github.com/cilium/proxy/go/cilium/api"
-	"github.com/cilium/stream"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/util/sets"
 
@@ -37,29 +38,18 @@ import (
 	"github.com/cilium/cilium/pkg/policy/api"
 	"github.com/cilium/cilium/pkg/policy/types"
 	"github.com/cilium/cilium/pkg/policy/utils"
-	"github.com/cilium/cilium/pkg/spanstat"
 )
 
 type PolicyRepository interface {
 	BumpRevision() uint64
-	GetAuthTypes(localID identity.NumericIdentity, remoteID identity.NumericIdentity) AuthTypes
 	GetEnvoyHTTPRules(l7Rules *api.L7Rules, ns string) (*cilium.HttpNetworkPolicyRules, bool)
 
-	// GetSelectorPolicy computes the SelectorPolicy for a given identity. It
-	// is only used in unit tests.
-	//
-	// It returns nil if skipRevision is >= than the already calculated version.
-	// This is used to skip policy calculation when a certain revision delta is
-	// known to not affect the given identity. Pass a skipRevision of 0 to force
-	// calculation.
-	GetSelectorPolicy(id *identity.Identity, skipRevision uint64, stats GetPolicyStatistics, endpointID uint64) (SelectorPolicy, uint64, error)
+	// ComputeSelectorPolicy resolves the SelectorPolicy for the given
+	// identity at the repository's current revision. The returned policy is
+	// already attached to the SelectorCache. The caller must detach it when
+	// no longer needed.
+	ComputeSelectorPolicy(id *identity.Identity) (SelectorPolicy, uint64, error)
 
-	// ComputeSelectorPolicy computes the SelectorPolicy for a given identity,
-	// if it needs recomputing.
-	ComputeSelectorPolicy(id *identity.Identity, skipRevision uint64) (SelectorPolicy, uint64, SelectorPolicy, bool, error)
-
-	// GetPolicySnapshot returns a map of all the SelectorPolicies in the repository.
-	GetPolicySnapshot() map[identity.NumericIdentity]SelectorPolicy
 	GetRevision() uint64
 	GetRulesList() *models.Policy
 	GetSelectorCache() *SelectorCache
@@ -68,13 +58,11 @@ type PolicyRepository interface {
 	ReplaceByResource(rules types.PolicyEntries, resource ipcachetypes.ResourceID) (affectedIDs *set.Set[identity.NumericIdentity], rev uint64, oldRevCnt int)
 	Search() (types.PolicyEntries, uint64)
 
-	PolicyCacheObservable() stream.Observable[PolicyCacheChange]
+	// UpdateIdentities updates the set of identities in the subject
+	// selectorcache, which ComputeSelectorPolicy reads. Must be called before it.
+	UpdateIdentities(added, deleted identity.IdentityMap)
 
 	SetNamedPortsGetter(namedPortsGetter NamedPortsGetter)
-}
-
-type GetPolicyStatistics interface {
-	WaitingForPolicyRepository() *spanstat.SpanStat
 }
 
 // Repository is a list of policy rules which in combination form the security
@@ -105,9 +93,6 @@ type Repository struct {
 	// to select what endpoints they apply to
 	subjectSelectorCache *SelectorCache
 
-	// policyCache tracks the selector policies created from this repo
-	policyCache *policyCache
-
 	certManager certificatemanager.CertificateManager
 
 	metricsManager    types.PolicyMetrics
@@ -129,11 +114,6 @@ func (p *Repository) GetSelectorCache() *SelectorCache {
 // GetSubjectSelectorCache returns the selector cache used by the Repository for indexing policies
 func (p *Repository) GetSubjectSelectorCache() *SelectorCache {
 	return p.subjectSelectorCache
-}
-
-// GetAuthTypes returns the AuthTypes required by the policy between the localID and remoteID
-func (p *Repository) GetAuthTypes(localID, remoteID identity.NumericIdentity) AuthTypes {
-	return p.policyCache.getAuthTypes(localID, remoteID)
 }
 
 // NewPolicyRepository creates a new policy repository.
@@ -159,7 +139,6 @@ func NewPolicyRepository(
 		l7RulesTranslator:    l7RulesTranslator,
 	}
 	repo.revision.Store(1)
-	repo.policyCache = newPolicyCache(repo, idmgr)
 	return repo
 }
 
@@ -168,6 +147,12 @@ func NewPolicyRepository(
 // depends on the repository for identity updates.
 func (p *Repository) SetNamedPortsGetter(namedPortsGetter NamedPortsGetter) {
 	p.namedPortsGetter = namedPortsGetter
+}
+
+// UpdateIdentities updates the set of identities in the subject
+// selectorcache, which ComputeSelectorPolicy reads. Must be called before it.
+func (p *Repository) UpdateIdentities(added, deleted identity.IdentityMap) {
+	p.subjectSelectorCache.UpdateIdentities(added, deleted, &sync.WaitGroup{})
 }
 
 func (p *Repository) Search() (types.PolicyEntries, uint64) {
@@ -207,7 +192,6 @@ func (p *Repository) addListLocked(entries types.PolicyEntries) (ruleSlice, uint
 
 func (p *Repository) insert(r *rule) {
 	p.rules[r.key] = r
-	p.metricsManager.AddRule(r.PolicyEntry)
 	namespace := r.key.resource.Namespace()
 	if _, ok := p.rulesByNamespace[namespace]; !ok {
 		p.rulesByNamespace[namespace] = sets.New[ruleKey]()
@@ -221,7 +205,10 @@ func (p *Repository) insert(r *rule) {
 		p.rulesByResource[rid][r.key] = r
 	}
 
-	metrics.Policy.Inc()
+	if p.metricsManager != nil {
+		p.metricsManager.AddRule(r.PolicyEntry)
+		metrics.Policy.Inc()
+	}
 }
 
 func (p *Repository) del(key ruleKey) {
@@ -229,7 +216,6 @@ func (p *Repository) del(key ruleKey) {
 	if r == nil {
 		return
 	}
-	p.metricsManager.DelRule(r.PolicyEntry)
 	delete(p.rules, key)
 	namespace := r.key.resource.Namespace()
 	p.rulesByNamespace[namespace].Delete(key)
@@ -244,7 +230,10 @@ func (p *Repository) del(key ruleKey) {
 			delete(p.rulesByResource, rid)
 		}
 	}
-	metrics.Policy.Dec()
+	if p.metricsManager != nil {
+		p.metricsManager.DelRule(r.PolicyEntry)
+		metrics.Policy.Dec()
+	}
 }
 
 // newRule allocates a CachedSelector for a given rule.
@@ -312,7 +301,9 @@ func (p *Repository) GetRevision() uint64 {
 
 // BumpRevision allows forcing policy regeneration
 func (p *Repository) BumpRevision() uint64 {
-	metrics.PolicyRevision.Inc()
+	if p.metricsManager != nil {
+		metrics.PolicyRevision.Inc()
+	}
 	return p.revision.Add(1)
 }
 
@@ -557,50 +548,18 @@ func (rules ruleSlice) addDefaultRule(subject *identity.Identity, peers types.Se
 	})
 }
 
-// GetSelectorPolicy computes the SelectorPolicy for a given identity. It is
-// only used in unit tests.
-//
-// It returns nil if skipRevision is >= than the already calculated version.
-// This is used to skip policy calculation when a certain revision delta is
-// known to not affect the given identity. Pass a skipRevision of 0 to force
-// calculation.
-func (r *Repository) GetSelectorPolicy(id *identity.Identity, skipRevision uint64, stats GetPolicyStatistics, endpointID uint64) (SelectorPolicy, uint64, error) {
-	stats.WaitingForPolicyRepository().Start()
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-	stats.WaitingForPolicyRepository().End(true)
-
-	rev := r.GetRevision()
-
-	// Do we already have a given revision?
-	// If so, skip calculation.
-	if skipRevision >= rev {
-		return nil, rev, nil
-	}
-
-	// This may call back in to the (locked) repository to generate the
-	// selector policy
-	sp, old, _, err := r.policyCache.updateSelectorPolicy(id, endpointID)
-	if old != nil {
-		old.Supersede()
-	}
-
-	return sp, rev, err
-}
-
-// ComputeSelectorPolicy computes the SelectorPolicy for a given identity, if
-// it needs recomputing.
-func (r *Repository) ComputeSelectorPolicy(id *identity.Identity, skipRevision uint64) (SelectorPolicy, uint64, SelectorPolicy, bool, error) {
+// ComputeSelectorPolicy resolves the SelectorPolicy for the given identity at
+// the repository's current revision. The returned policy is already attached
+// to the SelectorCache. The caller must detach it when no longer needed.
+func (r *Repository) ComputeSelectorPolicy(id *identity.Identity) (SelectorPolicy, uint64, error) {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 
-	rev := r.GetRevision()
-	sp, old, release, err := r.policyCache.updateSelectorPolicy(id, 0)
+	sp, err := r.resolvePolicyLocked(id)
 	if err != nil {
-		return nil, 0, nil, release, err
+		return nil, 0, err
 	}
-
-	return sp, rev, old, release, err
+	return sp, r.GetRevision(), nil
 }
 
 // ReplaceByResource replaces all rules by resource, returning the complete set of affected endpoints.
@@ -646,18 +605,6 @@ func (p *Repository) ReplaceByResource(rules types.PolicyEntries, resource ipcac
 	return affectedIDs, p.BumpRevision(), len(oldRules)
 }
 
-// GetPolicySnapshot returns a map of all the SelectorPolicies in the repository.
-func (p *Repository) GetPolicySnapshot() map[identity.NumericIdentity]SelectorPolicy {
-	p.mutex.RLock()
-	defer p.mutex.RUnlock()
-
-	return p.policyCache.GetPolicySnapshot()
-}
-
-func (p *Repository) PolicyCacheObservable() stream.Observable[PolicyCacheChange] {
-	return p.policyCache
-}
-
 func RepositoryScriptCmds(p *Repository) map[string]script.Cmd {
 	return map[string]script.Cmd{
 		"policyrepo/list": script.Command(
@@ -674,11 +621,21 @@ func RepositoryScriptCmds(p *Repository) map[string]script.Cmd {
 		"policyrepo/selectorcache": script.Command(
 			script.CmdUsage{
 				Summary: "Dump the selector cache model",
+				Flags: func(fs *pflag.FlagSet) {
+					fs.Bool("subject", false, "Dump the subject selector cache instead of the peer selector cache")
+				},
 			},
 			func(s *script.State, args ...string) (script.WaitFunc, error) {
+				subject, err := s.Flags.GetBool("subject")
+				if err != nil {
+					return nil, err
+				}
 				return func(s *script.State) (stdout string, stderr string, err error) {
-					model := p.GetSelectorCache().GetModel()
-					return spew.Sprint(model), "", nil
+					sc := p.GetSelectorCache()
+					if subject {
+						sc = p.GetSubjectSelectorCache()
+					}
+					return spew.Sprint(sc.GetModel()), "", nil
 				}, nil
 			},
 		),
@@ -744,4 +701,44 @@ func RepositoryScriptCmds(p *Repository) map[string]script.Cmd {
 			},
 		),
 	}
+}
+
+// Snapshot returns a repository that is "disconnected" from the rest of the daemon.
+// It includes a static snapshot of the selectorcache and an empty policy cache.
+//
+// It has all existing rules and identities.
+func (p *Repository) Snapshot(logger *slog.Logger, cm certificatemanager.CertificateManager, rt envoypolicy.EnvoyL7RulesTranslator) (*Repository, identity.IdentityMap) {
+	p.mutex.RLock()
+	defer p.mutex.RUnlock()
+
+	ids := p.selectorCache.getIdentities()
+
+	out := NewPolicyRepository(
+		logger,
+		ids,
+		cm,
+		rt,
+		identitymanager.NewIDManager(logger),
+		nil, // disable metrics
+	)
+	out.namedPortsGetter = p.namedPortsGetter
+
+	// Insert all rules in to the new policy repository.
+	//
+	// These need to be inserted as if they were coming externally, so selectors
+	// will be allocated in the new selectorcache.
+	for k, r := range p.rules {
+		newRule := out.newRule(r.PolicyEntry, k)
+		out.insert(newRule)
+	}
+
+	return out, ids
+}
+
+// ResolvePolicy directly calculates policy. This should only used be for debug or test code.
+func (p *Repository) ResolvePolicy(securityIdentity *identity.Identity) (SelectorPolicy, error) {
+	p.mutex.RLock()
+	defer p.mutex.RUnlock()
+
+	return p.resolvePolicyLocked(securityIdentity)
 }

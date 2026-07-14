@@ -22,7 +22,6 @@ const (
 	L7Proxy            Feature = "l7-proxy"
 	HostFirewall       Feature = "host-firewall"
 	ICMPPolicy         Feature = "icmp-policy"
-	PortRanges         Feature = "port-ranges"
 	L7PortRanges       Feature = "l7-port-ranges"
 	Tunnel             Feature = "tunnel"
 	TunnelPort         Feature = "tunnel-port"
@@ -128,6 +127,8 @@ const (
 	Ztunnel Feature = "enable-ztunnel"
 
 	DefaultGlobalNamespace Feature = "clustermesh-default-global-namespace"
+
+	SubnetTopology Feature = "subnet-topology"
 )
 
 // Feature is the name of a Cilium Feature (e.g. l7-proxy, cni chaining mode etc)
@@ -273,15 +274,7 @@ func RequireModeIsNot(feature Feature, mode string) Requirement {
 
 // ExtractFromCiliumVersion extracts features based on Cilium version.
 func (fs Set) ExtractFromCiliumVersion(ciliumVersion semver.Version) {
-	fs[PortRanges] = ExtractPortRanges(ciliumVersion)
 	fs[L7PortRanges] = ExtractL7PortRanges(ciliumVersion)
-}
-
-func ExtractPortRanges(ciliumVersion semver.Version) Status {
-	enabled := versioncheck.MustCompile(">=1.16.0")(ciliumVersion)
-	return Status{
-		Enabled: enabled,
-	}
 }
 
 func ExtractL7PortRanges(ciliumVersion semver.Version) Status {
@@ -425,6 +418,12 @@ func (fs Set) ExtractFromConfigMap(cm *v1.ConfigMap) {
 
 	fs[L7LoadBalancer] = Status{
 		Enabled: cm.Data[string(L7LoadBalancer)] == "envoy",
+	}
+
+	st, ok := cm.Data[string(SubnetTopology)]
+	fs[SubnetTopology] = Status{
+		Enabled: ok,
+		Mode:    st,
 	}
 
 	fs[Tunnel], fs[TunnelPort] = ExtractTunnelFeatureFromConfigMap(cm)

@@ -22,7 +22,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
@@ -35,7 +34,6 @@ import (
 	slimcorev1 "github.com/cilium/cilium/pkg/k8s/slim/k8s/api/core/v1"
 	slimmetav1 "github.com/cilium/cilium/pkg/k8s/slim/k8s/apis/meta/v1"
 	policyapi "github.com/cilium/cilium/pkg/policy/api"
-	"github.com/cilium/cilium/pkg/versioncheck"
 )
 
 const (
@@ -1819,8 +1817,8 @@ func (ct *ConnectivityTest) patchDeployment(ctx context.Context) error {
 		}
 
 		for _, pod := range clientPods.Items {
-			_, err := ct.client.ExecInPod(ctx, ct.params.TestNamespace, pod.Name, pod.Spec.Containers[0].Name,
-				[]string{"sh", "-c", fmt.Sprintf("echo %s | base64 -d >> /etc/ssl/certs/ca-certificates.crt", encodedCert)})
+			cmd := []string{"sh", "-c", fmt.Sprintf("echo %s | base64 -d >> /etc/ssl/certs/ca-certificates.crt", encodedCert)}
+			_, err := ct.execInPodWithTransportRetry(ctx, ct.client, ct.params.TestNamespace, pod.Name, pod.Spec.Containers[0].Name, cmd)
 			if err != nil {
 				return fmt.Errorf("unable to add CA to pod %s: %w", pod.Name, err)
 			}
@@ -1902,11 +1900,6 @@ func (ct *ConnectivityTest) createTestConnDisruptServerDeployAndSvc(ctx context.
 		}
 
 		if enabled, _ := ct.Features.MatchRequirements(features.RequireEnabled(features.CNP)); enabled {
-			ipsec, _ := ct.Features.MatchRequirements(features.RequireMode(features.EncryptionPod, "ipsec"))
-			if ipsec && versioncheck.MustCompile("<1.16.0")(ct.CiliumVersion) {
-				// https://github.com/cilium/cilium/issues/36681
-				continue
-			}
 			for _, client := range ct.Clients() {
 				cnp := cnpFunc(ct.params.TestNamespace)
 				ct.Logf("✨ [%s] Deploying %s CiliumNetworkPolicy...", client.ClusterName(), cnp.Name)
@@ -2293,20 +2286,8 @@ func (ct *ConnectivityTest) deployPerf(ctx context.Context) error {
 		}
 	}
 
-	// Exclude nodes that don't run Cilium (labeled with CiliumNoScheduleLabel,
-	// e.g. via `cilium install --nodes-without-cilium`). The default node
-	// selectors are empty, so without this filter ListNodes can return such a
-	// node; perf pods pinned there either never become ready (the
-	// agent-not-ready NoExecute taint is only removed once a Cilium pod runs on
-	// the node) or would measure traffic on a node without Cilium's datapath,
-	// producing meaningless results. NotEquals also matches nodes that do not
-	// carry the label at all, i.e. the Cilium nodes.
-	noSchedule, err := labels.NewRequirement(defaults.CiliumNoScheduleLabel, selection.NotEquals, []string{"true"})
-	if err != nil {
-		return fmt.Errorf("unable to build node selector requirement: %w", err)
-	}
-	nodeSelectorServer := labels.SelectorFromSet(ct.params.PerfParameters.NodeSelectorServer).Add(*noSchedule).String()
-	nodeSelectorClient := labels.SelectorFromSet(ct.params.PerfParameters.NodeSelectorClient).Add(*noSchedule).String()
+	nodeSelectorServer := ct.params.PerfParameters.NodeSelectorServer
+	nodeSelectorClient := ct.params.PerfParameters.NodeSelectorClient
 
 	serverNodes, err := ct.client.ListNodes(ctx, metav1.ListOptions{LabelSelector: nodeSelectorServer, Limit: 2})
 	if err != nil {
@@ -3066,7 +3047,7 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 			if iface := ct.params.SecondaryNetworkIface; iface != "" {
 				if ct.Features[features.IPv4].Enabled {
 					cmd := []string{"/bin/sh", "-c", fmt.Sprintf("ip -family inet -oneline address show dev %s scope global | awk '{print $4}' | cut -d/ -f1", iface)}
-					addr, err := client.ExecInPod(ctx, pod.Namespace, pod.Name, pod.Spec.Containers[0].Name, cmd)
+					addr, err := ct.execInPodWithTransportRetry(ctx, client, pod.Namespace, pod.Name, pod.Spec.Containers[0].Name, cmd)
 					if err != nil {
 						return fmt.Errorf("failed to fetch secondary network ip addr: %w", err)
 					}
@@ -3074,7 +3055,7 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 				}
 				if ct.Features[features.IPv6].Enabled {
 					cmd := []string{"/bin/sh", "-c", fmt.Sprintf("ip -family inet6 -oneline address show dev %s scope global | awk '{print $4}' | cut -d/ -f1", iface)}
-					addr, err := client.ExecInPod(ctx, pod.Namespace, pod.Name, pod.Spec.Containers[0].Name, cmd)
+					addr, err := ct.execInPodWithTransportRetry(ctx, client, pod.Namespace, pod.Name, pod.Spec.Containers[0].Name, cmd)
 					if err != nil {
 						return fmt.Errorf("failed to fetch secondary network ip addr: %w", err)
 					}

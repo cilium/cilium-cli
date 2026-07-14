@@ -116,6 +116,7 @@ const (
 	timestampPlaceholderFileName             = "<ts>"
 	gatewayClassesFileName                   = "gatewayapi-gatewayclasses-<ts>.yaml"
 	gatewaysFileName                         = "gatewayapi-gateways-<ts>.yaml"
+	listenerSetsFileName                     = "gatewayapi-listenersets-<ts>.yaml"
 	httpRoutesFileName                       = "gatewayapi-httproutes-<ts>.yaml"
 	tlsRoutesFileName                        = "gatewayapi-tlsroutes-<ts>.yaml"
 	grpcRoutesFileName                       = "gatewayapi-grpcroutes-<ts>.yaml"
@@ -187,6 +188,12 @@ var (
 		Version:  "v1",
 	}
 
+	listenerSet = schema.GroupVersionResource{
+		Group:    "gateway.networking.k8s.io",
+		Resource: "listenersets",
+		Version:  "v1",
+	}
+
 	referenceGrant = schema.GroupVersionResource{
 		Group:    "gateway.networking.k8s.io",
 		Resource: "referencegrants",
@@ -214,13 +221,13 @@ var (
 	tcpRoute = schema.GroupVersionResource{
 		Group:    "gateway.networking.k8s.io",
 		Resource: "tcproutes",
-		Version:  "v1alpha2",
+		Version:  "v1",
 	}
 
 	udpRoute = schema.GroupVersionResource{
 		Group:    "gateway.networking.k8s.io",
 		Resource: "udproutes",
-		Version:  "v1alpha2",
+		Version:  "v1",
 	}
 
 	grpcRoute = schema.GroupVersionResource{

@@ -4,6 +4,7 @@
 package features
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,12 +13,14 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/cilium/cilium/api/v1/models"
 	"github.com/cilium/cilium/cilium-cli/defaults"
+	"github.com/cilium/cilium/cilium-cli/k8s"
 )
 
 var (
@@ -36,7 +39,24 @@ const (
 	kubeProxyDaemonSetName    = "kube-proxy"
 
 	clusterWide = "cluster-wide"
+
+	// featureExecRetries is the number of attempts for each ExecInPod call, to
+	// tolerate transient Kubernetes API server exec-proxy errors (e.g. spurious
+	// "502 Bad Gateway" responses while dialing the kubelet backend, commonly
+	// observed on managed clusters such as AKS) and truncated (empty) exec
+	// responses that report success but return no output.
+	featureExecRetries = 3
 )
+
+// errEmptyExecOutput is returned by retryTransientExec when ExecInPod keeps
+// reporting success while returning an empty output stream. Surfacing it
+// explicitly avoids the opaque "unexpected end of JSON input" error that
+// nodeStatusFromOutput would otherwise emit when parsing the empty output.
+var errEmptyExecOutput = errors.New("exec returned empty output")
+
+// featureExecRetryBackoff is the delay between ExecInPod retries. It is a
+// variable rather than a constant so that tests can shorten it.
+var featureExecRetryBackoff = 2 * time.Second
 
 // detectClusterWideComponents detects cluster-wide components like kube-proxy and local-node-dns
 // and returns them as metrics with specific names
@@ -246,9 +266,58 @@ func (s *Feature) fetchStatusConcurrently(ctx context.Context, pods []corev1.Pod
 	return data, err
 }
 
+// execInPodWithRetry execs the given command in the pod, retrying up to
+// featureExecRetries times when the failure looks like a transient error of the
+// API server exec proxy (see k8s.IsTransientExecError) or when exec reports
+// success but returns no output. Genuine command failures are returned
+// immediately, without retrying.
+func (s *Feature) execInPodWithRetry(ctx context.Context, namespace, pod, container string, command []string) (bytes.Buffer, error) {
+	return retryTransientExec(ctx, func(ctx context.Context) (bytes.Buffer, error) {
+		return s.client.ExecInPod(ctx, namespace, pod, container, command)
+	})
+}
+
+// retryTransientExec invokes exec, retrying up to featureExecRetries times with
+// featureExecRetryBackoff between attempts while the result looks transient:
+// either a transient exec-proxy error (see k8s.IsTransientExecError) or a success
+// with empty output. The latter happens when the API server exec proxy
+// truncates the response stream and returns no data with a nil error; a healthy
+// features-status command always prints at least an empty JSON array, so an
+// empty output is never a legitimate result and is worth retrying. It returns as
+// soon as exec succeeds with non-empty output, returns a non-transient error, or
+// the context is done. When exec keeps returning empty output until the attempts
+// are exhausted, it returns errEmptyExecOutput rather than letting the caller
+// fail later with an opaque JSON parse error.
+func retryTransientExec(ctx context.Context, exec func(context.Context) (bytes.Buffer, error)) (bytes.Buffer, error) {
+	var output bytes.Buffer
+	var err error
+	for attempt := range featureExecRetries {
+		output, err = exec(ctx)
+		if err != nil {
+			if !k8s.IsTransientExecError(err) {
+				return output, err
+			}
+		} else if output.Len() > 0 {
+			return output, nil
+		} else {
+			// Success with empty output: treat as transient and, if this was
+			// the last attempt, surface an explicit error.
+			err = errEmptyExecOutput
+		}
+		if attempt < featureExecRetries-1 {
+			select {
+			case <-ctx.Done():
+				return output, ctx.Err()
+			case <-time.After(featureExecRetryBackoff):
+			}
+		}
+	}
+	return output, err
+}
+
 func (s *Feature) fetchCiliumFeatureMetricsFromPod(ctx context.Context, pod corev1.Pod) ([]*models.Metric, error) {
 	agentCmd := append([]string{"cilium"}, subCmdMetricsList...)
-	output, err := s.client.ExecInPod(ctx, pod.Namespace, pod.Name, defaults.AgentContainerName, agentCmd)
+	output, err := s.execInPodWithRetry(ctx, pod.Namespace, pod.Name, defaults.AgentContainerName, agentCmd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to features status from %s: %w", pod.Name, err)
 	}
@@ -268,7 +337,7 @@ func (s *Feature) fetchCiliumOperatorFeatureMetricsFromPod(ctx context.Context, 
 		}
 	}
 	operatorCmds := append([]string{operatorCmd}, subCmdMetricsList...)
-	output, err := s.client.ExecInPod(ctx, pod.Namespace, pod.Name, defaults.OperatorContainerName, operatorCmds)
+	output, err := s.execInPodWithRetry(ctx, pod.Namespace, pod.Name, defaults.OperatorContainerName, operatorCmds)
 	if err != nil && !strings.Contains(err.Error(), "level=debug") {
 		return []*models.Metric{}, fmt.Errorf("failed to get features status from %s: %w", pod.Name, err)
 	}

@@ -30,9 +30,6 @@ type EndpointChangeRequest struct {
 	// Name of network device in container netns
 	ContainerInterfaceName string `json:"container-interface-name,omitempty"`
 
-	// Name assigned to container
-	ContainerName string `json:"container-name,omitempty"`
-
 	// Path of Container Netns
 	ContainerNetnsPath string `json:"container-netns-path,omitempty"`
 
@@ -41,9 +38,6 @@ type EndpointChangeRequest struct {
 
 	// ID of datapath tail call map
 	DatapathMapID int64 `json:"datapath-map-id,omitempty"`
-
-	// Disables lookup using legacy endpoint identifiers (container name, container id, pod name) for this endpoint
-	DisableLegacyIdentifiers bool `json:"disable-legacy-identifiers,omitempty"`
 
 	// MAC address
 	HostMac string `json:"host-mac,omitempty"`
@@ -56,6 +50,9 @@ type EndpointChangeRequest struct {
 
 	// Name of network device in host netns
 	InterfaceName string `json:"interface-name,omitempty"`
+
+	// Whether this is a secondary pod interface
+	IsSecondaryInterface bool `json:"is-secondary-interface,omitempty"`
 
 	// Kubernetes namespace name
 	K8sNamespace string `json:"k8s-namespace,omitempty"`

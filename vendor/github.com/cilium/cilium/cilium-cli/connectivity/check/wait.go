@@ -211,7 +211,10 @@ func WaitForServiceEndpoints(ctx context.Context, log Logger, agent Pod, service
 	log.Logf("⌛ [%s] Waiting for Service %s to be synchronized by Cilium pod %s",
 		agent.K8sClient.ClusterName(), service.Name(), agent.Name())
 
-	ctx, cancel := context.WithTimeout(ctx, ShortTimeout)
+	// Use the same timeout as WaitForService above: with concurrent tests it
+	// takes a little bit more time for all the services to be synchronized by
+	// every agent, and 30 seconds occasionally isn't enough.
+	ctx, cancel := context.WithTimeout(ctx, 2*ShortTimeout)
 	defer cancel()
 
 	if service.Service.Spec.ClusterIP == corev1.ClusterIPNone {
@@ -284,11 +287,16 @@ func checkServiceEndpoints(ctx context.Context, agent Pod, service Service, back
 	return nil
 }
 
-// WaitForNodePorts waits until all the nodeports in a service are available on a given node.
-func WaitForNodePorts(ctx context.Context, log Logger, client Pod, nodeIP string, service Service) error {
-	ctx, cancel := context.WithTimeout(ctx, ShortTimeout)
-	defer cancel()
+// nodePortExecProxyTimeout bounds how long we keep retrying a single NodePort
+// probe while the only thing failing is the exec proxy itself (not the probe).
+// The kube-apiserver -> kubelet exec proxy on managed clusters (seen on AKS)
+// can be unreachable for tens of seconds at a time, longer than ShortTimeout,
+// so these failures get their own generous allowance instead of consuming the
+// NodePort readiness budget.
+const nodePortExecProxyTimeout = 3 * time.Minute
 
+// WaitForNodePorts waits until all the nodeports in a service are available on a given node.
+func WaitForNodePorts(parentCtx context.Context, log Logger, client Pod, nodeIP string, service Service) error {
 	for _, port := range service.Service.Spec.Ports {
 		nodePort := port.NodePort
 		if nodePort == 0 {
@@ -297,8 +305,16 @@ func WaitForNodePorts(ctx context.Context, log Logger, client Pod, nodeIP string
 
 		log.Logf("⌛ [%s] Waiting for NodePort %s:%d (%s) to become ready...",
 			client.K8sClient.ClusterName(), nodeIP, nodePort, service.Name())
+
+		// The readiness deadline governs how long we wait for the NodePort
+		// itself to come up. Transient exec-proxy failures are tracked
+		// separately (execProxyDeadline) so a proxy outage does not eat into
+		// it; the exec below always runs against parentCtx, not a deadline that
+		// a proxy blip could expire.
+		readinessDeadline := time.Now().Add(ShortTimeout)
+		execProxyDeadline := time.Now().Add(nodePortExecProxyTimeout)
 		for {
-			stdout, err := client.K8sClient.ExecInPod(ctx,
+			stdout, err := client.K8sClient.ExecInPod(parentCtx,
 				client.Namespace(), client.NameWithoutNamespace(), client.Pod.Spec.Containers[0].Name,
 				[]string{"nc", "-w", "3", "-z", nodeIP, strconv.Itoa(int(nodePort))})
 			if err == nil {
@@ -308,9 +324,23 @@ func WaitForNodePorts(ctx context.Context, log Logger, client Pod, nodeIP string
 			log.Debugf("[%s] Error checking NodePort %s:%d (%s): %s: %s",
 				client.K8sClient.ClusterName(), nodeIP, nodePort, service.Name(), err, stdout.String())
 
+			// A transient exec-proxy failure is not a verdict on whether the
+			// NodePort is up, so it is bounded by the generous execProxyDeadline
+			// and must not count against the fixed readinessDeadline. Any other
+			// error means the probe actually ran and the NodePort is not ready
+			// yet, so it is bounded by readinessDeadline as before.
+			deadline := readinessDeadline
+			if k8s.IsTransientExecError(err) {
+				deadline = execProxyDeadline
+			}
+			if time.Now().After(deadline) {
+				return fmt.Errorf("timeout reached waiting for NodePort %s:%d (%s) (last error: %w)",
+					nodeIP, nodePort, service.Name(), err)
+			}
+
 			select {
 			case <-time.After(PollInterval):
-			case <-ctx.Done():
+			case <-parentCtx.Done():
 				return fmt.Errorf("timeout reached waiting for NodePort %s:%d (%s) (last error: %w)",
 					nodeIP, nodePort, service.Name(), err)
 			}

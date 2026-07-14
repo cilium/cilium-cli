@@ -37,7 +37,7 @@ binary releases.
 
 | Release                                                              | Maintained | Compatible Cilium Versions |
 |----------------------------------------------------------------------|------------|----------------------------|
-| [v0.19.5](https://github.com/cilium/cilium-cli/releases/tag/v0.19.5) | Yes        | Cilium 1.16 and newer      |
+| [v0.19.6](https://github.com/cilium/cilium-cli/releases/tag/v0.19.6) | Yes        | Cilium 1.16 and newer      |
 
 ## Capabilities
 
