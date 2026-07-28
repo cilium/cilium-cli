@@ -1656,6 +1656,9 @@ func (in *CiliumNetworkDriverNodeConfigSpec) DeepEqual(other *CiliumNetworkDrive
 	if in.DraRegistrationTimeoutSeconds != other.DraRegistrationTimeoutSeconds {
 		return false
 	}
+	if in.DraRegistrationMaxAttempts != other.DraRegistrationMaxAttempts {
+		return false
+	}
 	if in.PublishIntervalSeconds != other.PublishIntervalSeconds {
 		return false
 	}
@@ -1768,6 +1771,9 @@ func (in *DummyDeviceManagerConfig) DeepEqual(other *DummyDeviceManagerConfig) b
 	}
 
 	if in.Enabled != other.Enabled {
+		return false
+	}
+	if in.Count != other.Count {
 		return false
 	}
 
@@ -1919,7 +1925,7 @@ func (in *IPv4PoolSpec) DeepEqual(other *IPv4PoolSpec) bool {
 			return false
 		} else {
 			for i, inElement := range *in {
-				if inElement != (*other)[i] {
+				if !inElement.DeepEqual(&(*other)[i]) {
 					return false
 				}
 			}
@@ -1967,7 +1973,7 @@ func (in *IPv6PoolSpec) DeepEqual(other *IPv6PoolSpec) bool {
 			return false
 		} else {
 			for i, inElement := range *in {
-				if inElement != (*other)[i] {
+				if !inElement.DeepEqual(&(*other)[i]) {
 					return false
 				}
 			}
