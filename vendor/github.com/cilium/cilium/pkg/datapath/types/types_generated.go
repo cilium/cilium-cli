@@ -144,13 +144,6 @@ type EDTInfo struct {
 	Pad          [3]uint64
 }
 
-// EgressGWPolicyEntry is generated from the BPF C type egress_gw_policy_entry.
-type EgressGWPolicyEntry struct {
-	_         structs.HostLayout
-	EgressIP  uint32
-	GatewayIP uint32
-}
-
 // EgressGWPolicyEntry6 is generated from the BPF C type egress_gw_policy_entry6.
 type EgressGWPolicyEntry6 struct {
 	_        structs.HostLayout
@@ -242,20 +235,22 @@ type EndpointKey struct {
 type Identity uint32
 
 const (
-	IdentityUnknownID           Identity = 0
-	IdentityHostID              Identity = 1
-	IdentityWorldID             Identity = 2
-	IdentityUnmanagedID         Identity = 3
-	IdentityHealthID            Identity = 4
-	IdentityInitID              Identity = 5
-	IdentityLocalNodeID         Identity = 6
-	IdentityRemoteNodeID        Identity = 6
-	IdentityKubeAPIServerNodeID Identity = 7
-	IdentityIngressID           Identity = 8
-	IdentityWorldIPv4ID         Identity = 9
-	IdentityWorldIPv6ID         Identity = 10
-	IdentityPolicyClusterID     Identity = 11
-	IdentityPolicyClusterMeshID Identity = 12
+	IdentityUnknownID              Identity = 0
+	IdentityHostID                 Identity = 1
+	IdentityWorldID                Identity = 2
+	IdentityUnmanagedID            Identity = 3
+	IdentityHealthID               Identity = 4
+	IdentityInitID                 Identity = 5
+	IdentityLocalNodeID            Identity = 6
+	IdentityRemoteNodeID           Identity = 6
+	IdentityKubeAPIServerNodeID    Identity = 7
+	IdentityIngressID              Identity = 8
+	IdentityWorldIPv4ID            Identity = 9
+	IdentityWorldIPv6ID            Identity = 10
+	IdentityAggregateClusterID     Identity = 11
+	IdentityAggregateClusterMeshID Identity = 12
+	IdentityAggregateWorldID       Identity = 13
+	IdentityAggregateRemoteNodeID  Identity = 14
 )
 
 // IPCacheKey is generated from the BPF C type ipcache_key.

@@ -17,6 +17,19 @@
 // When generating the policy map, we need to manage the fact that not all
 // identities aggregate to 0. To do this, entries with ID 0 are expanded
 // to include all aggregates.
+//
+// The aggregate identities do not have the "logical" set of labels applied
+// to them. For example, the world aggregate identity does not have the `reserved:world`
+// label attached. This is to prevent over-selection in the case of NotIn
+// selectors (i.e. hole-punching).
+//
+// Consider the selector "reserved:world !cidr:1.1.1.1/32". If `reserved:world` / 2
+// were the aggregate ID, then traffic to `1.1.1.1/32` would be inadvertently allowed.
+//
+// Thus, we must instead associate the aggregate IDs with known-safe selectors
+// that we are certain select the entire logical "space". At present, those are
+// the entities. Otherwise, the aggregate selectors must not be selectable by
+// user selectors.
 
 package policy
 
@@ -31,17 +44,10 @@ import (
 //
 // THIS MUST!!! MATCH THE IMPLEMENTATION in bpf/lib/identity.h
 func aggregateFor(nid identity.NumericIdentity) identity.NumericIdentity {
+	// all aggregates must aggregate to themselves
 	switch nid {
-	case identity.ReservedIdentityRemoteNode, identity.ReservedIdentityKubeAPIServer:
-		return identity.ReservedIdentityRemoteNode
-	case identity.ReservedIdentityWorld, identity.ReservedIdentityWorldIPv4, identity.ReservedIdentityWorldIPv6:
-		return identity.ReservedIdentityWorld
-	case identity.ReservedIdentityCluster:
-		return identity.ReservedIdentityCluster
-	case identity.ReservedIdentityClusterMesh:
-		return identity.ReservedIdentityClusterMesh
-	case identity.IdentityUnknown:
-		return identity.IdentityUnknown
+	case identity.IdentityUnknown, identity.ReservedIdentityAggregateCluster, identity.ReservedIdentityAggregateClusterMesh, identity.ReservedIdentityAggregateWorld, identity.ReservedIdentityAggregateRemoteNode:
+		return nid
 	}
 
 	// All identities below 100 are special-cased.
@@ -52,18 +58,18 @@ func aggregateFor(nid identity.NumericIdentity) identity.NumericIdentity {
 
 	switch nid.Scope() {
 	case identity.IdentityScopeRemoteNode:
-		return identity.ReservedIdentityRemoteNode
+		return identity.ReservedIdentityAggregateRemoteNode
 	case identity.IdentityScopeLocal:
-		return identity.ReservedIdentityWorld
+		return identity.ReservedIdentityAggregateWorld
 	}
 
 	// NID is global scope and > 100.
 	// Determine if nid is in-cluster.
 	cid := nid.ClusterID()
 	if cid == option.Config.ClusterID {
-		return identity.ReservedIdentityCluster
+		return identity.ReservedIdentityAggregateCluster
 	}
-	return identity.ReservedIdentityClusterMesh
+	return identity.ReservedIdentityAggregateClusterMesh
 }
 
 // aggregates returns true if child is a child of the wildcard.
@@ -81,8 +87,8 @@ func isAggregate(nid identity.NumericIdentity) bool {
 // They must be inserted whenever a full wildcard (i.e. identity 0) is referenced.
 var AllAggregates = []identity.NumericIdentity{
 	identity.IdentityUnknown,
-	identity.ReservedIdentityRemoteNode,
-	identity.ReservedIdentityWorld,
-	identity.ReservedIdentityCluster,
-	identity.ReservedIdentityClusterMesh,
+	identity.ReservedIdentityAggregateRemoteNode,
+	identity.ReservedIdentityAggregateWorld,
+	identity.ReservedIdentityAggregateCluster,
+	identity.ReservedIdentityAggregateClusterMesh,
 }

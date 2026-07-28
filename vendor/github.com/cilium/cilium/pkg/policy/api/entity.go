@@ -13,7 +13,7 @@ import (
 // individual identities.  Entities are used to describe "outside of cluster",
 // "host", etc.
 //
-// +kubebuilder:validation:Enum=all;world;cluster;host;init;ingress;unmanaged;remote-node;health;none;kube-apiserver
+// +kubebuilder:validation:Enum=all;world;cluster;cluster-mesh;host;init;ingress;unmanaged;remote-node;health;none;kube-apiserver
 type Entity string
 
 const (
@@ -70,6 +70,8 @@ const (
 var (
 	endpointSelectorWorld = NewESFromLabels(labels.NewLabel(labels.IDNameWorld, "", labels.LabelSourceReserved))
 
+	endpointSelectorWorldAggregate = NewESFromLabels(labels.NewLabel(labels.IDNameAggregateWorld, "", labels.LabelSourceReserved))
+
 	endpointSelectorWorldIPv4 = NewESFromLabels(labels.NewLabel(labels.IDNameWorldIPv4, "", labels.LabelSourceReserved))
 
 	endpointSelectorWorldIPv6 = NewESFromLabels(labels.NewLabel(labels.IDNameWorldIPv6, "", labels.LabelSourceReserved))
@@ -82,6 +84,8 @@ var (
 
 	endpointSelectorRemoteNode = NewESFromLabels(labels.NewLabel(labels.IDNameRemoteNode, "", labels.LabelSourceReserved))
 
+	endpointSelectorRemoteNodeAggregate = NewESFromLabels(labels.NewLabel(labels.IDNameAggregateRemoteNode, "", labels.LabelSourceReserved))
+
 	endpointSelectorHealth = NewESFromLabels(labels.NewLabel(labels.IDNameHealth, "", labels.LabelSourceReserved))
 
 	EndpointSelectorNone = NewESFromLabels(labels.NewLabel(labels.IDNameNone, "", labels.LabelSourceReserved))
@@ -89,6 +93,10 @@ var (
 	endpointSelectorUnmanaged = NewESFromLabels(labels.NewLabel(labels.IDNameUnmanaged, "", labels.LabelSourceReserved))
 
 	endpointSelectorKubeAPIServer = NewESFromLabels(labels.LabelKubeAPIServer[labels.IDNameKubeAPIServer])
+
+	endpointSelectorClusterAggregate = NewESFromLabels(labels.NewLabel(labels.IDNameAggregateCluster, "", labels.LabelSourceReserved))
+
+	endpointSelectorClusterMeshAggregate = NewESFromLabels(labels.NewLabel(labels.IDNameAggregateClusterMesh, "", labels.LabelSourceReserved))
 
 	// used by both cluster and cluster-mesh entities
 	clusterSelectors = EndpointSelectorSlice{
@@ -99,6 +107,7 @@ var (
 		endpointSelectorHealth,
 		endpointSelectorUnmanaged,
 		endpointSelectorKubeAPIServer,
+		endpointSelectorClusterAggregate,
 	}
 
 	// EntitySelectorMapping maps special entity names that come in
@@ -107,13 +116,13 @@ var (
 	// validation above.
 	EntitySelectorMapping = map[Entity]EndpointSelectorSlice{
 		EntityAll:           {WildcardEndpointSelector},
-		EntityWorld:         {endpointSelectorWorld, endpointSelectorWorldIPv4, endpointSelectorWorldIPv6},
+		EntityWorld:         {endpointSelectorWorld, endpointSelectorWorldIPv4, endpointSelectorWorldIPv6, endpointSelectorWorldAggregate},
 		EntityWorldIPv4:     {endpointSelectorWorldIPv4},
 		EntityWorldIPv6:     {endpointSelectorWorldIPv6},
 		EntityHost:          {endpointSelectorHost},
 		EntityInit:          {endpointSelectorInit},
 		EntityIngress:       {endpointSelectorIngress},
-		EntityRemoteNode:    {endpointSelectorRemoteNode},
+		EntityRemoteNode:    {endpointSelectorRemoteNode, endpointSelectorRemoteNodeAggregate},
 		EntityHealth:        {endpointSelectorHealth},
 		EntityUnmanaged:     {endpointSelectorUnmanaged},
 		EntityNone:          {EndpointSelectorNone},
@@ -131,10 +140,12 @@ var (
 
 		// ClusterMesh can be initialized statically, as it selects all endpoints
 		// with the cluster mesh label set.
-		EntityClusterMesh: append(clusterSelectors, NewESFromMatchRequirements(nil, []v1.LabelSelectorRequirement{{
-			Key:      k8sapi.PolicyLabelCluster,
-			Operator: v1.LabelSelectorOpExists,
-		}})),
+		EntityClusterMesh: append(clusterSelectors,
+			endpointSelectorClusterMeshAggregate,
+			NewESFromMatchRequirements(nil, []v1.LabelSelectorRequirement{{
+				Key:      k8sapi.PolicyLabelCluster,
+				Operator: v1.LabelSelectorOpExists,
+			}})),
 	}
 )
 

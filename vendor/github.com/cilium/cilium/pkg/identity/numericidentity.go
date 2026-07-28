@@ -138,13 +138,14 @@ const (
 	// for IPv6 address only.
 	ReservedIdentityWorldIPv6 = NumericIdentity(datapath.IdentityWorldIPv6ID)
 
-	// ReservedIdentityCluster is used for policy map aggregation for all in-cluster traffic.
-	// It is not applied to any endpoints or packets directly.
-	ReservedIdentityCluster = NumericIdentity(datapath.IdentityPolicyClusterID)
+	// The aggregate reserved identities are used for policy map aggregation.
+	// They are not applied to traffic directly. For more information, see
+	// pkg/policy/aggregate.go
 
-	// ReservedIdentityClusterMesh is used for policy map aggregation for all cluster-mesh traffic.
-	// It is not applied to any endpoints or packets directly.
-	ReservedIdentityClusterMesh = NumericIdentity(datapath.IdentityPolicyClusterMeshID)
+	ReservedIdentityAggregateCluster     = NumericIdentity(datapath.IdentityAggregateClusterID)
+	ReservedIdentityAggregateClusterMesh = NumericIdentity(datapath.IdentityAggregateClusterMeshID)
+	ReservedIdentityAggregateWorld       = NumericIdentity(datapath.IdentityAggregateWorldID)
+	ReservedIdentityAggregateRemoteNode  = NumericIdentity(datapath.IdentityAggregateRemoteNodeID)
 )
 
 // Special identities for well-known cluster components
@@ -249,30 +250,9 @@ func k8sLabel(key string, value string) string {
 	return "k8s:" + key + "=" + value
 }
 
-// InitStaticIdentities establishes all well-known and static identities. Returns the
+// InitWellKnownIdentities establishes all well-known and static identities. Returns the
 // number of well-known (but not reserved) identities initialized.
-func InitStaticIdentities(ciliumNS string, cinfo cmtypes.ClusterInfo, enableWellKnown bool) int {
-
-	// Add the cluster identity to reserved identities.
-	// This cannot be done statically, as we need to know the cluster name.
-	AddReservedIdentityWithLabels(ReservedIdentityCluster,
-		labels.FromSlice([]labels.Label{
-			labels.NewLabel(labels.IDNameCluster, "", labels.LabelSourceReserved),
-			labels.NewLabel(api.PolicyLabelCluster, cinfo.Name, labels.LabelSourceK8s),
-		}))
-
-	// The ClusterMesh identity has the cluster label name, but with a value of "".
-	// This is selected by the Has selector.
-	AddReservedIdentityWithLabels(ReservedIdentityClusterMesh,
-		labels.FromSlice([]labels.Label{
-			labels.NewLabel(labels.IDNameClusterMesh, "", labels.LabelSourceReserved),
-			labels.NewLabel(api.PolicyLabelCluster, "", labels.LabelSourceK8s),
-		}))
-
-	if !enableWellKnown {
-		return 0
-	}
-
+func InitWellKnownIdentities(ciliumNS string, cinfo cmtypes.ClusterInfo) int {
 	// kube-dns labels
 	//   k8s:io.cilium.k8s.policy.serviceaccount=kube-dns
 	//   k8s:io.kubernetes.pod.namespace=kube-system
@@ -414,6 +394,11 @@ var (
 		labels.IDNameRemoteNode:    ReservedIdentityRemoteNode,
 		labels.IDNameKubeAPIServer: ReservedIdentityKubeAPIServer,
 		labels.IDNameIngress:       ReservedIdentityIngress,
+
+		labels.IDNameAggregateCluster:     ReservedIdentityAggregateCluster,
+		labels.IDNameAggregateClusterMesh: ReservedIdentityAggregateClusterMesh,
+		labels.IDNameAggregateWorld:       ReservedIdentityAggregateWorld,
+		labels.IDNameAggregateRemoteNode:  ReservedIdentityAggregateRemoteNode,
 	}
 	reservedIdentityNames = map[NumericIdentity]string{
 		IdentityUnknown:               "unknown",
@@ -427,6 +412,11 @@ var (
 		ReservedIdentityRemoteNode:    labels.IDNameRemoteNode,
 		ReservedIdentityKubeAPIServer: labels.IDNameKubeAPIServer,
 		ReservedIdentityIngress:       labels.IDNameIngress,
+
+		ReservedIdentityAggregateCluster:     labels.IDNameAggregateCluster,
+		ReservedIdentityAggregateClusterMesh: labels.IDNameAggregateClusterMesh,
+		ReservedIdentityAggregateWorld:       labels.IDNameAggregateWorld,
+		ReservedIdentityAggregateRemoteNode:  labels.IDNameAggregateRemoteNode,
 	}
 	reservedIdentityLabels = map[NumericIdentity]labels.Labels{
 		ReservedIdentityHost:       labels.LabelHost,
@@ -442,6 +432,11 @@ var (
 			labels.LabelRemoteNode.String():    "",
 		}, ""),
 		ReservedIdentityIngress: labels.LabelIngress,
+
+		ReservedIdentityAggregateCluster:     labels.LabelsAggregateCluster,
+		ReservedIdentityAggregateClusterMesh: labels.LabelsAggregateClusterMesh,
+		ReservedIdentityAggregateWorld:       labels.LabelsAggregateWorld,
+		ReservedIdentityAggregateRemoteNode:  labels.LabelsAggregateRemoteNode,
 	}
 
 	// WellKnown identities stores global state of all well-known identities.
