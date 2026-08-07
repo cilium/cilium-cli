@@ -117,7 +117,8 @@ runs:
       if: ${{ steps.target.outputs.release != '' }}
       shell: bash
       run: |
-        curl -sSL --remote-name-all https://github.com/${{ inputs.repository }}/releases/download/${{ inputs.release-version }}/${{ steps.release-asset.outputs.archive }}{,.sha256sum}
+        curl -sSL --fail --retry 5 --retry-all-errors --retry-delay 3 --remote-name-all \
+          https://github.com/${{ inputs.repository }}/releases/download/${{ inputs.release-version }}/${{ steps.release-asset.outputs.archive }}{,.sha256sum}
         sha256sum --check ${{ steps.release-asset.outputs.archive }}.sha256sum
         tar xzvfC ${{ steps.release-asset.outputs.archive }} /tmp
         sudo mv /tmp/cilium ${{ inputs.binary-dir }}/${{ inputs.binary-name }}
