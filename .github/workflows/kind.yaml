@@ -17,7 +17,7 @@ env:
   TIMEOUT: 2m
   LOG_TIME: 30m
   # renovate: datasource=github-releases depName=cilium/cilium
-  cilium_version: v1.20.0
+  cilium_version: v1.20.1
 
 jobs:
   installation-and-connectivity:
@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 50
     steps:
       - name: Cleanup Disk space in runner
-        uses: cilium/cilium/.github/actions/disk-cleanup@450c53145dc0a872ae20dfb05598c94ef55a71e2 # v1.20.0
+        uses: cilium/cilium/.github/actions/disk-cleanup@7d68cfb394f2960e10aa72e76d0d51e66c1b2ebc # v1.20.1
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -180,7 +180,7 @@ jobs:
 
     steps:
       - name: Cleanup Disk space in runner
-        uses: cilium/cilium/.github/actions/disk-cleanup@450c53145dc0a872ae20dfb05598c94ef55a71e2 # v1.20.0
+        uses: cilium/cilium/.github/actions/disk-cleanup@7d68cfb394f2960e10aa72e76d0d51e66c1b2ebc # v1.20.1
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
