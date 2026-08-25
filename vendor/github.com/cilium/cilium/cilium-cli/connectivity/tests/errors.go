@@ -102,7 +102,7 @@ func NoErrorsInLogs(ciliumVersion semver.Version, checkLevels []string, extraExc
 		stringMatcher("Error in delegate stream, restarting"),
 		failedToUpdateLock, failedToReleaseLock, failedToRetrieveLock, leaderElectionReadTimeout,
 		failedToListCRDs, knownIssueWireguardCollision, nilDetailsForService, gobgpFailedCloseTCP,
-		vendoredLeaderElectionLeaseLockError}
+		vendoredLeaderElectionLeaseLockError, lbMapCannotAllocateMemory}
 
 	envoyExternalTargetTLSWarning := regexMatcher{regexp.MustCompile(fmt.Sprintf(envoyTLSWarningTemplate, externalTarget))}
 	envoyExternalOtherTargetTLSWarning := regexMatcher{regexp.MustCompile(fmt.Sprintf(envoyTLSWarningTemplate, externalOtherTarget))}
@@ -118,7 +118,8 @@ func NoErrorsInLogs(ciliumVersion semver.Version, checkLevels []string, extraExc
 		failedCreategRPCClient, unableReallocateIngressIP, fqdnMaxIPPerHostname, failedGetMetricsAPI,
 		envoyExternalTargetTLSWarning, envoyExternalOtherTargetTLSWarning,
 		hubbleUIEnvVarFallback, k8sClientNetworkStatusError, bgpAlphaResourceDeprecation, ccgAlphaResourceDeprecation,
-		k8sEndpointDeprecatedWarn, proxylibDeprecatedWarn, certloaderInitialLoadWarn, localKeyAlreadyAllocated}
+		k8sEndpointDeprecatedWarn, proxylibDeprecatedWarn, certloaderInitialLoadWarn, localKeyAlreadyAllocated,
+		getSecurityGroupsForVpcUnauthorized, eniIPv6BetaWarn}
 
 	warningThresholdExceptions := thresholdExceptions{
 		// Benign for one node at ENI capacity, a real IP-starvation signal for
@@ -129,6 +130,10 @@ func NoErrorsInLogs(ciliumVersion semver.Version, checkLevels []string, extraExc
 	if ciliumVersion.LT(semver.MustParse("1.18.0")) {
 		errorLogExceptions = append(errorLogExceptions, linkNotFound, removeInexistentID)
 		warningLogExceptions = append(warningLogExceptions, linkNotFound, removeInexistentID)
+	}
+
+	if ciliumVersion.LT(semver.MustParse("1.19.0")) {
+		warningLogExceptions = append(warningLogExceptions, kvstoreNodesGCWarn)
 	}
 
 	for _, exception := range extraExceptions {
@@ -253,6 +258,25 @@ func (n *noErrorsInLogs) Run(ctx context.Context, t *check.Test) {
 				// restart once before the API server is reachable. Accept one
 				// such restart, but only on GKE where it has been observed.
 				ignore = ignore || (isGKE && restarts == 1 && container == "config")
+
+				// Each pod is associated with a single /etc/hosts file that is
+				// mounted inside each container of the pod, and the kubelet
+				// enforces its content again every time that a container is
+				// started, through [os.WriteFile] [1]. However, this leaves a
+				// tiny race condition window in which an already started
+				// container may observe a truncated version of the hosts file.
+				// No race condition is small enough to escape our CI, and we
+				// witnessed the etcd container fail to resolve the localhost
+				// hostname when configuring the peer listeners, and exit [2],
+				// eventually tripping this restart check. Ideally, we'd not
+				// rely on a hostname there, but that's easier said than done,
+				// because a direct use of either 127.0.0.1 or [::1] would not
+				// work if the corresponding IP family is disabled. For the
+				// moment, let's tolerate a possible restart of this container.
+				//
+				// [1]: https://github.com/kubernetes/kubernetes/blob/65bca7cd12f0/pkg/kubelet/kubelet_pods.go#L491-L515
+				// [2]: [...] "msg":"creating peer listener failed","error":"listen tcp: lookup localhost on 10.245.0.10:53: no such host"
+				ignore = ignore || (restarts == 1 && container == "etcd")
 
 				var logs bytes.Buffer
 				err := client.GetLogs(ctx, pod.Namespace, pod.Name, container, opts, &logs)
@@ -557,10 +581,17 @@ const (
 	hubbleUIEnvVarFallback           stringMatcher = "using fallback value for env var"                                      // cf. https://github.com/cilium/hubble-ui/pull/940
 	k8sClientNetworkStatusError      stringMatcher = "Network status error received, restarting client connections"          // cf. https://github.com/cilium/cilium/issues/37712
 	localKeyAlreadyAllocated         stringMatcher = "local key already allocated with different value"                      // cf. https://github.com/cilium/cilium/issues/41280
+	eniIPv6BetaWarn                  stringMatcher = "(ipam.mode=eni, ipv6.enabled=true) is a beta feature"                  // Expected when running with IPv6 enabled in ENI IPAM mode.
+	kvstoreNodesGCWarn               stringMatcher = "Preventing GC of nodes in the KVStore due the nonexistence of"         // Fixed in v1.19 and later by https://github.com/cilium/cilium/pull/41712
 
 	k8sEndpointDeprecatedWarn stringMatcher = "v1 Endpoints is deprecated in v1.33+; use discovery.k8s.io/v1 EndpointSlice" // cf. https://github.com/cilium/cilium/issues/39105
 	proxylibDeprecatedWarn    stringMatcher = "The support for Envoy Go Extensions (proxylib) has been deprecated"          // cf. https://github.com/cilium/cilium/issues/38224
 	instanceOutOfInterfaces   stringMatcher = "Instance is out of interfaces"                                               // AWS ENI-at-capacity; benign for one node, fails if several nodes hit it. cf. https://github.com/cilium/cilium/issues/42092
+	// Expected when the operator lacks the ec2:GetSecurityGroupsForVpc
+	// privilege, as is the case for the default eksctl node role used by CI: the
+	// fallback to DescribeSecurityGroups is a supported configuration, and the
+	// warning is emitted at most once per operator process.
+	getSecurityGroupsForVpcUnauthorized stringMatcher = "Not authorized to use the EC2 GetSecurityGroupsForVpc API, falling back to DescribeSecurityGroups"
 
 	certloaderInitialLoadWarn stringMatcher = certloader.InitialLoadWarn // Expected when certificates are not yet mounted.
 
@@ -592,5 +623,7 @@ var (
 	// For https://github.com/cilium/cilium/issues/39370: Fixed only in cilium version >= 1.18
 	linkNotFound = regexMatcher{regexp.MustCompile(`retrieving device .+\: Link not found`)}
 	// Client-go counterpart of failedToRetrieveLock, scoped to the cancelled read. cf. https://github.com/cilium/cilium/issues/45426
-	leaderElectionReadTimeout = regexMatcher{regexp.MustCompile(`Unexpected error when reading response body.*request canceled \(Client\.Timeout or context cancellation while reading body\)`)}
+	leaderElectionReadTimeout = regexMatcher{regexp.MustCompile(`Unexpected error when reading response body.*(request canceled|context deadline exceeded) \(Client\.Timeout or context cancellation while reading body\)`)}
+	// it can happen under memory pressure if the Kernel cannot allocate a new chunk of memory at that point in time, and it is automatically retried.
+	lbMapCannotAllocateMemory = regexMatcher{regexp.MustCompile(`Updating frontend failed.*update: cannot allocate memory`)}
 )

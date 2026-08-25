@@ -12,6 +12,7 @@ import (
 	"github.com/cilium/cilium/api/v1/models"
 	"github.com/cilium/cilium/pkg/logging"
 	"github.com/cilium/cilium/pkg/logging/logfields"
+	"github.com/cilium/cilium/pkg/node"
 	"github.com/cilium/cilium/pkg/time"
 )
 
@@ -28,8 +29,6 @@ type backendOption struct {
 
 type backendOptions map[string]*backendOption
 
-type ClusterSizeDependantIntervalFunc func(baseInterval time.Duration) time.Duration
-
 // ExtraOptions represents any options that can not be represented in a textual
 // format and need to be set programmatically.
 type ExtraOptions struct {
@@ -37,7 +36,7 @@ type ExtraOptions struct {
 
 	// ClusterSizeDependantInterval defines the function to calculate
 	// intervals based on cluster size
-	ClusterSizeDependantInterval ClusterSizeDependantIntervalFunc
+	ClusterSizeDependantInterval node.ClusterSizeDependantIntervalFunc
 
 	// NoLockQuorumCheck disables the lock acquisition quorum check
 	NoLockQuorumCheck bool
@@ -187,7 +186,7 @@ type BackendOperations interface {
 	// matching the prefix and report them as new keys. The Events channel is
 	// unbuffered. Upon every change observed, a KeyValueEvent will be sent
 	// to the Events channel
-	ListAndWatch(ctx context.Context, prefix string) EventChan
+	ListAndWatch(ctx context.Context, prefix string, opts ...ListAndWatchOption) EventChan
 
 	// RegisterLeaseExpiredObserver registers a function which is executed when
 	// the lease associated with a key having the given prefix is detected as expired.
@@ -200,6 +199,28 @@ type BackendOperations interface {
 	RegisterLockLeaseExpiredObserver(prefix string, fn func(key string))
 
 	BackendOperationsUserMgmt
+}
+
+type listAndWatchOptions struct {
+	exactKey bool
+}
+
+type ListAndWatchOption func(*listAndWatchOptions)
+
+// WithExactKey configures ListAndWatch to operate on the exact key rather than
+// all keys matching the provided prefix.
+func WithExactKey() ListAndWatchOption {
+	return func(opts *listAndWatchOptions) {
+		opts.exactKey = true
+	}
+}
+
+func applyListAndWatchOptions(opts ...ListAndWatchOption) listAndWatchOptions {
+	var options listAndWatchOptions
+	for _, opt := range opts {
+		opt(&options)
+	}
+	return options
 }
 
 // BackendOperationsUserMgmt are the kvstore operations for users management.

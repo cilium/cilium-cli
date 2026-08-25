@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	stderrors "errors"
 
+	iputil "github.com/cilium/cilium/pkg/ip"
+
 	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
 	"github.com/go-openapi/swag/jsonutils"
@@ -38,16 +40,16 @@ type Masquerading struct {
 	Mode string `json:"mode,omitempty"`
 
 	// This field is obsolete, please use snat-exclusion-cidr-v4 or snat-exclusion-cidr-v6.
-	SnatExclusionCidr string `json:"snat-exclusion-cidr,omitempty"`
+	SnatExclusionCidr iputil.Prefix `json:"snat-exclusion-cidr,omitzero"`
 
 	// SnatExclusionCIDRv4 exempts SNAT from being performed on any packet sent to
 	// an IPv4 address that belongs to this CIDR.
-	SnatExclusionCidrV4 string `json:"snat-exclusion-cidr-v4,omitempty"`
+	SnatExclusionCidrV4 iputil.Prefix `json:"snat-exclusion-cidr-v4,omitzero"`
 
 	// SnatExclusionCIDRv6 exempts SNAT from being performed on any packet sent to
 	// an IPv6 address that belongs to this CIDR.
 	// For IPv6 we only do masquerading in iptables mode.
-	SnatExclusionCidrV6 string `json:"snat-exclusion-cidr-v6,omitempty"`
+	SnatExclusionCidrV6 iputil.Prefix `json:"snat-exclusion-cidr-v6,omitzero"`
 }
 
 // Validate validates this masquerading
@@ -203,12 +205,12 @@ type MasqueradingEnabledProtocols struct {
 }
 
 // Validate validates this masquerading enabled protocols
-func (m *MasqueradingEnabledProtocols) Validate(formats strfmt.Registry) error {
+func (m *MasqueradingEnabledProtocols) Validate(_ strfmt.Registry) error {
 	return nil
 }
 
 // ContextValidate validates this masquerading enabled protocols based on context it is used
-func (m *MasqueradingEnabledProtocols) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
+func (m *MasqueradingEnabledProtocols) ContextValidate(_ context.Context, _ strfmt.Registry) error {
 	return nil
 }
 

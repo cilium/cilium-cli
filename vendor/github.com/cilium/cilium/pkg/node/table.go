@@ -10,27 +10,43 @@ import (
 
 	"github.com/cilium/statedb"
 	"github.com/cilium/statedb/index"
+	"github.com/cilium/statedb/reconciler"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 
-	"github.com/cilium/cilium/pkg/cidr"
 	"github.com/cilium/cilium/pkg/datapath/tunnel"
 	"github.com/cilium/cilium/pkg/node/types"
 )
 
-// LocalNode is the local Cilium node. This is derived from the k8s corev1.Node object.
+// LocalNode is an alias for the [Node] type to mark that we expect this
+// to be the local node.
+type LocalNode = Node
+
+// Node is a Cilium node. It is the local node if [Node.Local] is non-nil.
 //
-// +k8s:deepcopy-gen=true
 // +deepequal-gen=true
-type LocalNode struct {
+type Node struct {
 	types.Node
 
 	// Local is non-nil if this is the local node. This carries additional
 	// information about the local node that is not shared outside.
 	Local *LocalNodeInfo
+
+	// Statuses for reconcilers acting on this object.
+	// DeepEqual is reserved for comparing the desired node data.
+	// +deepequal-gen=false
+	Statuses reconciler.StatusSet
+}
+
+// DeepCopy returns a deep copy of the node.
+func (n *Node) DeepCopy() *Node {
+	n2 := *n
+	n2.Node = *n2.Node.DeepCopy()
+	n2.Local = n2.Local.DeepCopy()
+	return &n2
 }
 
 // TableHeader implements statedb.TableWritable.
-func (n *LocalNode) TableHeader() []string {
+func (n *Node) TableHeader() []string {
 	return []string{
 		"Name",
 		"Source",
@@ -39,7 +55,7 @@ func (n *LocalNode) TableHeader() []string {
 }
 
 // TableRow implements statedb.TableWritable.
-func (n *LocalNode) TableRow() []string {
+func (n *Node) TableRow() []string {
 	addrs := make([]string, len(n.IPAddresses))
 	for i := range n.IPAddresses {
 		addrs[i] = string(n.IPAddresses[i].Type) + ":" + n.IPAddresses[i].ToString()
@@ -52,14 +68,16 @@ func (n *LocalNode) TableRow() []string {
 	}
 }
 
-var _ statedb.TableWritable = &LocalNode{}
+var _ statedb.TableWritable = &Node{}
 
 // LocalNodeInfo is the additional information about the local node that
 // is only used internally.
 //
+// Every field is a comparable value type, which lets DeepCopyInto and
+// DeepEqual below be a plain assignment and a plain comparison.
+//
 // +k8s:deepcopy-gen=false
-// +deepequal-gen=true
-// +deepequal-gen:private-method=true
+// +deepequal-gen=false
 type LocalNodeInfo struct {
 	// OptOutNodeEncryption will make the local node opt-out of node-to-node
 	// encryption
@@ -70,16 +88,14 @@ type LocalNodeInfo struct {
 	// ID of the node assigned by the cloud provider.
 	ProviderID string
 	// v4 CIDR in which pod IPs are routable
-	IPv4NativeRoutingCIDR *cidr.CIDR
+	IPv4NativeRoutingCIDR netip.Prefix
 	// v6 CIDR in which pod IPs are routable
-	IPv6NativeRoutingCIDR *cidr.CIDR
+	IPv6NativeRoutingCIDR netip.Prefix
 	// ServiceLoopbackIPv4 is the source address used for SNAT when a Pod talks to
 	// itself through a Service.
-	// +deepequal-gen=false
 	ServiceLoopbackIPv4 netip.Addr
 	// ServiceLoopbackIPv6 is the source address used for SNAT when a Pod talks to
 	// itself through a Service.
-	// +deepequal-gen=false
 	ServiceLoopbackIPv6 netip.Addr
 	// IsBeingDeleted indicates that the local node is being deleted.
 	IsBeingDeleted bool
@@ -90,14 +106,6 @@ type LocalNodeInfo struct {
 // DeepCopyInto copies the receiver into out. in must be non-nil.
 func (in *LocalNodeInfo) DeepCopyInto(out *LocalNodeInfo) {
 	*out = *in
-	// Deep copy pointer fields
-	if in.IPv4NativeRoutingCIDR != nil {
-		out.IPv4NativeRoutingCIDR = in.IPv4NativeRoutingCIDR.DeepCopy()
-	}
-	if in.IPv6NativeRoutingCIDR != nil {
-		out.IPv6NativeRoutingCIDR = in.IPv6NativeRoutingCIDR.DeepCopy()
-	}
-	// netip.Addr fields are value types, already copied by *out = *in
 }
 
 // DeepCopy creates a deep copy of the LocalNodeInfo.
@@ -110,28 +118,20 @@ func (in *LocalNodeInfo) DeepCopy() *LocalNodeInfo {
 	return out
 }
 
-// DeepEqual compares two LocalNodeInfo structs for equality.
+// DeepEqual compares two LocalNodeInfo structs for equality. in must be non-nil.
 func (in *LocalNodeInfo) DeepEqual(other *LocalNodeInfo) bool {
 	if other == nil {
 		return false
 	}
-	// Manually compare netip.Addr fields
-	if in.ServiceLoopbackIPv4 != other.ServiceLoopbackIPv4 {
-		return false
-	}
-	if in.ServiceLoopbackIPv6 != other.ServiceLoopbackIPv6 {
-		return false
-	}
-	// Call generated private method for other fields
-	return in.deepEqual(other)
+	return *in == *other
 }
 
 const (
-	LocalNodeTableName = "local-node"
+	NodeTableName = "nodes"
 )
 
 var (
-	LocalNodeNameIndex = statedb.Index[*LocalNode, string]{
+	NodeNameIndex = statedb.Index[*Node, string]{
 		Name: "name",
 		FromObject: func(obj *LocalNode) index.KeySet {
 			return index.NewKeySet(index.String(obj.Fullname()))
@@ -140,9 +140,38 @@ var (
 		FromString: index.FromString,
 		Unique:     true,
 	}
-	NodeByName = LocalNodeNameIndex.Query
+	NodeByName = NodeNameIndex.Query
 
-	LocalNodeLocalIndex = statedb.Index[*LocalNode, bool]{
+	// NodeAddressIndex indexes every address of the node. Writer enforces single
+	// ownership and resolves conflicts prior to insertion according to source
+	// priority.
+	NodeAddressIndex = statedb.Index[*Node, netip.Addr]{
+		Name: "address",
+		FromObject: func(obj *Node) index.KeySet {
+			keys := make([]index.Key, 0, len(obj.IPAddresses)+4)
+			appendAddr := func(addr netip.Addr) {
+				if addr.IsValid() {
+					keys = append(keys, index.NetIPAddr(addr.Unmap()))
+				}
+			}
+			for _, address := range obj.IPAddresses {
+				if addr, ok := netip.AddrFromSlice(address.IP); ok {
+					appendAddr(addr)
+				}
+			}
+			appendAddr(obj.IPv4HealthIP.Addr)
+			appendAddr(obj.IPv6HealthIP.Addr)
+			appendAddr(obj.IPv4IngressIP.Addr)
+			appendAddr(obj.IPv6IngressIP.Addr)
+			return index.NewKeySet(keys...)
+		},
+		FromKey:    index.NetIPAddr,
+		FromString: index.NetIPAddrString,
+		Unique:     true,
+	}
+	NodeByAddress = NodeAddressIndex.Query
+
+	NodeLocalIndex = statedb.Index[*Node, bool]{
 		Name: "local",
 		FromObject: func(obj *LocalNode) index.KeySet {
 			if obj.Local == nil {
@@ -156,15 +185,16 @@ var (
 		Unique:     true,
 	}
 
-	NodeByLocal    = LocalNodeLocalIndex.Query
+	NodeByLocal    = NodeLocalIndex.Query
 	LocalNodeQuery = NodeByLocal(true)
 )
 
-func NewLocalNodeTable(db *statedb.DB) (statedb.RWTable[*LocalNode], error) {
+func NewNodeTable(db *statedb.DB) (statedb.RWTable[*Node], error) {
 	return statedb.NewTable(
 		db,
-		LocalNodeTableName,
-		LocalNodeNameIndex,
-		LocalNodeLocalIndex,
+		NodeTableName,
+		NodeNameIndex,
+		NodeLocalIndex,
+		NodeAddressIndex,
 	)
 }

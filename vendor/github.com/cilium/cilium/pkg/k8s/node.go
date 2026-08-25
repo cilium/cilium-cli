@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/cilium/cilium/pkg/annotation"
+	cmtypes "github.com/cilium/cilium/pkg/clustermesh/types"
 	iputil "github.com/cilium/cilium/pkg/ip"
 	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	slim_corev1 "github.com/cilium/cilium/pkg/k8s/slim/k8s/api/core/v1"
@@ -44,7 +45,7 @@ type nodeAddressGroup struct {
 }
 
 // ParseNode parses a kubernetes node to a cilium node
-func ParseNode(logger *slog.Logger, k8sNode *slim_corev1.Node, source source.Source) *nodeTypes.Node {
+func ParseNode(logger *slog.Logger, k8sNode *slim_corev1.Node, source source.Source, clusterInfo cmtypes.ClusterInfo) *nodeTypes.Node {
 	addrGroups := make(map[nodeAddressGroup]struct{})
 	scopedLog := logger.With(
 		logfields.NodeName, k8sNode.Name,
@@ -107,7 +108,8 @@ func ParseNode(logger *slog.Logger, k8sNode *slim_corev1.Node, source source.Sou
 	}
 	newNode := &nodeTypes.Node{
 		Name:        k8sNode.Name,
-		Cluster:     option.Config.ClusterName,
+		Cluster:     clusterInfo.Name,
+		ClusterID:   clusterInfo.ID,
 		IPAddresses: addrs,
 		Source:      source,
 	}
@@ -276,33 +278,35 @@ func ParseNode(logger *slog.Logger, k8sNode *slim_corev1.Node, source source.Sou
 		}
 	}
 
-	if newNode.IPv4IngressIP == nil {
+	if !newNode.IPv4IngressIP.IsValid() {
 		if ingressIP, ok := annotation.Get(k8sNode, annotation.V4IngressName, annotation.V4IngressNameAlias); !ok || ingressIP == "" {
 			scopedLog.Debug(
 				"Empty IPv4 Ingress annotation in node",
 			)
-		} else if ip := net.ParseIP(ingressIP); ip == nil {
+		} else if addr, err := netip.ParseAddr(ingressIP); err != nil {
 			scopedLog.Error(
 				"BUG, invalid IPv4 Ingress annotation in node",
 				logfields.V4IngressIP, ingressIP,
+				logfields.Error, err,
 			)
 		} else {
-			newNode.IPv4IngressIP = ip
+			newNode.IPv4IngressIP = iputil.AddrFrom(addr)
 		}
 	}
 
-	if newNode.IPv6IngressIP == nil {
+	if !newNode.IPv6IngressIP.IsValid() {
 		if ingressIP, ok := annotation.Get(k8sNode, annotation.V6IngressName, annotation.V6IngressNameAlias); !ok || ingressIP == "" {
 			scopedLog.Debug(
 				"Empty IPv6 Ingress annotation in node",
 			)
-		} else if ip := net.ParseIP(ingressIP); ip == nil {
+		} else if addr, err := netip.ParseAddr(ingressIP); err != nil {
 			scopedLog.Error(
 				"BUG, invalid IPv6 Ingress annotation in node",
 				logfields.V6IngressIP, ingressIP,
+				logfields.Error, err,
 			)
 		} else {
-			newNode.IPv6IngressIP = ip
+			newNode.IPv6IngressIP = iputil.AddrFrom(addr)
 		}
 	}
 
@@ -311,7 +315,7 @@ func ParseNode(logger *slog.Logger, k8sNode *slim_corev1.Node, source source.Sou
 
 // ParseCiliumNode parses a CiliumNode custom resource and returns a Node
 // instance. Invalid IP and CIDRs are silently ignored
-func ParseCiliumNode(n *ciliumv2.CiliumNode) (node nodeTypes.Node) {
+func ParseCiliumNode(n *ciliumv2.CiliumNode, clusterInfo cmtypes.ClusterInfo) (node nodeTypes.Node) {
 	var appendAllocCIDR = func(node *nodeTypes.Node, podCIDR netip.Prefix) {
 		prefix := nodeTypes.PrefixFrom(podCIDR)
 		if podCIDR.Addr().Is4() {
@@ -333,8 +337,8 @@ func ParseCiliumNode(n *ciliumv2.CiliumNode) (node nodeTypes.Node) {
 	node = nodeTypes.Node{
 		Name:            n.Name,
 		EncryptionKey:   uint8(n.Spec.Encryption.Key),
-		Cluster:         option.Config.ClusterName,
-		ClusterID:       option.Config.ClusterID,
+		Cluster:         clusterInfo.Name,
+		ClusterID:       clusterInfo.ID,
 		Source:          source.CustomResource,
 		Labels:          n.ObjectMeta.Labels,
 		Annotations:     n.ObjectMeta.Annotations,
@@ -363,8 +367,10 @@ func ParseCiliumNode(n *ciliumv2.CiliumNode) (node nodeTypes.Node) {
 	node.IPv4HealthIP = iputil.AddrFrom(v4HealthIP)
 	node.IPv6HealthIP = iputil.AddrFrom(v6HealthIP)
 
-	node.IPv4IngressIP = net.ParseIP(n.Spec.IngressAddressing.IPV4)
-	node.IPv6IngressIP = net.ParseIP(n.Spec.IngressAddressing.IPV6)
+	v4IngressIP, _ := netip.ParseAddr(n.Spec.IngressAddressing.IPV4)
+	v6IngressIP, _ := netip.ParseAddr(n.Spec.IngressAddressing.IPV6)
+	node.IPv4IngressIP = iputil.AddrFrom(v4IngressIP)
+	node.IPv6IngressIP = iputil.AddrFrom(v6IngressIP)
 
 	for _, address := range n.Spec.Addresses {
 		if ip := net.ParseIP(address.IP); ip != nil {

@@ -409,6 +409,15 @@ func (ct *ConnectivityTest) setupAndValidatePerf(ctx context.Context, _ SetupHoo
 		return err
 	}
 
+	// The perf suite is also run without Cilium, to collect baseline numbers.
+	if err := ct.initCiliumPods(ctx); errors.Is(err, errNoCiliumPods) {
+		ct.Warnf("Skipping Cilium version detection: %s", err)
+	} else if err != nil {
+		return err
+	} else if err := ct.detectCiliumVersion(ctx); err != nil {
+		return err
+	}
+
 	if err := ct.deployPerf(ctx); err != nil {
 		return err
 	}
@@ -925,9 +934,9 @@ func (ct *ConnectivityTest) detectSingleNode(ctx context.Context) error {
 	for _, n := range nodes.Items {
 		for _, t := range n.Spec.Taints {
 			switch {
-			case (t.Key == "node-role.kubernetes.io/master" && t.Effect == "NoSchedule"):
+			case (t.Key == "node-role.kubernetes.io/master" && t.Effect == slimcorev1.TaintEffectNoSchedule):
 				numWorkerNodes--
-			case (t.Key == "node-role.kubernetes.io/control-plane" && t.Effect == "NoSchedule"):
+			case (t.Key == "node-role.kubernetes.io/control-plane" && t.Effect == slimcorev1.TaintEffectNoSchedule):
 				numWorkerNodes--
 			}
 		}
@@ -970,6 +979,11 @@ func (ct *ConnectivityTest) initClients(ctx context.Context) error {
 	return nil
 }
 
+// errNoCiliumPods is returned by initCiliumPods when a cluster runs no Cilium
+// agent, so that callers which tolerate this can tell it apart from a failure
+// to reach the Kubernetes API.
+var errNoCiliumPods = errors.New("no cilium agent pods found")
+
 // initCiliumPods fetches the Cilium agent pod information from all clients
 func (ct *ConnectivityTest) initCiliumPods(ctx context.Context) error {
 	for _, client := range ct.clients.clients() {
@@ -978,7 +992,7 @@ func (ct *ConnectivityTest) initCiliumPods(ctx context.Context) error {
 			return fmt.Errorf("unable to list Cilium pods: %w", err)
 		}
 		if len(ciliumPods.Items) == 0 {
-			return fmt.Errorf("no cilium agent pods found in -n %s -l %s", ct.params.CiliumNamespace, ct.params.AgentPodSelector)
+			return fmt.Errorf("%w in -n %s -l %s", errNoCiliumPods, ct.params.CiliumNamespace, ct.params.AgentPodSelector)
 		}
 		for _, ciliumPod := range ciliumPods.Items {
 			// TODO: Can Cilium pod names collide across clusters?
