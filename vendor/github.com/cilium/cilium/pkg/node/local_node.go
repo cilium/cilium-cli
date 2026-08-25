@@ -4,37 +4,29 @@
 package node
 
 import (
-	"go4.org/netipx"
-
-	"github.com/cilium/cilium/pkg/cidr"
+	"net/netip"
 )
 
 // RemoteSNATDstAddrExclusionCIDRv4 returns a CIDR for SNAT exclusion. Any
 // packet sent from a local endpoint to an IP address belonging to the CIDR
-// should not be SNAT'd.
-func (n *LocalNode) RemoteSNATDstAddrExclusionCIDRv4() *cidr.CIDR {
-	if n.Local.IPv4NativeRoutingCIDR != nil {
+// should not be SNAT'd. The zero Prefix is returned if no CIDR is known.
+func (n *LocalNode) RemoteSNATDstAddrExclusionCIDRv4() netip.Prefix {
+	if p := n.Local.IPv4NativeRoutingCIDR; p.IsValid() {
 		// ipv4-native-routing-cidr is set or has been autodetected, so use it
-		return n.Local.IPv4NativeRoutingCIDR
+		return p
 	}
 
-	if p := n.IPv4AllocCIDR.Prefix.Prefix; p.IsValid() {
-		return cidr.NewCIDR(netipx.PrefixIPNet(p))
-	}
-	return nil
+	return n.IPv4AllocCIDR.Prefix.Prefix
 }
 
 // RemoteSNATDstAddrExclusionCIDRv6 returns a IPv6 CIDR for SNAT exclusion. Any
 // packet sent from a local endpoint to an IP address belonging to the CIDR
-// should not be SNAT'd.
-func (n *LocalNode) RemoteSNATDstAddrExclusionCIDRv6() *cidr.CIDR {
-	if n.Local.IPv6NativeRoutingCIDR != nil {
+// should not be SNAT'd. The zero Prefix is returned if no CIDR is known.
+func (n *LocalNode) RemoteSNATDstAddrExclusionCIDRv6() netip.Prefix {
+	if p := n.Local.IPv6NativeRoutingCIDR; p.IsValid() {
 		// ipv6-native-routing-cidr is set or has been autodetected, so use it
-		return n.Local.IPv6NativeRoutingCIDR
+		return p
 	}
 
-	if p := n.IPv6AllocCIDR.Prefix.Prefix; p.IsValid() {
-		return cidr.NewCIDR(netipx.PrefixIPNet(p))
-	}
-	return nil
+	return n.IPv6AllocCIDR.Prefix.Prefix
 }

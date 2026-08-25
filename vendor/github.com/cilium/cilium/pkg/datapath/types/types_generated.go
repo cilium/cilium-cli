@@ -61,6 +61,18 @@ type CTEntry struct {
 	LastRxReport uint32
 }
 
+// CTTimeoutConfig is generated from the BPF C type ct_timeout_config.
+type CTTimeoutConfig struct {
+	_                        structs.HostLayout
+	ConnectionLifetimeTCP    uint32
+	ConnectionLifetimeNonTCP uint32
+	ServiceLifetimeTCP       uint32
+	ServiceLifetimeNonTCP    uint32
+	ServiceCloseRebalance    uint32
+	SYNTimeout               uint32
+	CloseTimeout             uint32
+}
+
 // DebugCaptureMsg is generated from the BPF C type debug_capture_msg.
 type DebugCaptureMsg struct {
 	_          structs.HostLayout
@@ -332,6 +344,18 @@ type IPv4RevNATTuple struct {
 	Address uint32
 	Port    uint16
 	Pad     uint16
+}
+
+// IPv4SNATExclusionPrefix is generated from the BPF C type ipv4_snat_exclusion_prefix.
+type IPv4SNATExclusionPrefix struct {
+	_       structs.HostLayout
+	DstAddr struct {
+		_    structs.HostLayout
+		Addr [4]uint8
+	}
+	Bits    uint8
+	Enabled bool
+	_       [2]byte
 }
 
 // IPv6CTTuple is generated from the BPF C type ipv6_ct_tuple.

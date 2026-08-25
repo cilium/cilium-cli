@@ -418,6 +418,13 @@ func (c *Collector) AbsoluteTempPath(f string) string {
 
 func (c *Collector) WithFileSink(filename string, fn func(io.Writer) error) error {
 	path := c.AbsoluteTempPath(filename)
+	// filename can be derived from data collected inside a target pod (for
+	// example the CNI config file names that SubmitCniConflistSubtask reads
+	// from `ls` output), so reject anything that resolves outside the sysdump
+	// directory before opening it.
+	if !strings.HasPrefix(filepath.Clean(path), filepath.Clean(c.sysdumpDir)+string(os.PathSeparator)) {
+		return fmt.Errorf("refusing to write %q outside of the sysdump directory", filename)
+	}
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, fileMode)
 	if err != nil {
 		return err
@@ -655,6 +662,20 @@ func (c *Collector) Run() error {
 			},
 		},
 		{
+			Description: "Collecting Kubernetes nodes disk usage",
+			Quick:       true,
+			Task: func(ctx context.Context) error {
+				output, err := c.collectNodeDiskUsage(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to collect Kubernetes nodes disk usage: %w", err)
+				}
+				if err := c.WriteString(kubernetesNodeDiskUsageFileName, output); err != nil {
+					return fmt.Errorf("failed to collect Kubernetes nodes disk usage: %w", err)
+				}
+				return nil
+			},
+		},
+		{
 			Description: "Collecting Kubernetes pods memory/cpu usage",
 			Quick:       true,
 			Task: func(ctx context.Context) error {
@@ -873,20 +894,6 @@ func (c *Collector) Run() error {
 				}
 				if err := c.WriteYAML(ingressClassesFileName, v); err != nil {
 					return fmt.Errorf("failed to collect IngressClasses: %w", err)
-				}
-				return nil
-			},
-		},
-		{
-			Description: "Collecting Cilium Pod IP Pools",
-			Quick:       true,
-			Task: func(ctx context.Context) error {
-				v, err := c.Client.ListCiliumPodIPPools(ctx, metav1.ListOptions{})
-				if err != nil {
-					return fmt.Errorf("failed to collect Cilium Pod IP pools: %w", err)
-				}
-				if err := c.WriteYAML(ciliumPodIPPoolsFileName, v); err != nil {
-					return fmt.Errorf("failed to collect Cilium Pod IP pools: %w", err)
 				}
 				return nil
 			},
@@ -1563,7 +1570,7 @@ func (c *Collector) Run() error {
 					return fmt.Errorf("could not find Cilium Agent Pod to run kvstore get, Cilium Pod list was empty")
 				}
 				for _, pod := range c.CiliumPods {
-					if pod.Status.Phase == "Running" {
+					if pod.Status.Phase == corev1.PodRunning {
 						return c.submitKVStoreTasks(ctx, pod.DeepCopy())
 					}
 				}
@@ -1572,7 +1579,7 @@ func (c *Collector) Run() error {
 		},
 	}
 	ciliumTasks = append(ciliumTasks, collectCiliumV2OrV2Alpha1Resource(c, "ciliumloadbalancerippools", "Cilium LoadBalancer IP Pools"))
-
+	ciliumTasks = append(ciliumTasks, collectCiliumV2OrV2Alpha1Resource(c, "ciliumpodippools", "Cilium Pod IP Pools"))
 	if c.Options.HubbleFlowsCount > 0 {
 		ciliumTasks = append(ciliumTasks, Task{
 			CreatesSubtasks: true,
@@ -3677,6 +3684,101 @@ func (c *Collector) formatNodeMetricsAsTable(rawMetrics string) (string, error) 
 	tw.Flush()
 
 	return sb.String(), nil
+}
+
+// nodeStatsSummary is the subset of kubelet's /stats/summary that describes
+// disk usage, which is what kubelet evicts pods on.
+type nodeStatsSummary struct {
+	Node struct {
+		NodeName string `json:"nodeName"`
+		Fs       struct {
+			AvailableBytes *uint64 `json:"availableBytes"`
+			CapacityBytes  *uint64 `json:"capacityBytes"`
+			UsedBytes      *uint64 `json:"usedBytes"`
+			InodesFree     *uint64 `json:"inodesFree"`
+		} `json:"fs"`
+		Runtime struct {
+			ImageFs struct {
+				AvailableBytes *uint64 `json:"availableBytes"`
+				CapacityBytes  *uint64 `json:"capacityBytes"`
+				UsedBytes      *uint64 `json:"usedBytes"`
+			} `json:"imageFs"`
+		} `json:"runtime"`
+	} `json:"node"`
+}
+
+// collectNodeDiskUsage reports per-node nodefs and imagefs usage, along with
+// the DiskPressure condition. kubelet evicts pods on ephemeral-storage
+// exhaustion, and without this the only trace left in a sysdump is the
+// resulting eviction events, which say nothing about what filled the disk.
+func (c *Collector) collectNodeDiskUsage(ctx context.Context) (string, error) {
+	nodes, err := c.Client.ListNodes(ctx, metav1.ListOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to get nodes: %w", err)
+	}
+
+	var sb strings.Builder
+	tw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "NAME\tNODEFS USED\tNODEFS CAPACITY\tNODEFS(%)\tIMAGEFS USED\tIMAGEFS CAPACITY\tINODES FREE\tDISKPRESSURE")
+
+	for _, node := range nodes.Items {
+		diskPressure := "<unknown>"
+		for _, cond := range node.Status.Conditions {
+			if cond.Type == corev1.NodeDiskPressure {
+				diskPressure = string(cond.Status)
+				break
+			}
+		}
+
+		// Kubelet's stats endpoint is not always reachable through the API
+		// server proxy, so a failure here must not lose the rest of the table.
+		raw, err := c.Client.GetRaw(ctx, fmt.Sprintf("/api/v1/nodes/%s/proxy/stats/summary", node.Name))
+		if err != nil {
+			fmt.Fprintf(tw, "%s\t<error: %s>\t\t\t\t\t\t%s\n", node.Name, err, diskPressure)
+			continue
+		}
+
+		fmt.Fprintln(tw, formatNodeDiskUsageRow(node.Name, raw, diskPressure))
+	}
+
+	tw.Flush()
+
+	return sb.String(), nil
+}
+
+// formatNodeDiskUsageRow renders one tab-separated row of the node disk usage
+// table from a kubelet stats summary payload.
+func formatNodeDiskUsageRow(nodeName, rawSummary, diskPressure string) string {
+	var summary nodeStatsSummary
+	if err := json.Unmarshal([]byte(rawSummary), &summary); err != nil {
+		return fmt.Sprintf("%s\t<unparseable: %s>\t\t\t\t\t\t%s", nodeName, err, diskPressure)
+	}
+
+	pct := func(used, capacity *uint64) string {
+		if used == nil || capacity == nil || *capacity == 0 {
+			return "<unknown>"
+		}
+		return fmt.Sprintf("%.0f%%", float64(*used)/float64(*capacity)*100)
+	}
+	mib := func(v *uint64) string {
+		if v == nil {
+			return "<unknown>"
+		}
+		return fmt.Sprintf("%dMi", *v/(1024*1024))
+	}
+	count := func(v *uint64) string {
+		if v == nil {
+			return "<unknown>"
+		}
+		return strconv.FormatUint(*v, 10)
+	}
+
+	fs, imageFs := summary.Node.Fs, summary.Node.Runtime.ImageFs
+	return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s",
+		nodeName,
+		mib(fs.UsedBytes), mib(fs.CapacityBytes), pct(fs.UsedBytes, fs.CapacityBytes),
+		mib(imageFs.UsedBytes), mib(imageFs.CapacityBytes),
+		count(fs.InodesFree), diskPressure)
 }
 
 // formatPodMetricsAsTable formats the raw pod metrics JSON into a table format like kubectl top pods

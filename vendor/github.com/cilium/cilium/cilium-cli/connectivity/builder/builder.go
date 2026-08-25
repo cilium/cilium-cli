@@ -83,6 +83,9 @@ var (
 	//go:embed manifests/client-egress-l7-http.yaml
 	clientEgressL7HTTPPolicyYAML string
 
+	//go:embed manifests/client-egress-l7-http-connect.yaml
+	clientEgressL7HTTPConnectPolicyYAML string
+
 	//go:embed manifests/client-egress-l7-http-port-range.yaml
 	clientEgressL7HTTPPolicyPortRangeYAML string
 
@@ -133,6 +136,9 @@ var (
 
 	//go:embed manifests/allow-egress-specific-ns-ccnp.yaml
 	egresstoSpecificNSYAML string
+
+	//go:embed manifests/host-firewall-egress-to-fqdns.yaml
+	hostFirewallEgressToFQDNsPolicyYAML string
 )
 
 var (
@@ -295,6 +301,9 @@ func concurrentTests(connTests []*check.ConnectivityTest) error {
 		clientEgressToCidrgroupDenyByLabel{},
 		clientEgressToCidrDenyDefault{},
 		clusterMeshEndpointSliceSync{},
+		clusterMeshNSNotGlobal{},
+		clusterMeshNSNotGlobalPodToPod{},
+		clusterMeshNSNotGlobalPodToPodDenied{},
 		health{},
 		northSouthLoadbalancing{},
 		podToPodEncryption{},
@@ -311,6 +320,7 @@ func concurrentTests(connTests []*check.ConnectivityTest) error {
 		clientEgressL7Method{},
 		clientEgressL7{},
 		clientEgressL7NamedPort{},
+		clientEgressL7Connect{},
 		clientEgressTlsSni{},
 		clientEgressL7SetHeader{},
 		echoIngressAuthAlwaysFail{},
@@ -344,6 +354,7 @@ func sequentialTests(ct *check.ConnectivityTest) error {
 	tests := []testBuilder{
 		hostFirewallIngress{},
 		hostFirewallEgress{},
+		hostFirewallEgressToFqdns{},
 		clientEgressL7TlsDenyWithoutHeaders{},
 		clientEgressL7TlsHeaders{},
 		egresstoSpecificNamespace{},
@@ -371,6 +382,7 @@ func renderTemplates(clusterNameLocal, clusterNameRemote string, param check.Par
 		"clientEgressToCIDRGroupExternalDenyLabelPolicyYAML":         clientEgressToCIDRGroupExternalDenyLabelPolicyYAML,
 		"clientEgressToCIDRGroupExternalDenyLabelPolicyV2Alpha1YAML": clientEgressToCIDRGroupExternalDenyLabelPolicyV2Alpha1YAML,
 		"clientEgressL7HTTPPolicyYAML":                               clientEgressL7HTTPPolicyYAML,
+		"clientEgressL7HTTPConnectPolicyYAML":                        clientEgressL7HTTPConnectPolicyYAML,
 		"clientEgressL7HTTPPolicyPortRangeYAML":                      clientEgressL7HTTPPolicyPortRangeYAML,
 		"clientEgressL7HTTPNamedPortPolicyYAML":                      clientEgressL7HTTPNamedPortPolicyYAML,
 		"clientEgressToFQDNsPolicyYAML":                              clientEgressToFQDNsPolicyYAML,
@@ -396,6 +408,7 @@ func renderTemplates(clusterNameLocal, clusterNameRemote string, param check.Par
 		"ingressfromSpecificNSYAML":                                  ingressfromSpecificNSYAML,
 		"egresstoSpecificNSYAML":                                     egresstoSpecificNSYAML,
 		"echoIngressFromClientTieredWildcardPassL7YAML":              echoIngressFromClientTieredWildcardPassL7PolicyYAML,
+		"hostFirewallEgressToFQDNsPolicyYAML":                        hostFirewallEgressToFQDNsPolicyYAML,
 	}
 	if param.K8sLocalHostTest {
 		templates["clientEgressToCIDRCPHostPolicyYAML"] = clientEgressToCIDRCPHostPolicyYAML

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net"
 	"net/netip"
 	"slices"
 	"sort"
@@ -29,11 +30,13 @@ import (
 	"github.com/cilium/cilium/cilium-cli/k8s"
 	"github.com/cilium/cilium/cilium-cli/utils/features"
 	"github.com/cilium/cilium/pkg/annotation"
+	iputil "github.com/cilium/cilium/pkg/ip"
 	k8sconst "github.com/cilium/cilium/pkg/k8s/apis/cilium.io"
 	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	slimcorev1 "github.com/cilium/cilium/pkg/k8s/slim/k8s/api/core/v1"
 	slimmetav1 "github.com/cilium/cilium/pkg/k8s/slim/k8s/apis/meta/v1"
 	policyapi "github.com/cilium/cilium/pkg/policy/api"
+	"github.com/cilium/cilium/pkg/versioncheck"
 )
 
 const (
@@ -254,6 +257,10 @@ func newDeployment(p deploymentParameters) *appsv1.Deployment {
 
 	maps.Copy(dep.Spec.Template.ObjectMeta.Labels, p.Labels)
 
+	if p.HostNetwork {
+		dep.Spec.Template.Spec.DNSPolicy = "ClusterFirstWithHostNet"
+	}
+
 	return dep
 }
 
@@ -369,6 +376,10 @@ func newDaemonSet(p daemonSetParameters) *appsv1.DaemonSet {
 
 	if p.NodeSelector != nil {
 		ds.Spec.Template.Spec.NodeSelector = p.NodeSelector
+	}
+
+	if p.HostNetwork {
+		ds.Spec.Template.Spec.DNSPolicy = "ClusterFirstWithHostNet"
 	}
 
 	return ds
@@ -648,8 +659,8 @@ func newConnDisruptCEGP(ns, gwNode string) *ciliumv2.CiliumEgressGatewayPolicy {
 					},
 				},
 			},
-			DestinationCIDRs: []ciliumv2.CIDR{"0.0.0.0/0"},
-			ExcludedCIDRs:    []ciliumv2.CIDR{},
+			DestinationCIDRs: []iputil.Prefix{iputil.PrefixFrom(netip.MustParsePrefix("0.0.0.0/0"))},
+			ExcludedCIDRs:    []iputil.Prefix{},
 			EgressGateway: &ciliumv2.EgressGateway{
 				NodeSelector: &slimmetav1.LabelSelector{
 					MatchLabels: map[string]slimmetav1.MatchLabelsValue{
@@ -706,6 +717,9 @@ func (ct *ConnectivityTest) forceDeploy(ctx context.Context) error {
 			return err
 		}
 		if err := ct.DeleteCCNPTestEnv(ctx, client); err != nil {
+			return err
+		}
+		if err := ct.DeleteNonGlobalNSTestEnv(ctx, client); err != nil {
 			return err
 		}
 	}
@@ -953,6 +967,106 @@ func DeployZtunnelTestEnv(ctx context.Context, t *Test, ct *ConnectivityTest) er
 	return nil
 }
 
+const (
+	NonGlobalNSName      = "cilium-test-ns-not-global"
+	NonGlobalDenyNSName  = "cilium-test-ns-not-global-denied"
+	NonGlobalServerName  = "server-non-global"
+	NonGlobalClientName  = "client-non-global"
+	NonGlobalServiceName = "echo-non-global"
+	NonGlobalPort        = 8080
+)
+
+func (ct *ConnectivityTest) deployNonGlobalNS(ctx context.Context, ns string) error {
+	clients := ct.Clients()
+	if len(clients) < 2 {
+		return fmt.Errorf("non-global namespace test requires at least 2 clusters")
+	}
+	localClient, remoteClient := clients[0], clients[1]
+
+	for _, client := range clients {
+		_, err := client.GetNamespace(ctx, ns, metav1.GetOptions{})
+		switch {
+		case k8sErrors.IsNotFound(err):
+			ct.Logf("✨ [%s] Creating non-global namespace %s...", client.ClusterName(), ns)
+			nsObj := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+				Name:        ns,
+				Annotations: map[string]string{annotation.GlobalNamespace: "false"},
+			}}
+			if _, err = client.CreateNamespace(ctx, nsObj, metav1.CreateOptions{}); err != nil {
+				return fmt.Errorf("unable to create namespace %s: %w", ns, err)
+			}
+		case err != nil:
+			return fmt.Errorf("unable to get namespace %s: %w", ns, err)
+		}
+	}
+
+	if err := deployNonGlobalWorkload(ctx, ct, remoteClient, ns, NonGlobalServerName, kindEchoName, true); err != nil {
+		return err
+	}
+	if err := deployNonGlobalWorkload(ctx, ct, localClient, ns, NonGlobalClientName, kindClientName, false); err != nil {
+		return err
+	}
+
+	for _, client := range clients {
+		_, err := client.GetService(ctx, ns, NonGlobalServiceName, metav1.GetOptions{})
+		switch {
+		case k8sErrors.IsNotFound(err):
+			ct.Logf("✨ [%s] Deploying %s service in namespace %s...", client.ClusterName(), NonGlobalServiceName, ns)
+			svc := newService(NonGlobalServiceName, map[string]string{"name": NonGlobalServerName}, nil, "http", NonGlobalPort, string(corev1.ServiceTypeClusterIP))
+			svc.ObjectMeta.Annotations = map[string]string{
+				"service.cilium.io/global": "true",
+				"io.cilium/global-service": "true",
+			}
+			if _, err = client.CreateService(ctx, ns, svc, metav1.CreateOptions{}); err != nil {
+				return fmt.Errorf("unable to create service %s: %w", NonGlobalServiceName, err)
+			}
+		case err != nil:
+			return fmt.Errorf("unable to get service %s: %w", NonGlobalServiceName, err)
+		}
+	}
+
+	if err := WaitForDeployment(ctx, ct, remoteClient, ns, NonGlobalServerName); err != nil {
+		return err
+	}
+	if err := WaitForDeployment(ctx, ct, localClient, ns, NonGlobalClientName); err != nil {
+		return err
+	}
+	return nil
+}
+
+func deployNonGlobalWorkload(ctx context.Context, ct *ConnectivityTest, client *k8s.Client, ns, name, kind string, isServer bool) error {
+	_, err := client.GetDeployment(ctx, ns, name, metav1.GetOptions{})
+	switch {
+	case err == nil:
+		return nil
+	case !k8sErrors.IsNotFound(err):
+		return fmt.Errorf("unable to get deployment %s: %w", name, err)
+	}
+	ct.Logf("✨ [%s] Deploying %s in namespace %s...", client.ClusterName(), name, ns)
+	params := deploymentParameters{
+		Name:         name,
+		Kind:         kind,
+		Annotations:  ct.params.DeploymentAnnotations.Match(name),
+		NodeSelector: ct.params.NodeSelector,
+		Tolerations:  ct.params.GetTolerations(),
+	}
+	if isServer {
+		params.Image = ct.params.JSONMockImage
+		params.Port = NonGlobalPort
+		params.ReadinessProbe = newLocalReadinessProbe(NonGlobalPort, "/")
+	} else {
+		params.Image = ct.params.CurlImage
+		params.Command = []string{"/usr/bin/pause"}
+	}
+	if _, err := client.CreateServiceAccount(ctx, ns, k8s.NewServiceAccount(name), metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("unable to create service account %s: %w", name, err)
+	}
+	if _, err := client.CreateDeployment(ctx, ns, newDeployment(params), metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("unable to create deployment %s: %w", name, err)
+	}
+	return nil
+}
+
 func (ct *ConnectivityTest) deployCCNPTestEnv(ctx context.Context) error {
 
 	for _, namespaceName := range []string{ccnpTestNamespace1, ccnpTestNamespace2} {
@@ -999,6 +1113,16 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 	for _, client := range ct.Clients() {
 		if err := ct.deployNamespace(ctx, client, ct.params.TestNamespace); err != nil {
 			return err
+		}
+	}
+
+	// Deploy the non-global namespace actors (only in the first test namespace
+	// in case of concurrent runs, as the namespaces are shared)
+	if ct.params.MultiCluster != "" && ct.params.TestNamespaceIndex == 0 && versioncheck.MustCompile(">=1.20.0")(ct.CiliumVersion) {
+		for _, ns := range []string{NonGlobalNSName, NonGlobalDenyNSName} {
+			if err := ct.deployNonGlobalNS(ctx, ns); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -1061,7 +1185,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 
 			for targetName, target := range allTargets {
 				clientDeploymentName := fmt.Sprintf("%s-%s", testConnDisruptClientL7TrafficDeploymentName, targetName)
-				targetAddress := fmt.Sprintf("http://%s:8000/echo", target)
+				targetAddress := fmt.Sprintf("http://%s/echo", net.JoinHostPort(target, "8000"))
 
 				if err := ct.createTestConnDisruptClientDeployment(ctx, clientDeploymentName, KindTestConnDisruptL7Traffic,
 					testConnDisruptClientL7TrafficAppLabel, targetAddress, 1, false, nil, "http"); err != nil {
@@ -2567,6 +2691,24 @@ func (ct *ConnectivityTest) deleteDeployments(ctx context.Context, client *k8s.C
 	return nil
 }
 
+func (ct *ConnectivityTest) DeleteNonGlobalNSTestEnv(ctx context.Context, client *k8s.Client) error {
+	for _, ns := range []string{NonGlobalNSName, NonGlobalDenyNSName} {
+		_, err := client.GetNamespace(ctx, ns, metav1.GetOptions{})
+		if err != nil {
+			continue
+		}
+		ct.Logf("⌛ [%s] Waiting for namespace %s to disappear", client.ClusterName(), ns)
+		for err == nil {
+			time.Sleep(time.Second)
+			// Retry the namespace deletion in-case the previous delete was
+			// rejected, i.e. by yahoo/k8s-namespace-guard
+			_ = client.DeleteNamespace(ctx, ns, metav1.DeleteOptions{})
+			_, err = client.GetNamespace(ctx, ns, metav1.GetOptions{})
+		}
+	}
+	return nil
+}
+
 func (ct *ConnectivityTest) DeleteConnDisruptTestDeployment(ctx context.Context, client *k8s.Client) error {
 	ct.Debugf("🔥 [%s] Deleting test-conn-disrupt deployments...", client.ClusterName())
 	_ = client.DeleteDeployment(ctx, ct.params.TestNamespace, testConnDisruptClientDeploymentName, metav1.DeleteOptions{})
@@ -2641,6 +2783,11 @@ func (ct *ConnectivityTest) CleanupConnectivityTest(ctx context.Context) error {
 		// Delete CCNP test environments
 		if err := ct.DeleteCCNPTestEnv(ctx, client); err != nil {
 			ct.Warnf("[%s] Failed to delete CCNP test environment: %v", client.ClusterName(), err)
+		}
+
+		// Delete non-global namespace test environments
+		if err := ct.DeleteNonGlobalNSTestEnv(ctx, client); err != nil {
+			ct.Warnf("[%s] Failed to delete non-global namespace test environment: %v", client.ClusterName(), err)
 		}
 
 		ct.Logf("✅ [%s] Cleanup complete", client.ClusterName())
@@ -2784,11 +2931,12 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("unable to list same node pods: %w", err)
 	}
-	if len(sameNodePods.Items) != 1 {
-		return fmt.Errorf("unexpected number of same node pods: %d", len(sameNodePods.Items))
+	sameNodePodItems := k8s.LivePods(sameNodePods.Items)
+	if len(sameNodePodItems) != 1 {
+		return fmt.Errorf("unexpected number of same node pods: %d", len(sameNodePodItems))
 	}
 	sameNodePod := Pod{
-		Pod: sameNodePods.Items[0].DeepCopy(),
+		Pod: sameNodePodItems[0].DeepCopy(),
 	}
 
 	for _, cp := range ct.clientPods {
@@ -2803,11 +2951,12 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("unable to list other node pods: %w", err)
 		}
-		if len(otherNodePods.Items) != 1 {
-			return fmt.Errorf("unexpected number of other node pods: %d", len(otherNodePods.Items))
+		otherNodePodItems := k8s.LivePods(otherNodePods.Items)
+		if len(otherNodePodItems) != 1 {
+			return fmt.Errorf("unexpected number of other node pods: %d", len(otherNodePodItems))
 		}
 		otherNodePod := Pod{
-			Pod: otherNodePods.Items[0].DeepCopy(),
+			Pod: otherNodePodItems[0].DeepCopy(),
 		}
 
 		for _, cp := range ct.clientPods {

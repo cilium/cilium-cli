@@ -30,7 +30,6 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
-	"github.com/cilium/cilium/pkg/cidr"
 	clustermeshTypes "github.com/cilium/cilium/pkg/clustermesh/types"
 	"github.com/cilium/cilium/pkg/command"
 	"github.com/cilium/cilium/pkg/defaults"
@@ -160,6 +159,9 @@ const (
 
 	// IPv6ServiceRange is the Kubernetes IPv6 services CIDR if not inside cluster prefix
 	IPv6ServiceRange = "ipv6-service-range"
+
+	// AutoCIDR indicates that a CIDR should be allocated
+	AutoCIDR = "auto"
 
 	// IPv6ClusterAllocCIDRName is the name of the IPv6ClusterAllocCIDR option
 	IPv6ClusterAllocCIDRName = "ipv6-cluster-alloc-cidr"
@@ -1450,8 +1452,8 @@ type DaemonConfig struct {
 	FixedZoneMappingValidator     Validator `json:"-"`
 	IPv4Range                     string
 	IPv6Range                     string
-	IPv4ServiceRange              string
-	IPv6ServiceRange              string
+	IPv4ServiceRange              netip.Prefix // zero value: inside the cluster prefix (AutoCIDR)
+	IPv6ServiceRange              netip.Prefix // zero value: inside the cluster prefix (AutoCIDR)
 	K8sSyncTimeout                time.Duration
 	AllocatorListTimeout          time.Duration
 	LabelPrefixFile               string
@@ -1686,10 +1688,10 @@ type DaemonConfig struct {
 	ExcludeNodeLabelPatterns []*regexp.Regexp
 
 	// IPv4NativeRoutingCIDR describes a CIDR in which pod IPs are routable
-	IPv4NativeRoutingCIDR *cidr.CIDR
+	IPv4NativeRoutingCIDR netip.Prefix
 
 	// IPv6NativeRoutingCIDR describes a CIDR in which pod IPs are routable
-	IPv6NativeRoutingCIDR *cidr.CIDR
+	IPv6NativeRoutingCIDR netip.Prefix
 
 	// MasqueradeInterfaces is the selector used to select interfaces subject
 	// to egress masquerading.
@@ -2167,7 +2169,7 @@ func (c *DaemonConfig) DirectRoutingDeviceRequired(kprCfg kpr.KPRConfig, wiregua
 	// When tunneling is enabled, node-to-node redirection will be done by tunneling.
 	BPFHostRoutingEnabled := !c.UnsafeDaemonConfigOption.EnableHostLegacyRouting
 
-	// XDP needs IPV4_DIRECT_ROUTING when building tunnel headers:
+	// XDP needs ipv4_direct_routing when building tunnel headers:
 	if kprCfg.KubeProxyReplacement && c.NodePortAcceleration != NodePortAccelerationDisabled {
 		return true
 	}
@@ -2481,11 +2483,9 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 	c.IPAMDefaultIPPool = vp.GetString(IPAMDefaultIPPool)
 	c.IPv4Range = vp.GetString(IPv4Range)
 	c.IPv4NodeAddr = vp.GetString(IPv4NodeAddr)
-	c.IPv4ServiceRange = vp.GetString(IPv4ServiceRange)
 	c.IPv6ClusterAllocCIDR = vp.GetString(IPv6ClusterAllocCIDRName)
 	c.IPv6NodeAddr = vp.GetString(IPv6NodeAddr)
 	c.IPv6Range = vp.GetString(IPv6Range)
-	c.IPv6ServiceRange = vp.GetString(IPv6ServiceRange)
 	c.K8sRequireIPv4PodCIDR = vp.GetBool(K8sRequireIPv4PodCIDRName)
 	c.K8sRequireIPv6PodCIDR = vp.GetBool(K8sRequireIPv6PodCIDRName)
 	c.K8sSyncTimeout = vp.GetDuration(K8sSyncTimeoutName)
@@ -2630,15 +2630,43 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 
 	c.EnableEncryptionStrictModeIngress = vp.GetBool(EnableEncryptionStrictModeIngress)
 
+	// The service ranges are optional: the AutoCIDR sentinel (the flag
+	// default) means the services CIDR is inside the cluster prefix, and is
+	// represented by the zero Prefix.
+	if ipv4ServiceRange := vp.GetString(IPv4ServiceRange); ipv4ServiceRange != AutoCIDR && ipv4ServiceRange != "" {
+		prefix, err := netip.ParsePrefix(ipv4ServiceRange)
+		if err != nil {
+			logging.Fatal(logger, fmt.Sprintf("Unable to parse CIDR '%s'", ipv4ServiceRange), logfields.Error, err)
+		}
+		c.IPv4ServiceRange = prefix.Masked()
+
+		if !c.IPv4ServiceRange.Addr().Is4() {
+			logging.Fatal(logger, fmt.Sprintf("%s must be an IPv4 CIDR", IPv4ServiceRange))
+		}
+	}
+
+	if ipv6ServiceRange := vp.GetString(IPv6ServiceRange); ipv6ServiceRange != AutoCIDR && ipv6ServiceRange != "" {
+		prefix, err := netip.ParsePrefix(ipv6ServiceRange)
+		if err != nil {
+			logging.Fatal(logger, fmt.Sprintf("Unable to parse CIDR '%s'", ipv6ServiceRange), logfields.Error, err)
+		}
+		c.IPv6ServiceRange = prefix.Masked()
+
+		if !c.IPv6ServiceRange.Addr().Is6() {
+			logging.Fatal(logger, fmt.Sprintf("%s must be an IPv6 CIDR", IPv6ServiceRange))
+		}
+	}
+
 	ipv4NativeRoutingCIDR := vp.GetString(IPv4NativeRoutingCIDR)
 
 	if ipv4NativeRoutingCIDR != "" {
-		c.IPv4NativeRoutingCIDR, err = cidr.ParseCIDR(ipv4NativeRoutingCIDR)
+		prefix, err := netip.ParsePrefix(ipv4NativeRoutingCIDR)
 		if err != nil {
 			logging.Fatal(logger, fmt.Sprintf("Unable to parse CIDR '%s'", ipv4NativeRoutingCIDR), logfields.Error, err)
 		}
+		c.IPv4NativeRoutingCIDR = prefix.Masked()
 
-		if len(c.IPv4NativeRoutingCIDR.IP) != net.IPv4len {
+		if !c.IPv4NativeRoutingCIDR.Addr().Is4() {
 			logging.Fatal(logger, fmt.Sprintf("%s must be an IPv4 CIDR", IPv4NativeRoutingCIDR))
 		}
 	}
@@ -2646,12 +2674,13 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 	ipv6NativeRoutingCIDR := vp.GetString(IPv6NativeRoutingCIDR)
 
 	if ipv6NativeRoutingCIDR != "" {
-		c.IPv6NativeRoutingCIDR, err = cidr.ParseCIDR(ipv6NativeRoutingCIDR)
+		prefix, err := netip.ParsePrefix(ipv6NativeRoutingCIDR)
 		if err != nil {
 			logging.Fatal(logger, fmt.Sprintf("Unable to parse CIDR '%s'", ipv6NativeRoutingCIDR), logfields.Error, err)
 		}
+		c.IPv6NativeRoutingCIDR = prefix.Masked()
 
-		if len(c.IPv6NativeRoutingCIDR.IP) != net.IPv6len {
+		if !c.IPv6NativeRoutingCIDR.Addr().Is6() {
 			logging.Fatal(logger, fmt.Sprintf("%s must be an IPv6 CIDR", IPv6NativeRoutingCIDR))
 		}
 	}
@@ -2979,7 +3008,7 @@ func (c *DaemonConfig) checkMapSizeLimits() error {
 }
 
 func (c *DaemonConfig) checkIPv4NativeRoutingCIDR() error {
-	if c.IPv4NativeRoutingCIDR != nil {
+	if c.IPv4NativeRoutingCIDR.IsValid() {
 		return nil
 	}
 	if !c.EnableIPv4 || !c.EnableIPv4Masquerade {
@@ -3006,7 +3035,7 @@ func (c *DaemonConfig) checkIPv4NativeRoutingCIDR() error {
 }
 
 func (c *DaemonConfig) checkIPv6NativeRoutingCIDR() error {
-	if c.IPv6NativeRoutingCIDR != nil {
+	if c.IPv6NativeRoutingCIDR.IsValid() {
 		return nil
 	}
 	if !c.EnableIPv6 || !c.EnableIPv6Masquerade {

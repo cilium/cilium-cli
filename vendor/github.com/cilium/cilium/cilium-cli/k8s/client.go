@@ -682,7 +682,7 @@ func (c *Client) AutodetectFlavor(ctx context.Context) Flavor {
 
 	if context, ok := c.RawConfig.Contexts[c.ContextName()]; ok {
 		if cluster, ok := c.RawConfig.Clusters[context.Cluster]; ok {
-			if strings.HasSuffix(cluster.Server, "eks.amazonaws.com") {
+			if strings.Contains(cluster.Server, ".eks-cluster.") || strings.Contains(cluster.Server, ".eks.") {
 				f.Kind = KindEKS
 				return f
 			} else if strings.HasSuffix(cluster.Server, "azmk8s.io:443") {
@@ -1047,10 +1047,6 @@ func (c *Client) ListCiliumNodes(ctx context.Context) (*ciliumv2.CiliumNodeList,
 
 func (c *Client) ListCiliumNodeConfigs(ctx context.Context, namespace string, opts metav1.ListOptions) (*ciliumv2.CiliumNodeConfigList, error) {
 	return c.CiliumClientset.CiliumV2().CiliumNodeConfigs(namespace).List(ctx, opts)
-}
-
-func (c *Client) ListCiliumPodIPPools(ctx context.Context, opts metav1.ListOptions) (*ciliumv2alpha1.CiliumPodIPPoolList, error) {
-	return c.CiliumClientset.CiliumV2alpha1().CiliumPodIPPools().List(ctx, opts)
 }
 
 func (c *Client) ListCiliumL2AnnouncementPolicies(ctx context.Context, opts metav1.ListOptions) (*ciliumv2alpha1.CiliumL2AnnouncementPolicyList, error) {
