@@ -564,7 +564,7 @@ func newConnDisruptCNPForL7Traffic(ns string) *ciliumv2.CiliumNetworkPolicy {
 		},
 	}
 
-	ports := []policyapi.PortRule{{
+	httpPortRule := policyapi.PortRule{
 		Ports: []policyapi.PortProtocol{{
 			Protocol: policyapi.ProtoTCP,
 			Port:     "8000",
@@ -575,7 +575,15 @@ func newConnDisruptCNPForL7Traffic(ns string) *ciliumv2.CiliumNetworkPolicy {
 				Method: "GET",
 			}},
 		},
-	}}
+	}
+
+	// Required in egress rule for DNS lookups(eg. for service names).
+	dnsPortRule := policyapi.PortRule{
+		Ports: []policyapi.PortProtocol{
+			{Protocol: policyapi.ProtoUDP, Port: "53"},
+			{Protocol: policyapi.ProtoTCP, Port: "53"},
+		},
+	}
 
 	return &ciliumv2.CiliumNetworkPolicy{
 		TypeMeta: metav1.TypeMeta{
@@ -591,7 +599,15 @@ func newConnDisruptCNPForL7Traffic(ns string) *ciliumv2.CiliumNetworkPolicy {
 						policyapi.EntityCluster,
 					},
 				},
-				ToPorts: ports,
+				ToPorts: []policyapi.PortRule{httpPortRule},
+			}},
+			Egress: []policyapi.EgressRule{{
+				EgressCommonRule: policyapi.EgressCommonRule{
+					ToEntities: policyapi.EntitySlice{
+						policyapi.EntityCluster,
+					},
+				},
+				ToPorts: []policyapi.PortRule{httpPortRule, dnsPortRule},
 			}},
 		},
 	}
@@ -736,7 +752,7 @@ func (ct *ConnectivityTest) deployNamespace(ctx context.Context, client *k8s.Cli
 		namespace = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        namespaceName,
-				Annotations: ct.params.NamespaceAnnotations,
+				Annotations: maps.Clone(ct.params.NamespaceAnnotations),
 				Labels:      labels.Merge(ct.params.NamespaceLabels, appLabels),
 			},
 		}
@@ -1129,75 +1145,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 	// Deploy test-conn-disrupt actors (only in the first
 	// test namespace in case of tests concurrent run)
 	if ct.params.ConnDisruptTestSetup && ct.params.TestNamespaceIndex == 0 {
-		if ct.params.IncludeConnDisruptTest {
-			if err := ct.createTestConnDisruptServerDeployAndSvc(ctx, testConnDisruptServerDeploymentName, KindTestConnDisrupt, 3,
-				testConnDisruptServiceName, "test-conn-disrupt-server", false, newConnDisruptCNP, ""); err != nil {
-				return err
-			}
-
-			if err := ct.createTestConnDisruptClientDeployment(ctx, testConnDisruptClientDeploymentName, KindTestConnDisrupt,
-				"test-conn-disrupt-client", fmt.Sprintf("test-conn-disrupt.%s.svc.cluster.local.:8000", ct.params.TestNamespace),
-				5, false, nil, ""); err != nil {
-				return err
-			}
-		}
-
-		if ct.ShouldRunConnDisruptNSTraffic() {
-			if err := ct.createTestConnDisruptServerDeployAndSvc(ctx, testConnDisruptServerNSTrafficDeploymentName, KindTestConnDisruptNSTraffic, 1,
-				testConnDisruptNSTrafficServiceName, testConnDisruptServerNSTrafficAppLabel, false, newConnDisruptCNPForNSTraffic, ""); err != nil {
-				return err
-			}
-
-			if err := ct.createTestConnDisruptClientDeploymentForNSTraffic(ctx); err != nil {
-				return err
-			}
-		} else {
-			ct.Info("Skipping conn-disrupt-test for NS traffic")
-		}
-
-		if ct.ShouldRunConnDisruptL7Traffic() {
-			if err := ct.createTestConnDisruptServerDeployAndSvc(ctx, testConnDisruptServerL7TrafficDeploymentName, KindTestConnDisruptL7Traffic, 1,
-				testConnDisruptL7TrafficServiceName, testConnDisruptServerL7TrafficAppLabel, false, newConnDisruptCNPForL7Traffic, "http"); err != nil {
-				return err
-			}
-
-			allTargets := map[string]string{
-				"svc": fmt.Sprintf("%s.%s.svc.cluster.local.", testConnDisruptL7TrafficServiceName, ct.params.TestNamespace),
-			}
-			serverPods, err := ct.clients.src.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: fmt.Sprintf("app=%s", testConnDisruptServerL7TrafficAppLabel)})
-			if err != nil {
-				return err
-			}
-			for _, serverPod := range serverPods.Items {
-				for _, podIPAddr := range serverPod.Status.PodIPs {
-					podIP, err := netip.ParseAddr(podIPAddr.IP)
-					if err != nil {
-						continue
-					}
-
-					if podIP.Unmap().Is4() {
-						allTargets["ep-v4"] = podIPAddr.IP
-					} else {
-						allTargets["ep-v6"] = podIPAddr.IP
-					}
-				}
-			}
-
-			for targetName, target := range allTargets {
-				clientDeploymentName := fmt.Sprintf("%s-%s", testConnDisruptClientL7TrafficDeploymentName, targetName)
-				targetAddress := fmt.Sprintf("http://%s/echo", net.JoinHostPort(target, "8000"))
-
-				if err := ct.createTestConnDisruptClientDeployment(ctx, clientDeploymentName, KindTestConnDisruptL7Traffic,
-					testConnDisruptClientL7TrafficAppLabel, targetAddress, 1, false, nil, "http"); err != nil {
-					return err
-				}
-
-				ct.testConnDisruptClientL7TrafficDeploymentNames = append(ct.testConnDisruptClientL7TrafficDeploymentNames, clientDeploymentName)
-			}
-		} else {
-			ct.Info("Skipping conn-disrupt-test for L7 traffic")
-		}
-
+		// The only node-pinned pods here, so admit them before the unpinned ones.
 		if ct.ShouldRunConnDisruptEgressGateway() {
 			gatewayNode, nonGatewayNode, err := ct.getGatewayAndNonGatewayNodes()
 			if err != nil {
@@ -1246,6 +1194,99 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 			}
 		} else {
 			ct.Info("Skipping conn-disrupt-test for Egress Gateway")
+		}
+
+		if ct.params.IncludeConnDisruptTest {
+			if err := ct.createTestConnDisruptServerDeployAndSvc(ctx, testConnDisruptServerDeploymentName, KindTestConnDisrupt, 3,
+				testConnDisruptServiceName, "test-conn-disrupt-server", false, newConnDisruptCNP, ""); err != nil {
+				return err
+			}
+
+			if err := ct.createTestConnDisruptClientDeployment(ctx, testConnDisruptClientDeploymentName, KindTestConnDisrupt,
+				"test-conn-disrupt-client", fmt.Sprintf("test-conn-disrupt.%s.svc.cluster.local.:8000", ct.params.TestNamespace),
+				5, false, nil, ""); err != nil {
+				return err
+			}
+		}
+
+		if ct.ShouldRunConnDisruptNSTraffic() {
+			if err := ct.createTestConnDisruptServerDeployAndSvc(ctx, testConnDisruptServerNSTrafficDeploymentName, KindTestConnDisruptNSTraffic, 1,
+				testConnDisruptNSTrafficServiceName, testConnDisruptServerNSTrafficAppLabel, false, newConnDisruptCNPForNSTraffic, ""); err != nil {
+				return err
+			}
+
+			if err := ct.createTestConnDisruptClientDeploymentForNSTraffic(ctx); err != nil {
+				return err
+			}
+		} else {
+			ct.Info("Skipping conn-disrupt-test for NS traffic")
+		}
+
+		if ct.ShouldRunConnDisruptL7Traffic() {
+			if err := ct.createTestConnDisruptServerDeployAndSvc(ctx, testConnDisruptServerL7TrafficDeploymentName, KindTestConnDisruptL7Traffic, 1,
+				testConnDisruptL7TrafficServiceName, testConnDisruptServerL7TrafficAppLabel, false, newConnDisruptCNPForL7Traffic, "http"); err != nil {
+				return err
+			}
+
+			allTargets := map[string]string{
+				"svc": fmt.Sprintf("%s.%s.svc.cluster.local.", testConnDisruptL7TrafficServiceName, ct.params.TestNamespace),
+			}
+
+			if ct.Features[features.L7LoadBalancer].Enabled {
+				l7LBServiceName := fmt.Sprintf("%s-lb", testConnDisruptL7TrafficServiceName)
+				for _, client := range ct.Clients() {
+					_, err := client.GetService(ctx, ct.params.TestNamespace, l7LBServiceName, metav1.GetOptions{})
+					if err != nil {
+						ct.Logf("✨ [%s] Deploying %s service...", client.ClusterName(), l7LBServiceName)
+
+						svc := newService(l7LBServiceName, map[string]string{"app": testConnDisruptServerL7TrafficAppLabel}, nil, "http", 8000, ct.Params().ServiceType)
+						svc.ObjectMeta.Annotations = map[string]string{
+							"service.cilium.io/global": "true",
+							"service.cilium.io/lb-l7":  "enabled",
+						}
+
+						_, err = client.CreateService(ctx, ct.params.TestNamespace, svc, metav1.CreateOptions{})
+						if err != nil {
+							return fmt.Errorf("unable to create service %s: %w", l7LBServiceName, err)
+						}
+					}
+				}
+
+				allTargets["lb-svc"] = fmt.Sprintf("%s.%s.svc.cluster.local.", l7LBServiceName, ct.params.TestNamespace)
+			}
+
+			serverPods, err := listLivePods(ctx, ct.clients.src, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: fmt.Sprintf("app=%s", testConnDisruptServerL7TrafficAppLabel)})
+			if err != nil {
+				return err
+			}
+			for _, serverPod := range serverPods {
+				for _, podIPAddr := range serverPod.Status.PodIPs {
+					podIP, err := netip.ParseAddr(podIPAddr.IP)
+					if err != nil {
+						continue
+					}
+
+					if podIP.Unmap().Is4() {
+						allTargets["ep-v4"] = podIPAddr.IP
+					} else {
+						allTargets["ep-v6"] = podIPAddr.IP
+					}
+				}
+			}
+
+			for targetName, target := range allTargets {
+				clientDeploymentName := fmt.Sprintf("%s-%s", testConnDisruptClientL7TrafficDeploymentName, targetName)
+				targetAddress := fmt.Sprintf("http://%s/echo", net.JoinHostPort(target, "8000"))
+
+				if err := ct.createTestConnDisruptClientDeployment(ctx, clientDeploymentName, KindTestConnDisruptL7Traffic,
+					testConnDisruptClientL7TrafficAppLabel, targetAddress, 1, false, nil, "http"); err != nil {
+					return err
+				}
+
+				ct.testConnDisruptClientL7TrafficDeploymentNames = append(ct.testConnDisruptClientL7TrafficDeploymentNames, clientDeploymentName)
+			}
+		} else {
+			ct.Info("Skipping conn-disrupt-test for L7 traffic")
 		}
 	}
 
@@ -1935,12 +1976,12 @@ func (ct *ConnectivityTest) patchDeployment(ctx context.Context) error {
 		}
 		encodedCert := base64.StdEncoding.EncodeToString(cert)
 
-		clientPods, err := ct.client.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindClientName})
+		clientPods, err := listLivePods(ctx, ct.client, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindClientName})
 		if err != nil {
 			return fmt.Errorf("unable to list client pods: %w", err)
 		}
 
-		for _, pod := range clientPods.Items {
+		for _, pod := range clientPods {
 			cmd := []string{"sh", "-c", fmt.Sprintf("echo %s | base64 -d >> /etc/ssl/certs/ca-certificates.crt", encodedCert)}
 			_, err := ct.execInPodWithTransportRetry(ctx, ct.client, ct.params.TestNamespace, pod.Name, pod.Spec.Containers[0].Name, cmd)
 			if err != nil {
@@ -2042,6 +2083,9 @@ func (ct *ConnectivityTest) createTestConnDisruptClientDeployment(ctx context.Co
 	command := []string{
 		"tcd-client",
 		"--dispatch-interval", ct.params.ConnDisruptDispatchInterval.String(),
+	}
+	if ct.params.ConnDisruptClientTimeout != 0 {
+		command = append(command, "--timeout", ct.params.ConnDisruptClientTimeout.String())
 	}
 	if len(protocol) != 0 {
 		command = append(command, "--protocol", protocol)
@@ -2157,17 +2201,28 @@ type nodeWithType struct {
 
 func (ct *ConnectivityTest) getBackendNodeAndNonBackendNode(ctx context.Context) ([]nodeWithType, error) {
 	appLabel := fmt.Sprintf("app=%s", testConnDisruptServerNSTrafficAppLabel)
-	podList, err := ct.clients.src.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: appLabel})
+	podList, err := listLivePods(ctx, ct.clients.src, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: appLabel})
 	if err != nil {
 		return nil, fmt.Errorf("unable to list pods with lable %s: %w", appLabel, err)
 	}
 
-	pod := podList.Items[0]
+	if len(podList) == 0 {
+		return nil, fmt.Errorf("no pods found with label %s", appLabel)
+	}
+
+	pod := podList[0]
+	if pod.Spec.NodeName == "" {
+		return nil, fmt.Errorf("pod %s is not scheduled on any node yet", pod.Name)
+	}
+	backendNode, ok := ct.nodes[pod.Spec.NodeName]
+	if !ok {
+		return nil, fmt.Errorf("unable to find node %s hosting pod %s", pod.Spec.NodeName, pod.Name)
+	}
 
 	var nodes []nodeWithType
 	nodes = append(nodes, nodeWithType{
 		nodeType: "backend-node",
-		node:     ct.nodes[pod.Spec.NodeName],
+		node:     backendNode,
 	})
 	for name, node := range ct.Nodes() {
 		if name != pod.Spec.NodeName {
@@ -2229,12 +2284,12 @@ func (ct *ConnectivityTest) getConnDisruptClientEgressGatewayPodIPs(ctx context.
 
 	var podIPs []string
 	for _, appLabel := range appLabels {
-		connDisruptPods, err := ct.K8sClient().ListPods(ctx, ct.Params().TestNamespace, metav1.ListOptions{LabelSelector: appLabel})
+		connDisruptPods, err := listLivePods(ctx, ct.K8sClient(), ct.Params().TestNamespace, metav1.ListOptions{LabelSelector: appLabel})
 		if err != nil {
 			return nil, fmt.Errorf("unable to list pods with lable %s: %w", appLabel, err)
 		}
 
-		for _, connDisruptPod := range connDisruptPods.Items {
+		for _, connDisruptPod := range connDisruptPods {
 			podIPs = append(podIPs, connDisruptPod.Status.PodIP)
 		}
 	}
@@ -2747,6 +2802,7 @@ func (ct *ConnectivityTest) DeleteConnDisruptTestDeployment(ctx context.Context,
 	_ = client.DeleteService(ctx, ct.params.TestNamespace, testConnDisruptServiceName, metav1.DeleteOptions{})
 	_ = client.DeleteService(ctx, ct.params.TestNamespace, testConnDisruptNSTrafficServiceName, metav1.DeleteOptions{})
 	_ = client.DeleteService(ctx, ct.params.TestNamespace, testConnDisruptL7TrafficServiceName, metav1.DeleteOptions{})
+	_ = client.DeleteService(ctx, ct.params.TestNamespace, fmt.Sprintf("%s-lb", testConnDisruptL7TrafficServiceName), metav1.DeleteOptions{})
 	_ = client.DeleteService(ctx, ct.params.TestNamespace, testConnDisruptEgressGatewayServiceName, metav1.DeleteOptions{})
 	_ = client.DeleteCiliumNetworkPolicy(ctx, ct.params.TestNamespace, testConnDisruptCNPName, metav1.DeleteOptions{})
 	_ = client.DeleteCiliumNetworkPolicy(ctx, ct.params.TestNamespace, testConnDisruptNSTrafficCNPName, metav1.DeleteOptions{})
@@ -2796,6 +2852,16 @@ func (ct *ConnectivityTest) CleanupConnectivityTest(ctx context.Context) error {
 	return nil
 }
 
+// listLivePods lists pods by selector, dropping the terminal leftovers a controller has already superseded.
+func listLivePods(ctx context.Context, client *k8s.Client, namespace string, options metav1.ListOptions) ([]corev1.Pod, error) {
+	pods, err := client.ListPods(ctx, namespace, options)
+	if err != nil {
+		return nil, err
+	}
+
+	return k8s.LivePods(pods.Items), nil
+}
+
 func (ct *ConnectivityTest) validateDeploymentCommon(ctx context.Context, srcDeployments, dstDeployments []string) error {
 	ct.Debug("Validating Deployments...")
 
@@ -2820,12 +2886,12 @@ func (ct *ConnectivityTest) validateDeploymentPerf(ctx context.Context) error {
 		return err
 	}
 
-	perfPods, err := ct.client.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindPerfName})
+	perfPods, err := listLivePods(ctx, ct.client, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindPerfName})
 	if err != nil {
 		return fmt.Errorf("unable to list perf pods: %w", err)
 	}
 
-	for _, perfPod := range perfPods.Items {
+	for _, perfPod := range perfPods {
 		role := perfPodRole(perfPod.GetLabels()[perfPodRoleKey])
 		switch role {
 		case perfPodRoleServer:
@@ -2860,6 +2926,26 @@ func (ct *ConnectivityTest) validateDeploymentPerf(ctx context.Context) error {
 	return nil
 }
 
+// registerEchoPods registers the echo pods of every cluster as test peers.
+func (ct *ConnectivityTest) registerEchoPods(ctx context.Context) error {
+	for _, client := range ct.clients.clients() {
+		echoPods, err := listLivePods(ctx, client, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindEchoName})
+		if err != nil {
+			return fmt.Errorf("unable to list echo pods: %w", err)
+		}
+		for _, echoPod := range echoPods {
+			ct.echoPods[echoPod.Name] = Pod{
+				K8sClient: client,
+				Pod:       echoPod.DeepCopy(),
+				scheme:    "http",
+				port:      8080, // listen port of the echo server inside the container
+			}
+		}
+	}
+
+	return nil
+}
+
 func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 	srcDeployments, dstDeployments := ct.deploymentList()
 	if err := ct.validateDeploymentCommon(ctx, srcDeployments, dstDeployments); err != nil {
@@ -2867,11 +2953,11 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 	}
 
 	if ct.Features[features.LocalRedirectPolicy].Enabled {
-		lrpPods, err := ct.client.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindLrpName})
+		lrpPods, err := listLivePods(ctx, ct.client, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindLrpName})
 		if err != nil {
 			return fmt.Errorf("unable to list lrp pods: %w", err)
 		}
-		for _, lrpPod := range lrpPods.Items {
+		for _, lrpPod := range lrpPods {
 			if v, hasLabel := lrpPod.GetLabels()["lrp"]; hasLabel {
 				if v == "backend" {
 					ct.lrpBackendPods[lrpPod.Name] = Pod{
@@ -2895,11 +2981,11 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 			if err := WaitForDeployment(ctx, ct, ct.clients.src, ns, ccnpDeploymentName); err != nil {
 				return err
 			}
-			ccnpPods, err := ct.client.ListPods(ctx, ns, metav1.ListOptions{LabelSelector: "kind=" + kindCCNPName})
+			ccnpPods, err := listLivePods(ctx, ct.client, ns, metav1.ListOptions{LabelSelector: "kind=" + kindCCNPName})
 			if err != nil {
 				return fmt.Errorf("unable to list ccnp pods in namespace %s: %w", ns, err)
 			}
-			for _, ccnpPod := range ccnpPods.Items {
+			for _, ccnpPod := range ccnpPods {
 				ct.ccnpTestPods[ns] = Pod{
 					K8sClient: ct.client,
 					Pod:       ccnpPod.DeepCopy(),
@@ -2908,12 +2994,12 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 		}
 	}
 
-	clientPods, err := ct.client.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindClientName})
+	clientPods, err := listLivePods(ctx, ct.client, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindClientName})
 	if err != nil {
 		return fmt.Errorf("unable to list client pods: %w", err)
 	}
 
-	for _, pod := range clientPods.Items {
+	for _, pod := range clientPods {
 		if strings.Contains(pod.Name, clientCPDeployment) {
 			ct.clientCPPods[pod.Name] = Pod{
 				K8sClient: ct.client,
@@ -2927,16 +3013,15 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 		}
 	}
 
-	sameNodePods, err := ct.clients.src.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "name=" + echoSameNodeDeploymentName})
+	sameNodePods, err := listLivePods(ctx, ct.clients.src, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "name=" + echoSameNodeDeploymentName})
 	if err != nil {
 		return fmt.Errorf("unable to list same node pods: %w", err)
 	}
-	sameNodePodItems := k8s.LivePods(sameNodePods.Items)
-	if len(sameNodePodItems) != 1 {
-		return fmt.Errorf("unexpected number of same node pods: %d", len(sameNodePodItems))
+	if len(sameNodePods) != 1 {
+		return fmt.Errorf("unexpected number of same node pods: %d", len(sameNodePods))
 	}
 	sameNodePod := Pod{
-		Pod: sameNodePodItems[0].DeepCopy(),
+		Pod: sameNodePods[0].DeepCopy(),
 	}
 
 	for _, cp := range ct.clientPods {
@@ -2947,16 +3032,15 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 	}
 
 	if !ct.params.SingleNode || ct.params.MultiCluster != "" {
-		otherNodePods, err := ct.clients.dst.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "name=" + echoOtherNodeDeploymentName})
+		otherNodePods, err := listLivePods(ctx, ct.clients.dst, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "name=" + echoOtherNodeDeploymentName})
 		if err != nil {
 			return fmt.Errorf("unable to list other node pods: %w", err)
 		}
-		otherNodePodItems := k8s.LivePods(otherNodePods.Items)
-		if len(otherNodePodItems) != 1 {
-			return fmt.Errorf("unexpected number of other node pods: %d", len(otherNodePodItems))
+		if len(otherNodePods) != 1 {
+			return fmt.Errorf("unexpected number of other node pods: %d", len(otherNodePods))
 		}
 		otherNodePod := Pod{
-			Pod: otherNodePodItems[0].DeepCopy(),
+			Pod: otherNodePods[0].DeepCopy(),
 		}
 
 		for _, cp := range ct.clientPods {
@@ -2967,12 +3051,12 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 	}
 
 	if ct.Features[features.NodeWithoutCilium].Enabled {
-		echoExternalNodePods, err := ct.clients.dst.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "name=" + echoExternalNodeDeploymentName})
+		echoExternalNodePods, err := listLivePods(ctx, ct.clients.dst, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "name=" + echoExternalNodeDeploymentName})
 		if err != nil {
 			return fmt.Errorf("unable to list other node pods: %w", err)
 		}
 
-		for _, pod := range echoExternalNodePods.Items {
+		for _, pod := range echoExternalNodePods {
 			ct.echoExternalPods[pod.Name] = Pod{
 				K8sClient: ct.client,
 				Pod:       pod.DeepCopy(),
@@ -2997,11 +3081,11 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 		if err := WaitForDaemonSet(ctx, ct, ct.clients.src, ct.params.SharedTestNamespace, frrDaemonSetNameName); err != nil {
 			return err
 		}
-		frrPods, err := ct.clients.dst.ListPods(ctx, ct.params.SharedTestNamespace, metav1.ListOptions{LabelSelector: "name=" + frrDaemonSetNameName})
+		frrPods, err := listLivePods(ctx, ct.clients.dst, ct.params.SharedTestNamespace, metav1.ListOptions{LabelSelector: "name=" + frrDaemonSetNameName})
 		if err != nil {
 			return fmt.Errorf("unable to list FRR pods: %w", err)
 		}
-		for _, pod := range frrPods.Items {
+		for _, pod := range frrPods {
 			ct.frrPods = append(ct.frrPods, Pod{
 				K8sClient: ct.client,
 				Pod:       pod.DeepCopy(),
@@ -3011,11 +3095,11 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 
 	if ct.Features[features.Multicast].Enabled {
 		// socat client pods
-		socatCilentPods, err := ct.clients.src.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "name=" + socatClientDeploymentName})
+		socatCilentPods, err := listLivePods(ctx, ct.clients.src, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "name=" + socatClientDeploymentName})
 		if err != nil {
 			return fmt.Errorf("unable to list socat client pods: %w", err)
 		}
-		for _, pod := range socatCilentPods.Items {
+		for _, pod := range socatCilentPods {
 			ct.socatClientPods = append(ct.socatClientPods, Pod{
 				K8sClient: ct.client,
 				Pod:       pod.DeepCopy(),
@@ -3026,11 +3110,11 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 		if err := WaitForDaemonSet(ctx, ct, ct.clients.src, ct.Params().TestNamespace, socatServerDaemonsetName); err != nil {
 			return err
 		}
-		socatServerPods, err := ct.clients.src.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "name=" + socatServerDaemonsetName})
+		socatServerPods, err := listLivePods(ctx, ct.clients.src, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "name=" + socatServerDaemonsetName})
 		if err != nil {
 			return fmt.Errorf("unable to list socat server pods: %w", err)
 		}
-		for _, pod := range socatServerPods.Items {
+		for _, pod := range socatServerPods {
 			ct.socatServerPods = append(ct.socatServerPods, Pod{
 				K8sClient: ct.client,
 				Pod:       pod.DeepCopy(),
@@ -3048,19 +3132,8 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 			return err
 		}
 	}
-	for _, client := range ct.clients.clients() {
-		echoPods, err := client.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindEchoName})
-		if err != nil {
-			return fmt.Errorf("unable to list echo pods: %w", err)
-		}
-		for _, echoPod := range echoPods.Items {
-			ct.echoPods[echoPod.Name] = Pod{
-				K8sClient: client,
-				Pod:       echoPod.DeepCopy(),
-				scheme:    "http",
-				port:      8080, // listen port of the echo server inside the container
-			}
-		}
+	if err := ct.registerEchoPods(ctx); err != nil {
+		return err
 	}
 
 	for _, client := range ct.clients.clients() {
@@ -3179,12 +3252,12 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 				return err
 			}
 		}
-		hostNetNSPods, err := client.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindHostNetNS})
+		hostNetNSPods, err := listLivePods(ctx, client, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindHostNetNS})
 		if err != nil {
 			return fmt.Errorf("unable to list host netns pods: %w", err)
 		}
 
-		for _, pod := range hostNetNSPods.Items {
+		for _, pod := range hostNetNSPods {
 			_, ok := ct.nodesWithoutCilium[pod.Spec.NodeName]
 			p := Pod{
 				K8sClient: client,
@@ -3214,12 +3287,12 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 		}
 	}
 
-	l7LBPods, err := ct.client.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindL7LBName})
+	l7LBPods, err := listLivePods(ctx, ct.client, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "kind=" + kindL7LBName})
 	if err != nil {
 		return fmt.Errorf("unable to list client pods: %w", err)
 	}
 
-	for _, pod := range l7LBPods.Items {
+	for _, pod := range l7LBPods {
 		ct.l7LBClientPods[pod.Name] = Pod{
 			K8sClient: ct.client,
 			Pod:       pod.DeepCopy(),

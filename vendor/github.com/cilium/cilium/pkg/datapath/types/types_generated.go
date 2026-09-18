@@ -217,14 +217,22 @@ type EncryptConfig struct {
 
 // EndpointInfo is generated from the BPF C type endpoint_info.
 type EndpointInfo struct {
-	_             structs.HostLayout
-	IfIndex       uint32
-	Unused        uint16
-	LXCID         uint16
-	Flags         uint32
-	RtInfo        uint32
-	MAC           uint64
-	NodeMAC       uint64
+	_       structs.HostLayout
+	IfIndex uint32
+	Unused  uint16
+	LXCID   uint16
+	Flags   uint32
+	RtInfo  uint32
+	MAC     struct {
+		_    structs.HostLayout
+		Addr [6]uint8
+		_    [2]byte
+	}
+	NodeMAC struct {
+		_    structs.HostLayout
+		Addr [6]uint8
+		_    [2]byte
+	}
 	SecID         uint32
 	ParentIfIndex uint32
 	Pad           [2]uint32
@@ -441,6 +449,20 @@ type IPv6RevNATTuple struct {
 	Port uint16
 	Pad  uint16
 	_    [4]byte
+}
+
+// IPv6SNATExclusionPrefix is generated from the BPF C type ipv6_snat_exclusion_prefix.
+type IPv6SNATExclusionPrefix struct {
+	_       structs.HostLayout
+	DstAddr struct {
+		_    structs.HostLayout
+		Addr [16]uint8
+	}
+	DstMask struct {
+		_    structs.HostLayout
+		Addr [16]uint8
+	}
+	Enabled bool
 }
 
 // L2ResponderStats is generated from the BPF C type l2_responder_stats.
@@ -962,6 +984,24 @@ type SRv6VRFKey6 struct {
 	}
 }
 
+// StrictEncryptionCfg is generated from the BPF C type strict_encryption_cfg.
+type StrictEncryptionCfg struct {
+	_       structs.HostLayout
+	Enabled bool
+	_       [3]byte
+	IPv4Net struct {
+		_    structs.HostLayout
+		Addr [4]uint8
+	}
+	IPv4EncryptIface struct {
+		_    structs.HostLayout
+		Addr [4]uint8
+	}
+	IPv4NetSize      uint8
+	AllowRemoteNodes bool
+	_                [2]byte
+}
+
 // SubnetKey is generated from the BPF C type subnet_key.
 type SubnetKey struct {
 	_      structs.HostLayout
@@ -1044,6 +1084,14 @@ type V6Addr struct {
 	Addr [16]uint8
 }
 
+// VLANFilterConfig is generated from the BPF C type vlan_filter_config.
+type VLANFilterConfig struct {
+	_        structs.HostLayout
+	VLANIds  [5]uint16
+	AllowAll bool
+	_        [1]byte
+}
+
 // VTEPKey is generated from the BPF C type vtep_key.
 type VTEPKey struct {
 	_      structs.HostLayout
@@ -1052,8 +1100,12 @@ type VTEPKey struct {
 
 // VTEPValue is generated from the BPF C type vtep_value.
 type VTEPValue struct {
-	_              structs.HostLayout
-	VTEPMAC        uint64
+	_       structs.HostLayout
+	VTEPMAC struct {
+		_    structs.HostLayout
+		Addr [6]uint8
+		_    [2]byte
+	}
 	TunnelEndpoint uint32
 	_              [4]byte
 }

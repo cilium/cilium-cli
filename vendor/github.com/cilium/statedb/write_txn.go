@@ -9,7 +9,6 @@ import (
 	"io"
 	"reflect"
 	"runtime"
-	"sync/atomic"
 	"time"
 
 	"github.com/cilium/statedb/index"
@@ -29,8 +28,7 @@ type writeTxnState struct {
 	db *DB
 
 	handle     string
-	acquiredAt time.Time     // the time at which the transaction acquired the locks
-	duration   atomic.Uint64 // the transaction duration after it finished
+	acquiredAt time.Time // the time at which the transaction acquired the locks
 
 	oldRoot      *dbRoot                  // snapshot of the root at the time WriteTxn was called
 	tableEntries []*tableEntry            // table entries being modified
@@ -112,11 +110,11 @@ func (txn *writeTxnState) mustIndexWriteTxn(meta TableMeta, indexPos int) tableI
 	return indexTxn
 }
 
-func (txn *writeTxnState) insert(meta TableMeta, guardRevision Revision, data any) (object, bool, <-chan struct{}, error) {
-	return txn.modify(meta, guardRevision, data, nil)
+func (txn *writeTxnState) insert(meta TableMeta, guardRevision Revision, data any, withWatch bool) (object, bool, <-chan struct{}, error) {
+	return txn.modify(meta, guardRevision, data, nil, withWatch)
 }
 
-func (txn *writeTxnState) modify(meta TableMeta, guardRevision Revision, newData any, merge func(old, new object) object) (object, bool, <-chan struct{}, error) {
+func (txn *writeTxnState) modify(meta TableMeta, guardRevision Revision, newData any, merge func(old, new object) object, withWatch bool) (object, bool, <-chan struct{}, error) {
 	if txn == nil {
 		return object{}, false, nil, ErrTransactionClosed
 	}
@@ -128,13 +126,16 @@ func (txn *writeTxnState) modify(meta TableMeta, guardRevision Revision, newData
 		return object{}, false, nil, tableError(tableName, ErrTableNotLockedForWriting)
 	}
 	oldRevision := table.revision
-	table.revision++
-	revision := table.revision
 
 	// Update the primary index first
-	obj := object{data: newData, revision: revision}
+	obj := object{data: newData}
 	idIndexTxn := txn.mustIndexWriteTxn(meta, PrimaryIndexPos)
-	idKey := idIndexTxn.objectToKey(obj)
+	idKey, indexed := idIndexTxn.objectToKey(obj)
+	if !indexed {
+		return object{}, false, nil, nil
+	}
+	table.revision++
+	obj.revision = table.revision
 
 	var (
 		oldObj    object
@@ -142,11 +143,19 @@ func (txn *writeTxnState) modify(meta TableMeta, guardRevision Revision, newData
 		watch     <-chan struct{}
 	)
 	if merge == nil {
-		oldObj, oldExists, watch = idIndexTxn.insert(idKey, obj)
+		if withWatch {
+			oldObj, oldExists, watch = idIndexTxn.insert(idKey, obj)
+		} else {
+			oldObj, oldExists = idIndexTxn.insertNoWatch(idKey, obj)
+		}
 	} else {
 		// Insert the object into the primary index. This returns the merged new
 		// object which we'll then insert into the secondary indexes.
-		oldObj, obj, oldExists, watch = idIndexTxn.modify(idKey, obj, merge)
+		if withWatch {
+			oldObj, obj, oldExists, watch = idIndexTxn.modify(idKey, obj, merge)
+		} else {
+			oldObj, obj, oldExists = idIndexTxn.modifyNoWatch(idKey, obj, merge)
+		}
 	}
 
 	// Sanity check: is the same object being inserted back and thus the
@@ -176,7 +185,7 @@ func (txn *writeTxnState) modify(meta TableMeta, guardRevision Revision, newData
 			// Revert the change. We're assuming here that it's rarer for CompareAndSwap() to
 			// fail and thus we're optimizing to have only one lookup in the common case
 			// (versus doing a Get() and then Insert()).
-			idIndexTxn.insert(idKey, oldObj)
+			idIndexTxn.insertNoWatch(idKey, oldObj)
 			table.revision = oldRevision
 			return oldObj, true, watch, ErrRevisionNotEqual
 		}
@@ -188,12 +197,12 @@ func (txn *writeTxnState) modify(meta TableMeta, guardRevision Revision, newData
 		binary.BigEndian.PutUint64(txn.revKey[:], oldObj.revision)
 		revIndexTxn.delete(txn.revKey[:])
 	}
-	revIndexTxn.insert(index.Uint64(obj.revision), obj)
+	revIndexTxn.insertNoWatch(index.Uint64(obj.revision), obj)
 
 	// If it's new, possibly remove an older deleted object with the same
 	// primary key from the graveyard.
 	if !oldExists {
-		if old, _, existed := txn.mustIndexReadTxn(meta, GraveyardIndexPos).get(idKey); existed {
+		if old, existed := txn.mustIndexReadTxn(meta, GraveyardIndexPos).getNoWatch(idKey); existed {
 			txn.mustIndexWriteTxn(meta, GraveyardIndexPos).delete(idKey)
 			binary.BigEndian.PutUint64(txn.revKey[:], old.revision)
 			txn.mustIndexWriteTxn(meta, GraveyardRevisionIndexPos).delete(txn.revKey[:])
@@ -246,7 +255,10 @@ func (txn *writeTxnState) delete(meta TableMeta, guardRevision Revision, data an
 	// We assume that "data" has only enough defined fields to
 	// compute the primary key.
 	idIndex := txn.mustIndexWriteTxn(meta, PrimaryIndexPos)
-	idKey := idIndex.objectToKey(object{data: data})
+	idKey, indexed := idIndex.objectToKey(object{data: data})
+	if !indexed {
+		return object{}, false, nil
+	}
 	obj, existed := idIndex.delete(idKey)
 	if !existed {
 		return object{}, false, nil
@@ -256,7 +268,7 @@ func (txn *writeTxnState) delete(meta TableMeta, guardRevision Revision, data an
 	// revert the change.
 	if guardRevision > 0 {
 		if obj.revision != guardRevision {
-			idIndex.insert(idKey, obj)
+			idIndex.insertNoWatch(idKey, obj)
 			return obj, true, ErrRevisionNotEqual
 		}
 	}
@@ -277,10 +289,10 @@ func (txn *writeTxnState) delete(meta TableMeta, guardRevision Revision, data an
 	if txn.hasDeleteTrackers(meta) {
 		graveyardIndex := txn.mustIndexWriteTxn(meta, GraveyardIndexPos)
 		obj.revision = revision
-		if _, existed, _ := graveyardIndex.insert(idKey, obj); existed {
+		if _, existed := graveyardIndex.insertNoWatch(idKey, obj); existed {
 			panic("BUG: Double deletion! Deleted object already existed in graveyard")
 		}
-		txn.mustIndexWriteTxn(meta, GraveyardRevisionIndexPos).insert(index.Uint64(revision), obj)
+		txn.mustIndexWriteTxn(meta, GraveyardRevisionIndexPos).insertNoWatch(index.Uint64(revision), obj)
 	}
 
 	return obj, true, nil
@@ -330,8 +342,6 @@ func (handle *writeTxnHandle) Abort() {
 		}
 	}
 
-	txn.duration.Store(uint64(time.Since(txn.acquiredAt)))
-
 	txn.smus.Unlock()
 	txn.db.metrics.WriteTxnDuration(
 		txn.handle,
@@ -365,8 +375,6 @@ func (handle *writeTxnHandle) Commit() ReadTxn {
 		return nil
 	}
 	txn := handle.writeTxnState
-
-	txn.duration.Store(uint64(time.Since(txn.acquiredAt)))
 
 	db := txn.db
 
@@ -438,6 +446,11 @@ func (handle *writeTxnHandle) Commit() ReadTxn {
 	// mutated radix tree nodes in all changed indexes and on the root itself.
 	for _, txn := range txnToNotify {
 		txn.notify()
+	}
+
+	// Invoke commit hooks, if any.
+	for _, hook := range db.commitHooks {
+		hook((*readTxn)(&root), txn.tableNames)
 	}
 
 	// With the root pointer updated, we can now release the tables for the next write transaction.
