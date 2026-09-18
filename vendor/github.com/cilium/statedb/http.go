@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/cilium/statedb/index"
@@ -40,12 +41,12 @@ func (h dbHandler) dumpTable(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	if table := r.PathValue("table"); table != "" {
-		err = h.db.ReadTxn().WriteJSON(w, r.PathValue("table"))
+		err = h.db.ReadTxn().WriteJSON(w, table)
 	} else {
 		err = h.db.ReadTxn().WriteJSON(w)
 	}
 	if err != nil {
-		panic(err)
+		return
 	}
 }
 
@@ -89,6 +90,11 @@ func (h dbHandler) query(w http.ResponseWriter, r *http.Request) {
 		enc.Encode(QueryResponse{Err: fmt.Sprintf("Table %q not found", req.Table)})
 		return
 	}
+	if req.Index != "" && req.Index != RevisionIndex && !slices.Contains(table.Indexes(), req.Index) {
+		w.WriteHeader(http.StatusBadRequest)
+		enc.Encode(QueryResponse{Err: fmt.Sprintf("Index %q not found", req.Index)})
+		return
+	}
 
 	indexPos := table.indexPos(req.Index)
 
@@ -106,7 +112,9 @@ func (h dbHandler) query(w http.ResponseWriter, r *http.Request) {
 			Obj: obj.data,
 		})
 	}
-	runQuery(indexTxn, req.LowerBound, queryKey, onObject)
+	if err := runQuery(indexTxn, req.LowerBound, queryKey, onObject); err != nil {
+		return
+	}
 }
 
 type QueryRequest struct {
@@ -122,18 +130,19 @@ type QueryResponse struct {
 	Err string `json:"err,omitempty"`
 }
 
-func runQuery(reader tableIndexReader, lowerbound bool, queryKey index.Key, onObject func(object) error) {
+func runQuery(reader tableIndexReader, lowerbound bool, queryKey index.Key, onObject func(object) error) error {
 	var iter tableIndexIterator
 	if lowerbound {
-		iter, _ = reader.lowerBound(queryKey)
+		iter = reader.lowerBoundNoWatch(queryKey)
 	} else {
-		iter, _ = reader.list(queryKey)
+		iter = reader.listNoWatch(queryKey)
 	}
 	for _, obj := range iter.All {
 		if err := onObject(obj); err != nil {
-			panic(err)
+			return err
 		}
 	}
+	return nil
 }
 
 func (h dbHandler) changes(w http.ResponseWriter, r *http.Request) {
@@ -164,6 +173,7 @@ func (h dbHandler) changes(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	defer changeIter.Close()
 
 	w.WriteHeader(http.StatusOK)
 
@@ -173,12 +183,13 @@ func (h dbHandler) changes(w http.ResponseWriter, r *http.Request) {
 	for {
 		changes, watch := changeIter.nextAny(h.db.ReadTxn())
 		for change := range changes {
-			err := enc.Encode(change)
-			if err != nil {
-				panic(err)
+			if err := enc.Encode(change); err != nil {
+				return
 			}
 		}
-		w.(http.Flusher).Flush()
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			return
+		}
 		select {
 		case <-r.Context().Done():
 			return

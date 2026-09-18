@@ -578,7 +578,7 @@ func insertOrDelete(insert bool, db *DB, s *script.State, args ...string) (scrip
 	}
 
 	wtxn := db.WriteTxn(tbl.Meta)
-	defer wtxn.Commit()
+	defer wtxn.Abort()
 
 	for _, arg := range args[1:] {
 		data, err := os.ReadFile(s.Path(arg))
@@ -605,6 +605,7 @@ func insertOrDelete(insert bool, db *DB, s *script.State, args ...string) (scrip
 			}
 		}
 	}
+	wtxn.Commit()
 	return nil, nil
 }
 
@@ -817,6 +818,7 @@ func WatchCmd(db *DB) script.Cmd {
 			if err != nil {
 				return nil, err
 			}
+			defer iter.Close()
 
 			header := tbl.TableHeader()
 			if header == nil {

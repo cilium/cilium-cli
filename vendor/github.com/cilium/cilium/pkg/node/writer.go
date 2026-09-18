@@ -7,15 +7,20 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/netip"
 	"slices"
 
+	"github.com/cilium/hive/cell"
 	"github.com/cilium/statedb"
 	"github.com/cilium/statedb/reconciler"
 
+	cmtypes "github.com/cilium/cilium/pkg/clustermesh/types"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	nodeTypes "github.com/cilium/cilium/pkg/node/types"
+	"github.com/cilium/cilium/pkg/option"
 	"github.com/cilium/cilium/pkg/source"
+	"github.com/cilium/cilium/pkg/time"
 )
 
 // Writer provides source-aware write access to the node table.
@@ -23,15 +28,68 @@ type Writer struct {
 	log   *slog.Logger
 	db    *statedb.DB
 	nodes statedb.RWTable[*Node]
+
+	isStaticLocalRouterIP  func(string) bool
+	prefixClusterMutatorFn PrefixClusterMutatorFn
+
+	requiredReconcilers []NodeReconciler
 }
+
+// PrefixClusterMutatorFn derives cluster-aware addressing options from a
+// serialized node.
+type PrefixClusterMutatorFn = func(*nodeTypes.Node) []cmtypes.PrefixClusterOpts
+
+// NodeReconciler identifies a reconciler operating on the node table.
+type NodeReconciler string
+
+func (r NodeReconciler) String() string { return string(r) }
+
+const (
+	// LinuxNodeReconciler realizes nodes in the Linux datapath.
+	LinuxNodeReconciler NodeReconciler = "linux"
+	// WireGuardNodeReconciler realizes nodes in the WireGuard datapath.
+	WireGuardNodeReconciler NodeReconciler = "wireguard"
+)
 
 // NewWriter constructs a node table writer.
 func NewWriter(log *slog.Logger, db *statedb.DB, nodes statedb.RWTable[*Node]) *Writer {
 	return &Writer{log: log, db: db, nodes: nodes}
 }
 
+type writerParams struct {
+	cell.In
+
+	Log          *slog.Logger
+	DB           *statedb.DB
+	Nodes        statedb.RWTable[*Node]
+	DaemonConfig *option.DaemonConfig `optional:"true"`
+}
+
+func provideWriter(p writerParams) *Writer {
+	w := NewWriter(p.Log, p.DB, p.Nodes)
+	if p.DaemonConfig != nil {
+		w.isStaticLocalRouterIP = p.DaemonConfig.IsLocalRouterIP
+	}
+	return w
+}
+
 // Table returns read-only access to the node table.
 func (w *Writer) Table() statedb.Table[*Node] { return w.nodes }
+
+// SetPrefixClusterMutatorFn installs the cluster-address qualification hook.
+// This hook must be set during Hive invoke time.
+func (w *Writer) SetPrefixClusterMutatorFn(mutator PrefixClusterMutatorFn) {
+	w.prefixClusterMutatorFn = mutator
+}
+
+func deriveAddressClusterID(mutator PrefixClusterMutatorFn, n *nodeTypes.Node) uint32 {
+	if mutator == nil {
+		return 0
+	}
+	// The mutator only enriches PrefixCluster metadata. The prefix itself is
+	// irrelevant when extracting the derived cluster ID.
+	return cmtypes.PrefixClusterFrom(netip.Prefix{}, mutator(n)...).ClusterID()
+}
 
 // RegisterInitializer registers a producer that must finish its initial node
 // listing before the table is considered initialized.
@@ -39,51 +97,209 @@ func (w *Writer) RegisterInitializer(txn statedb.WriteTxn, name string) func(sta
 	return w.nodes.RegisterInitializer(txn, name)
 }
 
-// Refresh marks every node pending and waits for all currently known node
-// reconcilers to successfully process them.
-func (w *Writer) Refresh(ctx context.Context) error {
+// RegisterReconciler adds the named reconciler to the list of required
+// reconcilers and marks existing nodes pending for it. This list is passed to
+// [reconciler.StatusSet.Pending] when nodes are created or updated.
+// Panics if the reconciler has already been registered.
+func (w *Writer) RegisterReconciler(name NodeReconciler) {
 	txn := w.db.WriteTxn(w.nodes)
-	targets := []string{}
+	defer txn.Abort()
+
+	nameString := name.String()
+	i, found := slices.BinarySearch(w.requiredReconcilers, name)
+	if found {
+		panic(fmt.Sprintf("Reconciler %q already registered", name))
+	}
+	requiredReconcilers := slices.Insert(
+		slices.Clone(w.requiredReconcilers),
+		i,
+		name,
+	)
+
+	// RegisterReconciler may be called from a start hook after node producers
+	// have populated the table. Materialize the new pending status so observers
+	// cannot mistake another reconciler completing for full reconciliation.
 	for n := range w.nodes.All(txn) {
-		targets = append(targets, n.Fullname())
 		updated := *n
-		updated.Statuses = updated.Statuses.Pending()
+		updated.Statuses = updated.Statuses.Set(nameString, reconciler.StatusPending())
+		if _, _, err := w.nodes.Insert(txn, &updated); err != nil {
+			w.log.Error("Failed to register node reconciler status",
+				logfields.Error, err,
+				logfields.Name, name,
+			)
+			return
+		}
+	}
+	w.requiredReconcilers = requiredReconcilers
+	txn.Commit()
+}
+
+// UnregisterReconciler removes the reconciler from the list of required
+// reconcilers and removes its status from every node. The reconciler must be
+// stopped before it is unregistered so it cannot write its status back.
+func (w *Writer) UnregisterReconciler(name NodeReconciler) {
+	txn := w.db.WriteTxn(w.nodes)
+	defer txn.Abort()
+
+	nameString := name.String()
+	i, found := slices.BinarySearch(w.requiredReconcilers, name)
+	if !found {
+		return
+	}
+	requiredReconcilers := slices.Delete(
+		slices.Clone(w.requiredReconcilers),
+		i,
+		i+1,
+	)
+
+	// Remove the reconciler from the nodes so it will no longer be waited for.
+	for n := range w.nodes.All(txn) {
+		updated := *n
+		updated.Statuses = updated.Statuses.Delete(nameString)
+		if _, _, err := w.nodes.Insert(txn, &updated); err != nil {
+			w.log.Error("Failed to unregister node reconciler",
+				logfields.Error, err,
+				logfields.Name, name,
+			)
+			return
+		}
+	}
+
+	w.requiredReconcilers = requiredReconcilers
+	txn.Commit()
+}
+
+// getRequiredReconcilers must only be called while holding a write transaction
+// for the node table. The transaction serializes access to the registry.
+func (w *Writer) getRequiredReconcilers(_ statedb.WriteTxn) []NodeReconciler {
+	if w == nil {
+		return nil
+	}
+	return slices.Clone(w.requiredReconcilers)
+}
+
+func reconcilerNames(reconcilers []NodeReconciler) []string {
+	names := make([]string, len(reconcilers))
+	for i, reconciler := range reconcilers {
+		names[i] = reconciler.String()
+	}
+	return names
+}
+
+// WaitUntilReconciled waits until all nodes present in txn have been
+// reconciled. When requireDone is false, both done and error statuses are
+// considered finished. When it is true, every status must be done.
+func (w *Writer) WaitUntilReconciled(
+	ctx context.Context,
+	txn statedb.ReadTxn,
+	requireDone bool,
+) error {
+	return w.waitUntilReconciled(ctx, txn, requireDone, nil)
+}
+
+func (w *Writer) waitUntilReconciled(
+	ctx context.Context,
+	txn statedb.ReadTxn,
+	requireDone bool,
+	reconcilers []NodeReconciler,
+) error {
+	const settleTime = 10 * time.Millisecond
+
+	targets := map[string]statedb.Revision{}
+	for n := range w.nodes.All(txn) {
+		targets[n.Fullname()] = 0
+	}
+
+	ws := statedb.NewWatchSet()
+	for {
+		// Iteration is faster than individual lookups and we assume that the set
+		// of nodes in [targets] is mostly the same as what we see in later
+		// transactions.
+		allNodes, watch := w.nodes.AllWatch(txn)
+		rev := w.nodes.Revision(txn)
+
+		for node := range allNodes {
+			if _, found := targets[node.Fullname()]; found {
+				finished := true
+				if reconcilers == nil {
+					for _, status := range node.Statuses.All() {
+						if status.Kind != reconciler.StatusKindDone &&
+							(requireDone || status.Kind != reconciler.StatusKindError) {
+							finished = false
+							break
+						}
+					}
+				} else {
+					for _, name := range reconcilers {
+						status := node.Statuses.Get(name.String())
+						if status.Kind != reconciler.StatusKindDone &&
+							(requireDone || status.Kind != reconciler.StatusKindError) {
+							finished = false
+							break
+						}
+					}
+				}
+				if finished {
+					delete(targets, node.Fullname())
+				} else {
+					targets[node.Fullname()] = rev
+				}
+			}
+		}
+
+		// Remove targets that have disappeared
+		maps.DeleteFunc(targets, func(_ string, targetRev statedb.Revision) bool {
+			return targetRev != rev
+		})
+
+		if len(targets) == 0 {
+			break
+		}
+
+		ws.Add(watch)
+		if _, err := ws.Wait(ctx, settleTime); err != nil {
+			return err
+		}
+		txn = w.db.ReadTxn()
+	}
+	return nil
+}
+
+// Refresh marks the selected reconcilers pending for every node and waits for
+// them to attempt processing the nodes (status is either Done or Error). If no
+// reconcilers are specified, all registered reconcilers are refreshed. The
+// error is [ctx.Err()] if context is cancelled.
+func (w *Writer) Refresh(ctx context.Context, reconcilers ...NodeReconciler) error {
+	txn := w.db.WriteTxn(w.nodes)
+	registered := w.getRequiredReconcilers(txn)
+	if len(reconcilers) == 0 {
+		reconcilers = registered
+	} else {
+		for _, name := range reconcilers {
+			if _, found := slices.BinarySearch(registered, name); !found {
+				txn.Abort()
+				return fmt.Errorf("node reconciler %q is not registered", name)
+			}
+		}
+	}
+	if len(reconcilers) == 0 {
+		txn.Abort()
+		return nil
+	}
+	for n := range w.nodes.All(txn) {
+		updated := *n
+		for _, name := range reconcilers {
+			updated.Statuses = updated.Statuses.Set(name.String(), reconciler.StatusPending())
+		}
 		if _, _, err := w.nodes.Insert(txn, &updated); err != nil {
 			txn.Abort()
 			return fmt.Errorf("marking node %s pending: %w", updated.Fullname(), err)
 		}
 	}
-	txn.Commit()
+	rtxn := txn.Commit()
 
-	rtxn := w.db.ReadTxn()
-	for _, fullname := range targets {
-		for {
-			n, _, watch, found := w.nodes.GetWatch(rtxn, NodeByName(fullname))
-			if !found {
-				break
-			}
-
-			finished := true
-			for _, status := range n.Statuses.All() {
-				if status.Kind != reconciler.StatusKindDone &&
-					status.Kind != reconciler.StatusKindError {
-					finished = false
-					break
-				}
-			}
-			if finished {
-				break
-			}
-
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-watch:
-				rtxn = w.db.ReadTxn()
-			}
-		}
-	}
-	return nil
+	// Wait until refresh of all nodes has been attempted.
+	return w.waitUntilReconciled(ctx, rtxn, false, reconcilers)
 }
 
 // Upsert takes ownership of n and inserts or updates it if its source is
@@ -92,7 +308,12 @@ func (w *Writer) Refresh(ctx context.Context) error {
 // objects are not retained, so their producer must upsert them again if the
 // winning object is later deleted.
 func (w *Writer) Upsert(txn statedb.WriteTxn, n *nodeTypes.Node) bool {
-	obj := &Node{Node: *n}
+	reconcilers := reconcilerNames(w.getRequiredReconcilers(txn))
+	obj := &Node{
+		Node:             *n,
+		addressClusterID: deriveAddressClusterID(w.prefixClusterMutatorFn, n),
+		Statuses:         reconciler.NewStatusSet().Pending(reconcilers...),
+	}
 
 	old, _, found := w.nodes.Get(txn, NodeByName(obj.Fullname()))
 	if found {
@@ -104,7 +325,8 @@ func (w *Writer) Upsert(txn statedb.WriteTxn, n *nodeTypes.Node) bool {
 			)
 			return false
 		}
-		if old.Node.DeepEqual(&obj.Node) {
+		if old.Node.DeepEqual(&obj.Node) &&
+			old.addressClusterID == obj.addressClusterID {
 			return false
 		}
 	}
@@ -113,19 +335,23 @@ func (w *Writer) Upsert(txn statedb.WriteTxn, n *nodeTypes.Node) bool {
 	// operation atomic when an incoming node overlaps multiple existing nodes:
 	// a single stronger owner rejects the update without deleting weaker ones.
 	conflicts := map[string]*Node{}
-	for _, addr := range conflictAddresses(n) {
-		candidate, _, found := w.nodes.Get(txn, NodeByAddress(addr))
-		if !found || candidate.Fullname() == obj.Fullname() {
-			continue
+	for addrCluster := range obj.addressClusters(w.isStaticLocalRouterIP) {
+		for candidate := range w.nodes.List(txn, NodeByAddress(addrCluster)) {
+			if candidate.Fullname() == obj.Fullname() {
+				continue
+			}
+			if _, found := conflicts[candidate.Fullname()]; found {
+				continue
+			}
+			w.log.Warn("Node address conflicts with another node",
+				logfields.IPAddr, addrCluster,
+				logfields.Node, obj.Fullname(),
+				logfields.Source, obj.Source,
+				logfields.ConflictingResource, candidate.Fullname(),
+				logfields.NodeOwner, candidate.Source,
+			)
+			conflicts[candidate.Fullname()] = candidate
 		}
-		w.log.Warn("Node address conflicts with another node",
-			logfields.IPAddr, addr,
-			logfields.Node, obj.Fullname(),
-			logfields.Source, obj.Source,
-			logfields.ConflictingResource, candidate.Fullname(),
-			logfields.NodeOwner, candidate.Source,
-		)
-		conflicts[candidate.Fullname()] = candidate
 	}
 	for _, candidate := range conflicts {
 		if candidate.Local != nil || !source.AllowOverwrite(candidate.Source, obj.Source) {
@@ -145,7 +371,7 @@ func (w *Writer) Upsert(txn statedb.WriteTxn, n *nodeTypes.Node) bool {
 	}
 
 	if found {
-		obj.Statuses = old.Statuses.Pending()
+		obj.Statuses = old.Statuses.Pending(reconcilers...)
 	}
 
 	if _, _, err := w.nodes.Insert(txn, obj); err != nil {
@@ -157,31 +383,6 @@ func (w *Writer) Upsert(txn statedb.WriteTxn, n *nodeTypes.Node) bool {
 		return false
 	}
 	return true
-}
-
-// conflictAddresses returns the normalized addresses whose ownership used to
-// gate NodeManager datapath updates. IPv4-mapped IPv6 addresses are normalized
-// to IPv4 so both representations conflict with one another.
-func conflictAddresses(n *nodeTypes.Node) []netip.Addr {
-	addrs := make([]netip.Addr, 0, len(n.IPAddresses)+4)
-	appendAddr := func(addr netip.Addr) {
-		if addr.IsValid() {
-			addrs = append(addrs, addr.Unmap())
-		}
-	}
-
-	for _, address := range n.IPAddresses {
-		if addr, ok := netip.AddrFromSlice(address.IP); ok {
-			appendAddr(addr)
-		}
-	}
-	appendAddr(n.IPv4HealthIP.Addr)
-	appendAddr(n.IPv6HealthIP.Addr)
-	appendAddr(n.IPv4IngressIP.Addr)
-	appendAddr(n.IPv6IngressIP.Addr)
-
-	slices.SortFunc(addrs, netip.Addr.Compare)
-	return slices.Compact(addrs)
 }
 
 // Delete removes a remote node if this writer's source still owns it. It

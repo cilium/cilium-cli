@@ -15,20 +15,18 @@ import (
 
 	daemon_k8s "github.com/cilium/cilium/daemon/k8s"
 	"github.com/cilium/cilium/pkg/bgp/agent/signaler"
+	"github.com/cilium/cilium/pkg/bgp/config"
 	"github.com/cilium/cilium/pkg/bgp/manager/store"
 	"github.com/cilium/cilium/pkg/bgp/types"
 	"github.com/cilium/cilium/pkg/hive"
 	v2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	"github.com/cilium/cilium/pkg/k8s/resource"
 	"github.com/cilium/cilium/pkg/logging/logfields"
-	"github.com/cilium/cilium/pkg/option"
 	"github.com/cilium/cilium/pkg/time"
 )
 
-var (
-	// ErrBGPControlPlaneDisabled is set when the BGP control plane is disabled
-	ErrBGPControlPlaneDisabled = fmt.Errorf("BGP control plane is disabled")
-)
+// ErrBGPControlPlaneDisabled is set when the BGP control plane is disabled
+var ErrBGPControlPlaneDisabled = fmt.Errorf("BGP control plane is disabled")
 
 // Controller is the agent side BGP Control Plane controller.
 //
@@ -57,6 +55,10 @@ type Controller struct {
 	// BGPMgr is an implementation of the BGPRouterManager interface
 	// and provides a declarative API for configuring BGP peers.
 	BGPMgr BGPRouterManager
+
+	// DatapathWaiter is called to wait for the datapath to be ready before
+	// allowing BGP route announcements.
+	DatapathWaiter DatapathWaiter
 }
 
 // ControllerParams contains all parameters needed to construct a Controller
@@ -71,8 +73,9 @@ type ControllerParams struct {
 	Sig                     *signaler.BGPCPSignaler
 	RouteMgr                BGPRouterManager
 	BGPNodeConfigStore      store.BGPCPResourceStore[*v2.CiliumBGPNodeConfig]
-	DaemonConfig            *option.DaemonConfig
+	BGPConfig               config.BGPConfig
 	LocalCiliumNodeResource daemon_k8s.LocalCiliumNodeResource
+	DatapathWaiter          DatapathWaiter
 }
 
 // NewController constructs a new BGP Control Plane Controller.
@@ -86,7 +89,7 @@ type ControllerParams struct {
 func NewController(params ControllerParams) (*Controller, error) {
 	// If the BGP control plane is disabled, just return nil. This way the hive dependency graph is always static
 	// regardless of config. The lifecycle has not been appended so no work will be done.
-	if !params.DaemonConfig.BGPControlPlaneEnabled() {
+	if !params.BGPConfig.BGPControlPlaneEnabled() {
 		return nil, nil
 	}
 
@@ -96,14 +99,14 @@ func NewController(params ControllerParams) (*Controller, error) {
 		BGPMgr:             params.RouteMgr,
 		BGPNodeConfigStore: params.BGPNodeConfigStore,
 		CiliumNodeResource: params.LocalCiliumNodeResource,
+		DatapathWaiter:     params.DatapathWaiter,
 	}
 
 	params.JobGroup.Add(
 		job.OneShot("bgp-controller",
 			func(ctx context.Context, health cell.Health) (err error) {
 				// run the controller
-				c.Run(ctx)
-				return nil
+				return c.Run(ctx)
 			},
 			job.WithRetry(3, &job.ExponentialBackoff{Min: 100 * time.Millisecond, Max: time.Second}),
 			job.WithShutdown()),
@@ -118,17 +121,28 @@ func NewController(params ControllerParams) (*Controller, error) {
 //
 // A cancel of the provided ctx will kill the control loop along with the running
 // informers.
-func (c *Controller) Run(ctx context.Context) {
+func (c *Controller) Run(ctx context.Context) error {
 	scopedLog := c.Logger.With(types.ComponentLogField, "Controller.Run")
 
 	scopedLog.Info("Cilium BGP Control Plane Controller now running...")
+
+	// Wait for the datapath BPF programs to be attached and the load-balancing
+	// state to be reconciled to BPF maps before processing any BGP events.
+	// Without this gate, BGP may advertise routes before the datapath is ready
+	// to handle traffic, causing a "No route to host" window.
+	scopedLog.Info("BGP Control Plane waiting for datapath initialization")
+	if err := c.DatapathWaiter.Wait(ctx); err != nil {
+		return err
+	}
+	scopedLog.Info("BGP Control Plane datapath ready, starting event processing")
+
 	ciliumNodeCh := c.CiliumNodeResource.Events(ctx)
 	for {
 		select {
 		case ev, ok := <-ciliumNodeCh:
 			if !ok {
 				scopedLog.Info("LocalCiliumNode resource channel closed, Cilium BGP Control Plane Controller shut down")
-				return
+				return nil
 			}
 			switch ev.Kind {
 			case resource.Upsert:
@@ -140,7 +154,7 @@ func (c *Controller) Run(ctx context.Context) {
 			ev.Done(nil)
 		case <-ctx.Done():
 			scopedLog.Info("Cilium BGP Control Plane Controller shut down")
-			return
+			return nil
 		case <-c.Sig.Sig:
 			if c.LocalCiliumNode == nil {
 				scopedLog.Debug("localCiliumNode has not been set yet")
