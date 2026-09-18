@@ -63,7 +63,7 @@ func graveyardWorker(db *DB, ctx context.Context, gcRateLimitInterval time.Durat
 			// to the low watermark.
 			indexTree := rtxn.mustIndexReadTxn(table.meta, GraveyardRevisionIndexPos)
 
-			iter, _ := indexTree.all()
+			iter := indexTree.allNoWatch()
 			for key, obj := range iter.All {
 				if obj.revision > lowWatermark {
 					break
@@ -96,7 +96,9 @@ func graveyardWorker(db *DB, ctx context.Context, gcRateLimitInterval time.Durat
 					// The dead object still existed (and wasn't replaced by a create->delete),
 					// delete it from the primary index.
 					graveyard := txn.mustIndexWriteTxn(meta, GraveyardIndexPos)
-					graveyard.delete(graveyard.objectToKey(oldObj))
+					if key, ok := graveyard.objectToKey(oldObj); ok {
+						graveyard.delete(key)
+					}
 				}
 			}
 			cleaningTimes[tableName] = time.Since(start)

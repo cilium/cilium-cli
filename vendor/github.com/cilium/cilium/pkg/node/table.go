@@ -4,6 +4,7 @@
 package node
 
 import (
+	"iter"
 	"net/netip"
 	"slices"
 	"strings"
@@ -13,7 +14,10 @@ import (
 	"github.com/cilium/statedb/reconciler"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 
+	cmtypes "github.com/cilium/cilium/pkg/clustermesh/types"
 	"github.com/cilium/cilium/pkg/datapath/tunnel"
+	"github.com/cilium/cilium/pkg/ip"
+	"github.com/cilium/cilium/pkg/node/addressing"
 	"github.com/cilium/cilium/pkg/node/types"
 )
 
@@ -26,6 +30,12 @@ type LocalNode = Node
 // +deepequal-gen=true
 type Node struct {
 	types.Node
+
+	// addressClusterID identifies the cluster address space used by
+	// cluster-scoped node addresses. It is derived when the node is written and
+	// is not part of the externally serialized node data.
+	// +deepequal-gen=false
+	addressClusterID uint32
 
 	// Local is non-nil if this is the local node. This carries additional
 	// information about the local node that is not shared outside.
@@ -70,14 +80,63 @@ func (n *Node) TableRow() []string {
 
 var _ statedb.TableWritable = &Node{}
 
+// addressClusters returns the normalized, cluster-aware addresses associated
+// with the node. The optional predicate omits configured Cilium internal
+// router addresses that may intentionally be shared by every node.
+func (n *Node) addressClusters(
+	omitStaticLocalRouterIP func(string) bool,
+) iter.Seq[cmtypes.AddrCluster] {
+	return func(yield func(cmtypes.AddrCluster) bool) {
+		yieldAddr := func(addr netip.Addr, clusterID uint32) bool {
+			if !addr.IsValid() {
+				return true
+			}
+			return yield(cmtypes.AddrClusterFrom(addr.Unmap(), clusterID))
+		}
+
+		for _, address := range n.IPAddresses {
+			if address.Type == addressing.NodeCiliumInternalIP &&
+				omitStaticLocalRouterIP != nil &&
+				omitStaticLocalRouterIP(address.ToString()) {
+				continue
+			}
+			addr, ok := netip.AddrFromSlice(address.IP)
+			if !ok {
+				continue
+			}
+			clusterID := uint32(0)
+			if address.Type == addressing.NodeCiliumInternalIP {
+				clusterID = n.addressClusterID
+			}
+			if !yieldAddr(addr, clusterID) {
+				return
+			}
+		}
+
+		for _, addr := range []netip.Addr{
+			n.IPv4HealthIP.Addr,
+			n.IPv6HealthIP.Addr,
+			n.IPv4IngressIP.Addr,
+			n.IPv6IngressIP.Addr,
+		} {
+			if !yieldAddr(addr, n.addressClusterID) {
+				return
+			}
+		}
+	}
+}
+
 // LocalNodeInfo is the additional information about the local node that
 // is only used internally.
 //
-// Every field is a comparable value type, which lets DeepCopyInto and
-// DeepEqual below be a plain assignment and a plain comparison.
+// DeepEqual is generated, except for the netip.Addr and netip.Prefix fields:
+// deepequal-gen cannot synthesize a comparison for an external type with
+// unexported pointer fields, so those carry +deepequal-gen=false and are
+// compared by the hand-written prologue in DeepEqual below.
 //
 // +k8s:deepcopy-gen=false
-// +deepequal-gen=false
+// +deepequal-gen=true
+// +deepequal-gen:private-method=true
 type LocalNodeInfo struct {
 	// OptOutNodeEncryption will make the local node opt-out of node-to-node
 	// encryption
@@ -88,15 +147,27 @@ type LocalNodeInfo struct {
 	// ID of the node assigned by the cloud provider.
 	ProviderID string
 	// v4 CIDR in which pod IPs are routable
+	// +deepequal-gen=false
 	IPv4NativeRoutingCIDR netip.Prefix
 	// v6 CIDR in which pod IPs are routable
+	// +deepequal-gen=false
 	IPv6NativeRoutingCIDR netip.Prefix
 	// ServiceLoopbackIPv4 is the source address used for SNAT when a Pod talks to
 	// itself through a Service.
+	// +deepequal-gen=false
 	ServiceLoopbackIPv4 netip.Addr
 	// ServiceLoopbackIPv6 is the source address used for SNAT when a Pod talks to
 	// itself through a Service.
+	// +deepequal-gen=false
 	ServiceLoopbackIPv6 netip.Addr
+	// IPv4PodSubnets are the v4 subnets pod IPs are allocated from, for IPAM
+	// modes where pods live in cloud provider subnets rather than in a node
+	// PodCIDR. Empty for every other mode.
+	IPv4PodSubnets []ip.Prefix
+	// IPv6PodSubnets are the v6 subnets pod IPs are allocated from, for IPAM
+	// modes where pods live in cloud provider subnets rather than in a node
+	// PodCIDR. Empty for every other mode.
+	IPv6PodSubnets []ip.Prefix
 	// IsBeingDeleted indicates that the local node is being deleted.
 	IsBeingDeleted bool
 	// UnderlayProtocol is the IP family of our underlay.
@@ -106,6 +177,8 @@ type LocalNodeInfo struct {
 // DeepCopyInto copies the receiver into out. in must be non-nil.
 func (in *LocalNodeInfo) DeepCopyInto(out *LocalNodeInfo) {
 	*out = *in
+	out.IPv4PodSubnets = slices.Clone(in.IPv4PodSubnets)
+	out.IPv6PodSubnets = slices.Clone(in.IPv6PodSubnets)
 }
 
 // DeepCopy creates a deep copy of the LocalNodeInfo.
@@ -123,7 +196,39 @@ func (in *LocalNodeInfo) DeepEqual(other *LocalNodeInfo) bool {
 	if other == nil {
 		return false
 	}
-	return *in == *other
+	// Manually compare the netip.Addr and netip.Prefix fields, which
+	// deepequal-gen cannot generate a comparison for.
+	if in.IPv4NativeRoutingCIDR != other.IPv4NativeRoutingCIDR {
+		return false
+	}
+	if in.IPv6NativeRoutingCIDR != other.IPv6NativeRoutingCIDR {
+		return false
+	}
+	if in.ServiceLoopbackIPv4 != other.ServiceLoopbackIPv4 {
+		return false
+	}
+	if in.ServiceLoopbackIPv6 != other.ServiceLoopbackIPv6 {
+		return false
+	}
+	// Call the generated `deepEqual` method, which compares all other fields.
+	return in.deepEqual(other)
+}
+
+// SetPodSubnets records the subnets pod IPs are allocated from, coalescing
+// them into the minimal equivalent set and splitting them by address family.
+// It replaces any previously recorded value, so repeated calls with the same
+// input are idempotent and dedup against the previous revision in statedb.
+func (n *LocalNode) SetPodSubnets(prefixes []netip.Prefix) {
+	var v4, v6 []ip.Prefix
+	for _, p := range ip.CoalescePrefixes(prefixes) {
+		if p.Addr().Is4() {
+			v4 = append(v4, ip.PrefixFrom(p))
+		} else {
+			v6 = append(v6, ip.PrefixFrom(p))
+		}
+	}
+	n.Local.IPv4PodSubnets = v4
+	n.Local.IPv6PodSubnets = v6
 }
 
 const (
@@ -142,32 +247,25 @@ var (
 	}
 	NodeByName = NodeNameIndex.Query
 
-	// NodeAddressIndex indexes every address of the node. Writer enforces single
-	// ownership and resolves conflicts prior to insertion according to source
-	// priority.
-	NodeAddressIndex = statedb.Index[*Node, netip.Addr]{
+	// NodeAddressIndex indexes every address of the node. The index is non-unique
+	// because configured Cilium internal router addresses may legitimately be
+	// shared by every node. Writer resolves all other conflicts according to
+	// source priority.
+	NodeAddressIndex = statedb.Index[*Node, cmtypes.AddrCluster]{
 		Name: "address",
 		FromObject: func(obj *Node) index.KeySet {
 			keys := make([]index.Key, 0, len(obj.IPAddresses)+4)
-			appendAddr := func(addr netip.Addr) {
-				if addr.IsValid() {
-					keys = append(keys, index.NetIPAddr(addr.Unmap()))
-				}
+			for addr := range obj.addressClusters(nil) {
+				keys = append(keys, nodeAddressKey(addr))
 			}
-			for _, address := range obj.IPAddresses {
-				if addr, ok := netip.AddrFromSlice(address.IP); ok {
-					appendAddr(addr)
-				}
+			if len(keys) == 0 {
+				return index.EmptyKeySet
 			}
-			appendAddr(obj.IPv4HealthIP.Addr)
-			appendAddr(obj.IPv6HealthIP.Addr)
-			appendAddr(obj.IPv4IngressIP.Addr)
-			appendAddr(obj.IPv6IngressIP.Addr)
-			return index.NewKeySet(keys...)
+			return index.NewKeySet(keys[0], keys[1:]...)
 		},
-		FromKey:    index.NetIPAddr,
-		FromString: index.NetIPAddrString,
-		Unique:     true,
+		FromKey:    nodeAddressKey,
+		FromString: nodeAddressKeyString,
+		Unique:     false,
 	}
 	NodeByAddress = NodeAddressIndex.Query
 
@@ -188,6 +286,19 @@ var (
 	NodeByLocal    = NodeLocalIndex.Query
 	LocalNodeQuery = NodeByLocal(true)
 )
+
+func nodeAddressKey(addr cmtypes.AddrCluster) index.Key {
+	key := addr.As20()
+	return key[:]
+}
+
+func nodeAddressKeyString(s string) (index.Key, error) {
+	addr, err := cmtypes.ParseAddrCluster(s)
+	if err != nil {
+		return nil, err
+	}
+	return nodeAddressKey(addr), nil
+}
 
 func NewNodeTable(db *statedb.DB) (statedb.RWTable[*Node], error) {
 	return statedb.NewTable(

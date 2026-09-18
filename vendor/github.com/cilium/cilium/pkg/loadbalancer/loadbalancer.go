@@ -350,13 +350,12 @@ func (s ServiceFlags) SVCNatPolicy(fe L3n4Addr) SVCNatPolicy {
 	}
 }
 
-// SVCSlotQuarantined
+// SVCSlotQuarantined reports whether a backend service slot is quarantined.
 func (s ServiceFlags) SVCSlotQuarantined() bool {
-	if s&serviceFlagQuarantined == 0 {
-		return false
-	} else {
-		return true
-	}
+	// Source-range deny shares the quarantine bit. Older agents copied the
+	// master-only source-range flags to backend slots, so exclude that legacy
+	// combination when restoring state after an upgrade.
+	return s&serviceFlagQuarantined != 0 && s&serviceFlagSourceRange == 0
 }
 
 // String returns the string implementation of ServiceFlags.
@@ -908,6 +907,21 @@ func (l *L3n4Addr) DeepEqual(other *L3n4Addr) bool {
 		return false
 	}
 	return *l == *other
+}
+
+// Compatible returns true if two instances of an L3n4Addr have the same
+// protocol and address family.
+func (l L3n4Addr) Compatible(other L3n4Addr) bool {
+	lRep := l.rep()
+	otherRep := other.rep()
+
+	if lRep.Protocol != otherRep.Protocol {
+		return false
+	}
+	if lRep.addrCluster.Is6() != otherRep.addrCluster.Is6() {
+		return false
+	}
+	return true
 }
 
 // NewL3n4Addr creates a new L3n4Addr.

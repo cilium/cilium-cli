@@ -14,6 +14,7 @@ import (
 
 	cilium "github.com/cilium/proxy/go/cilium/api"
 
+	cmtypes "github.com/cilium/cilium/pkg/clustermesh/types"
 	"github.com/cilium/cilium/pkg/endpoint/regeneration"
 	"github.com/cilium/cilium/pkg/identity"
 	"github.com/cilium/cilium/pkg/logging/logfields"
@@ -189,7 +190,7 @@ type NamedPortsGetter interface {
 // particular Identity across all layers (L3, L4, and L7), with the policy
 // still determined in terms of EndpointSelectors.
 type selectorPolicy struct {
-	localClusterID uint32
+	clusterInfo cmtypes.ClusterInfo
 
 	// Revision is the revision of the policy repository used to generate
 	// this selectorPolicy.
@@ -336,13 +337,18 @@ type PolicyOwner interface {
 	GetIngressNamedPort(name string, proto u8proto.U8proto) uint16
 	PolicyDebug(msg string, attrs ...any)
 	IsHost() bool
-	PreviousMapState() *MapState
+	// PreviousMapStateSizes returns the map sizes of the owner's current policy map state, to
+	// be used as capacity hints for the map state of a new policy. It is called with the
+	// PolicyOwner unlocked, so that it may take the owner's lock to synchronize against the
+	// incremental updates applied to the current map state.
+	PreviousMapStateSizes() MapStateSizes
 	RegenerateIfAlive(regenMetadata *regeneration.ExternalRegenerationMetadata) <-chan bool
 }
 
 // newSelectorPolicy returns an empty selectorPolicy stub.
-func newSelectorPolicy(selectorCache *SelectorCache) *selectorPolicy {
+func newSelectorPolicy(selectorCache *SelectorCache, clusterInfo cmtypes.ClusterInfo) *selectorPolicy {
 	return &selectorPolicy{
+		clusterInfo:   clusterInfo,
 		Revision:      0,
 		SelectorCache: selectorCache,
 		L4Policy:      NewL4Policy(0),
@@ -399,6 +405,13 @@ func (p *selectorPolicy) Detach() {
 func (p *selectorPolicy) DistillPolicy(logger *slog.Logger, policyOwner PolicyOwner, redirects map[string]uint16) *EndpointPolicy {
 	var calculatedPolicy *EndpointPolicy
 
+	// Size the new map state after the owner's current one. This must be done before taking
+	// the selector cache read lock below: the accessor takes the PolicyOwner's (endpoint)
+	// lock, and the established lock order is endpoint lock first, selector cache lock second
+	// (e.g. Detach takes the selector cache write lock while the endpoint lock is held).
+	// Taking the endpoint lock inside 'WithRLock' would invert that order and deadlock.
+	sizes := policyOwner.PreviousMapStateSizes()
+
 	// EndpointPolicy is initialized while 'WithRLock' keeps the selector cache read
 	// locked. This syncronizes the selector snapshot creation and the registration of the new
 	// EndpointPolicy as a user of the selectorPolicy 'p' before any new incremental updated can
@@ -418,7 +431,7 @@ func (p *selectorPolicy) DistillPolicy(logger *slog.Logger, policyOwner PolicyOw
 		calculatedPolicy = &EndpointPolicy{
 			SelectorPolicy: p,
 			selectors:      selectors,
-			policyMapState: newMapState(logger, policyOwner.PreviousMapState(), features, p.localClusterID),
+			policyMapState: newMapState(logger, sizes, features, p.clusterInfo),
 			policyMapChanges: MapChanges{
 				logger:   logger,
 				firstRev: selectors.Revision,
@@ -715,8 +728,8 @@ func (p *EndpointPolicy) ConsumeMapChanges() (closer func(), changes ChangeState
 // PolicyOwner is left as nil
 func NewEndpointPolicy(logger *slog.Logger, repo PolicyRepository) *EndpointPolicy {
 	return &EndpointPolicy{
-		SelectorPolicy: newSelectorPolicy(repo.GetSelectorCache()),
-		policyMapState: emptyMapState(logger),
+		SelectorPolicy: newSelectorPolicy(repo.GetSelectorCache(), repo.GetClusterInfo()),
+		policyMapState: newMapState(logger, MapStateSizes{}, 0, repo.GetClusterInfo()),
 	}
 }
 

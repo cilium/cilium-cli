@@ -14,17 +14,30 @@ func (k Key) Equal(k2 Key) bool {
 	return bytes.Equal(k, k2)
 }
 
+// KeySet is a collection of keys used to index an object. Its zero value is
+// an empty set; a nil key supplied to NewKeySet is a valid zero-length key.
 type KeySet struct {
-	head Key
-	tail []Key
+	head    Key
+	tail    []Key
+	hasHead bool
 }
 
-func (ks KeySet) First() Key {
-	return ks.head
+// Len returns the number of keys in the set.
+func (ks KeySet) Len() int {
+	if !ks.hasHead {
+		return 0
+	}
+	return 1 + len(ks.tail)
 }
 
+// First returns the first key in the set, or false if the set is empty.
+func (ks KeySet) First() (Key, bool) {
+	return ks.head, ks.hasHead
+}
+
+// Foreach calls fn for each key in the set.
 func (ks KeySet) Foreach(fn func(Key)) {
-	if ks.head == nil {
+	if !ks.hasHead {
 		return
 	}
 	fn(ks.head)
@@ -34,6 +47,9 @@ func (ks KeySet) Foreach(fn func(Key)) {
 }
 
 func (ks KeySet) Exists(k Key) bool {
+	if !ks.hasHead {
+		return false
+	}
 	if ks.head.Equal(k) {
 		return true
 	}
@@ -45,9 +61,18 @@ func (ks KeySet) Exists(k Key) bool {
 	return false
 }
 
-func NewKeySet(keys ...Key) KeySet {
+// EmptyKeySet is a KeySet containing no keys.
+var EmptyKeySet KeySet
+
+// NewKeySet constructs a non-empty set from keys. Every argument is a key,
+// including a nil or zero-length key.
+func NewKeySet(key Key, keys ...Key) KeySet {
+	return KeySet{head: key, tail: keys, hasHead: true}
+}
+
+func keySet(keys []Key) KeySet {
 	if len(keys) == 0 {
-		return KeySet{}
+		return EmptyKeySet
 	}
-	return KeySet{keys[0], keys[1:]}
+	return NewKeySet(keys[0], keys[1:]...)
 }

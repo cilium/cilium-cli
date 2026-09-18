@@ -24,7 +24,7 @@ import (
 	"github.com/cilium/cilium/api/v1/models"
 	"github.com/cilium/cilium/cilium-cli/defaults"
 
-	"github.com/google/go-github/v90/github"
+	"github.com/google/go-github/v92/github"
 )
 
 type perJobMetrics map[string]perDeployNodeMetrics
@@ -483,8 +483,7 @@ func loadWorkflowData(directory string) (perWorkflowMetrics, error) {
 				// Because the runtime tests are running on a single node,
 				// they will only have a list of metrics stored on each .json
 				// file
-				var errUTE *json.UnmarshalTypeError
-				if !errors.As(err, &errUTE) {
+				if _, ok := errors.AsType[*json.UnmarshalTypeError](err); !ok {
 					return fmt.Errorf("error unmarshalling file %q: %w", path, err)
 				}
 				var metrics []*models.Metric

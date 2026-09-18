@@ -52,11 +52,12 @@ type IPIdentityPair struct {
 	Metadata          string          `json:"Metadata"`
 	K8sNamespace      string          `json:"K8sNamespace,omitempty"`
 	K8sPodName        string          `json:"K8sPodName,omitempty"`
+	K8sPodUID         string          `json:"K8sPodUID,omitempty"`
 	K8sServiceAccount string          `json:"K8sServiceAccount,omitempty"`
 	NamedPorts        []NamedPort     `json:"NamedPorts,omitempty"`
 }
 
-type IdentityMap map[NumericIdentity]labels.LabelArray
+type IdentityMap map[NumericIdentity]labels.Labels
 
 // GetKeyName returns the kvstore key to be used for the IPIdentityPair
 func (pair *IPIdentityPair) GetKeyName() string { return pair.IP.String() }
