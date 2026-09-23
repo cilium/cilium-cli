@@ -60,8 +60,15 @@ jobs:
   push:
     needs: build
     if: ${{ github.repository == 'cilium/cilium-cli' }}
+    permissions:
+      contents: read
+      # Required to generate OIDC tokens
+      id-token: write
     runs-on: ubuntu-24.04
-    environment: release
+    # Also decides the subject of the OIDC token, see the login steps below.
+    environment:
+      name: release
+      deployment: false
 
     steps:
       - name: Download image artifact
@@ -75,10 +82,40 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y skopeo
 
+      # Quay's registry endpoint only accepts credentials or a JWT signed by
+      # Quay itself, so the GitHub OIDC token cannot be used as the registry
+      # password directly. Trade it for a short lived robot token first.
+      #
+      # Because the job references an environment, the subject of the token is
+      # repo:cilium@21054566/cilium-cli@323610158:environment:release, the
+      # immutable form that carries the owner and repository ids. That is the
+      # identity federated with the robot account on the Quay side, so renaming
+      # the environment breaks the login.
+      - name: Get a quay.io robot token via OIDC
+        id: registry-token
+        env:
+          ROBOT: ${{ secrets.QUAY_RELEASE_USERNAME }}
+        run: |
+          oidc_token="$(curl -sSf --retry 3 --retry-all-errors \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=quay.io" \
+            | jq -er '.value')"
+          echo "::add-mask::${oidc_token}"
+
+          # Pass the credentials on stdin so that the OIDC token is not visible
+          # in the process list of the runner.
+          robot_token="$(printf 'user = "%s:%s"\n' "${ROBOT}" "${oidc_token}" \
+            | curl -sSf --retry 3 --retry-all-errors -K - \
+              "https://quay.io/oauth2/federation/robot/token" \
+            | jq -er '.token')"
+          echo "::add-mask::${robot_token}"
+
+          echo "token=${robot_token}" >> "$GITHUB_OUTPUT"
+
       - name: Push image to registry
         env:
           QUAY_USERNAME: ${{ secrets.QUAY_RELEASE_USERNAME }}
-          QUAY_PASSWORD: ${{ secrets.QUAY_RELEASE_TOKEN }}
+          QUAY_PASSWORD: ${{ steps.registry-token.outputs.token }}
         run: |
           for tag in $(echo "${{ needs.build.outputs.repo_tags }}" | tr ',' '\n'); do
             skopeo copy \
