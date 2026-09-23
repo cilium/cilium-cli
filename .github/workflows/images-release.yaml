@@ -94,7 +94,7 @@ jobs:
       - name: Get a quay.io robot token via OIDC
         id: registry-token
         env:
-          ROBOT: ${{ secrets.QUAY_RELEASE_USERNAME }}
+          ROBOT: ${{ vars.QUAY_ROBOT_RELEASE }}
         run: |
           oidc_token="$(curl -sSf --retry 3 --retry-all-errors \
             -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
@@ -114,7 +114,7 @@ jobs:
 
       - name: Push image to registry
         env:
-          QUAY_USERNAME: ${{ secrets.QUAY_RELEASE_USERNAME }}
+          QUAY_USERNAME: ${{ vars.QUAY_ROBOT_RELEASE }}
           QUAY_PASSWORD: ${{ steps.registry-token.outputs.token }}
         run: |
           for tag in $(echo "${{ needs.build.outputs.repo_tags }}" | tr ',' '\n'); do
