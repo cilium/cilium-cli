@@ -20,8 +20,8 @@ RELEASE_UID ?= $(shell id -u)
 RELEASE_GID ?= $(shell id -g)
 
 # renovate: datasource=docker depName=docker.io/library/golang
-GO_IMAGE_VERSION = 1.27.2-alpine3.23
-GO_IMAGE_SHA = sha256:9e45f0eb4a63ed37ad6e604950407558b7c738e34e015ae77a5d4ad369cde079
+GO_IMAGE_VERSION = 1.27.3-alpine3.23
+GO_IMAGE_SHA = sha256:8a5046497cda39860b832ffdbe8dd66018a0f05bb01352f533a36e7e2ced66a0
 
 # renovate: datasource=docker depName=golangci/golangci-lint
 GOLANGCILINT_WANT_VERSION = v2.15.0
