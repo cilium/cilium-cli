@@ -107,7 +107,7 @@ jobs:
       - name: Uninstall cilium
         run: |
           pkill -f "cilium.*hubble.*port-forward|kubectl.*port-forward.*hubble-relay" || test $? -eq 1
-          cilium uninstall --wait
+          cilium uninstall --wait --test-namespace test-namespace
 
       - name: Install Cilium with IPsec Encryption
         run: |
@@ -133,7 +133,7 @@ jobs:
 
       - name: Connectivity test
         run: |
-          cilium connectivity test --force-deploy --flow-validation=disabled --test-namespace test-namespace \
+          cilium connectivity test --flow-validation=disabled --test-namespace test-namespace \
             --test-concurrency=5 \
             --include-unsafe-tests \
             --collect-sysdump-on-failure --junit-file cilium-junit-2.xml \
