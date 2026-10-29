@@ -73,9 +73,6 @@ func agentCRDResourceNames(bgpCfg bgpConfig.BGPConfig) []string {
 	if option.Config.EnableEgressGateway {
 		result = append(result, CRDResourceName(v2.CEGPName))
 	}
-	if option.Config.EnableLocalRedirectPolicy {
-		result = append(result, CRDResourceName(v2.CLRPName))
-	}
 	if option.Config.EnableEnvoyConfig {
 		result = append(result, CRDResourceName(v2.CCECName))
 		result = append(result, CRDResourceName(v2.CECName))
@@ -96,6 +93,7 @@ func agentCRDResourceNames(bgpCfg bgpConfig.BGPConfig) []string {
 		CRDResourceName(v2alpha1.L2AnnouncementName),
 		CRDResourceName(v2alpha1.CiliumNetworkDriverNodeConfigName),
 		CRDResourceName(v2alpha1.CiliumNetworkDriverClusterConfigName),
+		CRDResourceName(v2alpha1.CRIPName),
 	)
 
 	return result

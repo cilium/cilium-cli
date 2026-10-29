@@ -253,9 +253,6 @@ const (
 	// considered local ones with HOST_ID in the ipcache
 	AddressScopeMax = "local-max-addr-scope"
 
-	// EnableLocalRedirectPolicy enables support for local redirect policy
-	EnableLocalRedirectPolicy = "enable-local-redirect-policy"
-
 	// EnableMKE enables MKE specific 'chaining' for kube-proxy replacement
 	EnableMKE = "enable-mke"
 
@@ -373,11 +370,6 @@ const (
 	// ToFQDNsIdleConnectionGracePeriod defines the connection idle time during which
 	// previously active connections with expired DNS lookups are still considered alive
 	ToFQDNsIdleConnectionGracePeriod = "tofqdns-idle-connection-grace-period"
-
-	// ToFQDNsPreCache is a path to a file with DNS cache data to insert into the
-	// global cache on startup.
-	// The file is not re-read after agent start.
-	ToFQDNsPreCache = "tofqdns-pre-cache"
 
 	// DNSProxyConcurrencyLimit limits parallel processing of DNS messages in
 	// DNS proxy at any given point in time.
@@ -882,11 +874,6 @@ const (
 
 	// EnableICMPRules enables ICMP-based rule support for Cilium Network Policies.
 	EnableICMPRules = "enable-icmp-rules"
-
-	// BypassIPAvailabilityUponRestore bypasses the IP availability error
-	// within IPAM upon endpoint restore and allows the use of the restored IP
-	// regardless of whether it's available in the pool.
-	BypassIPAvailabilityUponRestore = "bypass-ip-availability-upon-restore"
 
 	// EnableVTEP enables cilium VXLAN VTEP integration
 	EnableVTEP = "enable-vtep"
@@ -1481,9 +1468,6 @@ type DaemonConfig struct {
 	// Useful for heavy but repeated FQDN MatchName or MatchPattern use.
 	FQDNRegexCompileLRUSize uint
 
-	// Path to a file with DNS cache data to preload on startup
-	ToFQDNsPreCache string
-
 	// DNSProxyConcurrencyLimit limits parallel processing of DNS messages in
 	// DNS proxy at any given point in time.
 	DNSProxyConcurrencyLimit int
@@ -1610,9 +1594,6 @@ type DaemonConfig struct {
 	// EnableHostFirewall enables network policies for the host
 	EnableHostFirewall bool
 
-	// EnableLocalRedirectPolicy enables redirect policies to redirect traffic within nodes
-	EnableLocalRedirectPolicy bool
-
 	// Selection of BPF main clock source (ktime vs jiffies)
 	ClockSource BPFClockSource
 
@@ -1730,11 +1711,6 @@ type DaemonConfig struct {
 
 	// EnableICMPRules enables ICMP-based rule support for Cilium Network Policies.
 	EnableICMPRules bool
-
-	// BypassIPAvailabilityUponRestore bypasses the IP availability error
-	// within IPAM upon endpoint restore and allows the use of the restored IP
-	// regardless of whether it's available in the pool.
-	BypassIPAvailabilityUponRestore bool
 
 	// EnableVTEP enable Cilium VXLAN VTEP integration
 	EnableVTEP bool
@@ -2426,7 +2402,6 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 	c.EnableMKE = vp.GetBool(EnableMKE)
 	c.CgroupPathMKE = vp.GetString(CgroupPathMKE)
 	c.EnableHostFirewall = vp.GetBool(EnableHostFirewall)
-	c.EnableLocalRedirectPolicy = vp.GetBool(EnableLocalRedirectPolicy)
 	c.EncryptNode = vp.GetBool(EncryptNode)
 	c.IdentityChangeGracePeriod = vp.GetDuration(IdentityChangeGracePeriod)
 	c.CiliumIdentityMaxJitter = vp.GetDuration(CiliumIdentityMaxJitter)
@@ -2664,7 +2639,6 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 		c.ToFQDNsMinTTL = defaults.ToFQDNsMinTTL
 	}
 	c.ToFQDNsProxyPort = vp.GetInt(ToFQDNsProxyPort)
-	c.ToFQDNsPreCache = vp.GetString(ToFQDNsPreCache)
 	c.ToFQDNsIdleConnectionGracePeriod = vp.GetDuration(ToFQDNsIdleConnectionGracePeriod)
 	c.FQDNProxyResponseMaxDelay = vp.GetDuration(FQDNProxyResponseMaxDelay)
 	c.DNSProxyConcurrencyLimit = vp.GetInt(DNSProxyConcurrencyLimit)
@@ -2821,7 +2795,6 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 	c.MaxControllerInterval = vp.GetUint(MaxCtrlIntervalName)
 	c.EndpointQueueSize = sanitizeIntParam(logger, vp, EndpointQueueSize, defaults.EndpointQueueSize)
 	c.EnableICMPRules = vp.GetBool(EnableICMPRules)
-	c.BypassIPAvailabilityUponRestore = vp.GetBool(BypassIPAvailabilityUponRestore)
 
 	// VTEP integration enable option
 	c.EnableVTEP = vp.GetBool(EnableVTEP)
@@ -3243,6 +3216,9 @@ func (c *DaemonConfig) validateVTEP(vp *viper.Viper) error {
 	if err != nil {
 		return fmt.Errorf("invalid VTEP CIDR Mask: %w", err)
 	}
+	if !mask.Is4() {
+		return fmt.Errorf("VTEP CIDR Mask %q must be an IPv4 address", mask)
+	}
 	c.VtepCidrMask = mask
 
 	return nil
@@ -3345,10 +3321,20 @@ func (c *DaemonConfig) IsDualStack() bool {
 	return c.EnableIPv4 && c.EnableIPv6
 }
 
-// IsLocalRouterIP checks if provided IP address matches either LocalRouterIPv4
-// or LocalRouterIPv6
-func (c *DaemonConfig) IsLocalRouterIP(ip string) bool {
-	return ip != "" && (c.LocalRouterIPv4 == ip || c.LocalRouterIPv6 == ip)
+// IsLocalRouterIP checks if the provided address matches either
+// LocalRouterIPv4 or LocalRouterIPv6. Unparsable or unset router addresses
+// never match.
+func (c *DaemonConfig) IsLocalRouterIP(addr netip.Addr) bool {
+	if !addr.IsValid() {
+		return false
+	}
+	addr = addr.Unmap()
+	for _, routerIP := range []string{c.LocalRouterIPv4, c.LocalRouterIPv6} {
+		if routerAddr, err := netip.ParseAddr(routerIP); err == nil && routerAddr.Unmap() == addr {
+			return true
+		}
+	}
+	return false
 }
 
 // StoreViperInFile stores viper's configuration in a the given directory under

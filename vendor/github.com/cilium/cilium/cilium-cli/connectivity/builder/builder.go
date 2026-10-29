@@ -65,6 +65,9 @@ var (
 	//go:embed manifests/client-egress-to-cidr-node-knp.yaml
 	clientEgressToCIDRNodeKNPYAML string
 
+	//go:embed manifests/client-egress-to-cidrgroup-external.yaml
+	clientEgressToCIDRGroupExternalPolicyYAML string
+
 	//go:embed manifests/client-egress-to-cidr-external-deny.yaml
 	clientEgressToCIDRExternalDenyPolicyYAML string
 
@@ -259,6 +262,7 @@ func connDisruptTests(ct *check.ConnectivityTest) error {
 func concurrentTests(connTests []*check.ConnectivityTest) error {
 	tests := []testBuilder{
 		noPolicies{},
+		hubbleWorkload{},
 		noPoliciesFromOutside{},
 		noPoliciesExtra{},
 		allowAllExceptWorld{},
@@ -300,6 +304,8 @@ func concurrentTests(connTests []*check.ConnectivityTest) error {
 		clientEgressToCidrgroupDeny{},
 		clientEgressToCidrgroupDenyByLabel{},
 		clientEgressToCidrDenyDefault{},
+		clientEgressToCidrgroup{},
+		clientEgressToCidrgroupWorld{},
 		clusterMeshEndpointSliceSync{},
 		clusterMeshNSNotGlobal{},
 		clusterMeshNSNotGlobalPodToPod{},
@@ -375,6 +381,7 @@ func renderTemplates(clusterNameLocal, clusterNameRemote string, param check.Par
 		"clientEgressToCIDRExternalPolicyYAML":                       clientEgressToCIDRExternalPolicyYAML,
 		"clientEgressToCIDRExternalPolicyKNPYAML":                    clientEgressToCIDRExternalPolicyKNPYAML,
 		"clientEgressToCIDRNodeKNPYAML":                              clientEgressToCIDRNodeKNPYAML,
+		"clientEgressToCIDRGroupExternalPolicyYAML":                  clientEgressToCIDRGroupExternalPolicyYAML,
 		"clientEgressToCIDRExternalDenyPolicyYAML":                   clientEgressToCIDRExternalDenyPolicyYAML,
 		"clientEgressToCIDRGroupExternalDenyPolicyYAML":              clientEgressToCIDRGroupExternalDenyPolicyYAML,
 		"clientEgressToCIDRGroupExternalDenyPolicyV2Alpha1YAML":      clientEgressToCIDRGroupExternalDenyPolicyV2Alpha1YAML,

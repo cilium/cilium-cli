@@ -188,6 +188,10 @@ func (in *IPAMSpec) DeepEqual(other *IPAMSpec) bool {
 		return false
 	}
 
+	if !in.ResourcePools.DeepEqual(&other.ResourcePools) {
+		return false
+	}
+
 	if ((in.PodCIDRs != nil) && (other.PodCIDRs != nil)) || ((in.PodCIDRs == nil) != (other.PodCIDRs == nil)) {
 		in, other := &in.PodCIDRs, &other.PodCIDRs
 		if other == nil {
@@ -287,7 +291,7 @@ func (in *IPAMStatus) DeepEqual(other *IPAMStatus) bool {
 		}
 	}
 
-	if in.AssignedStaticIP != other.AssignedStaticIP {
+	if !in.AssignedStaticIP.DeepEqual(&other.AssignedStaticIP) {
 		return false
 	}
 
@@ -352,6 +356,9 @@ func (in *OperatorStatus) DeepEqual(other *OperatorStatus) bool {
 	}
 
 	if in.Error != other.Error {
+		return false
+	}
+	if in.ResourceIPAMError != other.ResourceIPAMError {
 		return false
 	}
 
