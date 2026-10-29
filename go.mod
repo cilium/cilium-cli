@@ -9,9 +9,6 @@ go 1.27
 // as to why we are using a private fork.
 replace sigs.k8s.io/controller-tools => github.com/cilium/controller-tools v0.22.0-1
 
-// controller-runtime v0.25 (matching k8s.io/* v0.37) is not yet released.
-replace sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.24.1-0.20260901001410-dc7618f3b4f6
-
 require github.com/cilium/cilium v1.21.0-pre.3.0.20261029012635-53b7162a5506
 
 require (
