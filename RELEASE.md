@@ -44,6 +44,9 @@ Update `github.com/cilium/cilium` to the latest version:
     go mod tidy && go mod vendor
     git add go.mod go.sum vendor
 
+Check whether any `replace` directives in `go.mod` need updating to match
+Cilium's `go.mod`.
+
 Update the *Releases* section of the `README.md` which lists all currently
 supported releases in a table. The version in this table needs to be updated to
 match the new release `$RELEASE`. Also bump `$RELEASE` in the section above, so
