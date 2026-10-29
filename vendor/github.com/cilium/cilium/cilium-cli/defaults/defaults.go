@@ -77,6 +77,9 @@ const (
 
 	PolicyWaitTimeout = 30 * time.Second
 
+	// ExecAttemptTimeout bounds one attempt of a short command that the CLI retries.
+	ExecAttemptTimeout = 10 * time.Second
+
 	ConnectRetry      = 3
 	ConnectRetryDelay = 3 * time.Second
 
@@ -176,7 +179,7 @@ var (
 		// renovate: datasource=docker
 		"ConnectivityTestFRRImage": "quay.io/frrouting/frr:10.7.1@sha256:e995beaa50fdc9edb35eadcfefa29b7f062cc06f2b812613789b68fa541554d2",
 		// renovate: datasource=docker
-		"ConnectivityTestSocatImage": "docker.io/alpine/socat:1.8.1.3@sha256:24220ef2c80a2a421ea08e4624488e985330c421b6aa3329bae14b0933a1d403",
+		"ConnectivityTestSocatImage": "docker.io/alpine/socat:1.8.1.3@sha256:22d77becaeeea8ef56b8c4bb2312323acafe85354be6a85714ff5050e3537842",
 	}
 
 	ConnectivityCheckOptionalImagesTest = map[string]string{
@@ -186,7 +189,7 @@ var (
 
 	ConnectivityCheckImagesPerf = map[string]string{
 		// renovate: datasource=docker
-		"ConnectivityPerformanceImage": "quay.io/cilium/network-perf:3.21-1788350426-c114a5d@sha256:9c317f55137854eda73e9e0833545bb60301f6e368891b6797123915816e3532",
+		"ConnectivityPerformanceImage": "quay.io/cilium/network-perf:3.22-1792662409-6f2c7c0@sha256:d30b6fc359bf515f3dcf12b204b8015b51cde09fe5cb8d4387c266f5d172b3ec",
 	}
 
 	// The following variables are set at compile time via LDFLAGS.

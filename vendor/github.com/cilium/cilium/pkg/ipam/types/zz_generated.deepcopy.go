@@ -118,6 +118,7 @@ func (in *IPAMSpec) DeepCopyInto(out *IPAMSpec) {
 	out.Pool = in.Pool.DeepCopy()
 	out.IPv6Pool = in.IPv6Pool.DeepCopy()
 	in.Pools.DeepCopyInto(&out.Pools)
+	in.ResourcePools.DeepCopyInto(&out.ResourcePools)
 	if in.PodCIDRs != nil {
 		in, out := &in.PodCIDRs, &out.PodCIDRs
 		*out = make([]ip.Prefix, len(*in))
@@ -154,6 +155,7 @@ func (in *IPAMStatus) DeepCopyInto(out *IPAMStatus) {
 	out.OperatorStatus = in.OperatorStatus
 	out.ReleaseIPs = in.ReleaseIPs.DeepCopy()
 	out.ReleaseIPv6s = in.ReleaseIPv6s.DeepCopy()
+	in.AssignedStaticIP.DeepCopyInto(&out.AssignedStaticIP)
 	return
 }
 

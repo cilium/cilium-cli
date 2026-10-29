@@ -23,7 +23,6 @@ const (
 
 var (
 	specDebug = Option{
-		Define:      "DEBUG",
 		Description: "Enable debugging trace statements",
 	}
 
@@ -32,22 +31,18 @@ var (
 	}
 
 	specDebugPolicy = Option{
-		Define:      "POLICY_DEBUG",
 		Description: "Enable debugging trace statements for policy enforcement",
 	}
 
 	specDebugTagged = Option{
-		Define:      "DEBUG_TAGGED",
 		Description: "Enable debugging trace statements for tagged packets",
 	}
 
 	specDropNotify = Option{
-		Define:      "DROP_NOTIFY",
 		Description: "Enable drop notifications",
 	}
 
 	specTraceNotify = Option{
-		Define:      "TRACE_NOTIFY",
 		Description: "Enable trace notifications",
 	}
 

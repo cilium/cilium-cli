@@ -121,6 +121,14 @@ type DropNotify struct {
 	IPTraceID  uint64
 }
 
+// DSRConfig is generated from the BPF C type dsr_config.
+type DSRConfig struct {
+	_                structs.HostLayout
+	Enable           bool
+	EnableICMPErrors bool
+	EnableByUser     bool
+}
+
 // EDTID is generated from the BPF C type edt_id.
 type EDTID struct {
 	_         structs.HostLayout
@@ -698,7 +706,7 @@ type LPMV4Key struct {
 		Prefixlen uint32
 		Data      [0]uint8
 	}
-	Addr [4]uint8
+	Addr uint32
 }
 
 // LPMV6Key is generated from the BPF C type lpm_v6_key.
@@ -709,7 +717,13 @@ type LPMV6Key struct {
 		Prefixlen uint32
 		Data      [0]uint8
 	}
-	Addr [16]uint8
+	Addr struct {
+		_    structs.HostLayout
+		In6U struct {
+			_       structs.HostLayout
+			U6Addr8 [16]uint8
+		}
+	}
 }
 
 // LPMVal is generated from the BPF C type lpm_val.
@@ -773,7 +787,7 @@ type NodeValue struct {
 	_   structs.HostLayout
 	ID  uint16
 	SPI uint8
-	Pad uint8
+	_   [1]byte
 }
 
 // PolicyEntry is generated from the BPF C type policy_entry.
@@ -909,6 +923,21 @@ type SkipLB6Key struct {
 	Pad  uint32
 	Port uint16
 	Pad2 uint16
+}
+
+// SocketLBConfig is generated from the BPF C type socket_lb_config.
+type SocketLBConfig struct {
+	_             structs.HostLayout
+	EnableFull    bool
+	HostNSOnly    bool
+	EnableTracing bool
+}
+
+// SRv6Config is generated from the BPF C type srv6_config.
+type SRv6Config struct {
+	_              structs.HostLayout
+	Enable         bool
+	EnableSRHEncap bool
 }
 
 // SRv6PolicyKey4 is generated from the BPF C type srv6_policy_key4.

@@ -4,7 +4,7 @@
 package v2
 
 import (
-	"net"
+	"net/netip"
 	"sort"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,11 +41,24 @@ type CiliumEndpoint struct {
 	metav1.ObjectMeta `json:"metadata"`
 
 	// +kubebuilder:validation:Optional
-	Status EndpointStatus `json:"status,omitempty"`
+	Status EndpointStatus `json:"status,omitzero"`
 }
 
 // EndpointPolicyState defines the state of the Policy mode: "enforcing", "non-enforcing", "disabled"
 type EndpointPolicyState string
+
+// EndpointWorkload identifies the Kubernetes workload which owns an endpoint's Pod.
+type EndpointWorkload struct {
+	// Name is the name of the workload.
+	//
+	// +kubebuilder:validation:Optional
+	Name string `json:"name,omitempty"`
+
+	// Kind is the kind of the workload, such as Deployment or StatefulSet.
+	//
+	// +kubebuilder:validation:Optional
+	Kind string `json:"kind,omitempty"`
+}
 
 // EndpointStatus is the status of a Cilium endpoint.
 type EndpointStatus struct {
@@ -88,7 +101,7 @@ type EndpointStatus struct {
 	// Encryption is the encryption configuration of the node
 	//
 	// +kubebuilder:validation:Optional
-	Encryption EncryptionSpec `json:"encryption,omitempty"`
+	Encryption EncryptionSpec `json:"encryption,omitzero"`
 
 	// +kubebuilder:validation:Optional
 	Policy *EndpointPolicy `json:"policy,omitempty"`
@@ -106,6 +119,11 @@ type EndpointStatus struct {
 	//
 	// +kubebuilder:validation:Optional
 	ServiceAccount string `json:"service-account,omitempty"`
+
+	// Workload identifies the Kubernetes workload which owns the endpoint's Pod.
+	//
+	// +kubebuilder:validation:Optional
+	Workload *EndpointWorkload `json:"workload,omitempty"`
 }
 
 // +k8s:deepcopy-gen=false
@@ -133,7 +151,7 @@ type ControllerStatus struct {
 	// Status is the status of the controller
 	//
 	// +kubebuilder:validation:Optional
-	Status ControllerStatusStatus `json:"status,omitempty"`
+	Status ControllerStatusStatus `json:"status,omitzero"`
 
 	// UUID is the UUID of the controller
 	//
@@ -385,7 +403,7 @@ type CiliumNode struct {
 	// of the node.
 	//
 	// +kubebuilder:validation:Optional
-	Status NodeStatus `json:"status,omitempty"`
+	Status NodeStatus `json:"status,omitzero"`
 }
 
 // NodeAddress is a node address.
@@ -425,39 +443,39 @@ type NodeSpec struct {
 	// checking.
 	//
 	// +kubebuilder:validation:Optional
-	HealthAddressing HealthAddressingSpec `json:"health,omitempty"`
+	HealthAddressing HealthAddressingSpec `json:"health,omitzero"`
 
 	// IngressAddressing is the addressing information for Ingress listener.
 	//
 	// +kubebuilder:validation:Optional
-	IngressAddressing AddressPair `json:"ingress,omitempty"`
+	IngressAddressing AddressPair `json:"ingress,omitzero"`
 
 	// Encryption is the encryption configuration of the node.
 	//
 	// +kubebuilder:validation:Optional
-	Encryption EncryptionSpec `json:"encryption,omitempty"`
+	Encryption EncryptionSpec `json:"encryption,omitzero"`
 
 	// ENI is the AWS ENI specific configuration.
 	//
 	// +kubebuilder:validation:Optional
-	ENI awsTypes.ENISpec `json:"eni,omitempty"`
+	ENI awsTypes.ENISpec `json:"eni,omitzero"`
 
 	// Azure is the Azure IPAM specific configuration.
 	//
 	// +kubebuilder:validation:Optional
-	Azure azureTypes.AzureSpec `json:"azure,omitempty"`
+	Azure azureTypes.AzureSpec `json:"azure,omitzero"`
 
 	// AlibabaCloud is the AlibabaCloud IPAM specific configuration.
 	//
 	// +kubebuilder:validation:Optional
-	AlibabaCloud alibabaCloudTypes.Spec `json:"alibaba-cloud,omitempty"`
+	AlibabaCloud alibabaCloudTypes.Spec `json:"alibaba-cloud,omitzero"`
 
 	// IPAM is the address management specification. This section can be
 	// populated by a user or it can be automatically populated by an IPAM
 	// operator.
 	//
 	// +kubebuilder:validation:Optional
-	IPAM ipamTypes.IPAMSpec `json:"ipam,omitempty"`
+	IPAM ipamTypes.IPAMSpec `json:"ipam,omitzero"`
 }
 
 // HealthAddressingSpec is the addressing information required to do
@@ -488,22 +506,22 @@ type NodeStatus struct {
 	// ENI is the AWS ENI specific status of the node.
 	//
 	// +kubebuilder:validation:Optional
-	ENI awsTypes.ENIStatus `json:"eni,omitempty"`
+	ENI awsTypes.ENIStatus `json:"eni,omitzero"`
 
 	// Azure is the Azure specific status of the node.
 	//
 	// +kubebuilder:validation:Optional
-	Azure azureTypes.AzureStatus `json:"azure,omitempty"`
+	Azure azureTypes.AzureStatus `json:"azure,omitzero"`
 
 	// IPAM is the IPAM status of the node.
 	//
 	// +kubebuilder:validation:Optional
-	IPAM ipamTypes.IPAMStatus `json:"ipam,omitempty"`
+	IPAM ipamTypes.IPAMStatus `json:"ipam,omitzero"`
 
 	// AlibabaCloud is the AlibabaCloud specific status of the node.
 	//
 	// +kubebuilder:validation:Optional
-	AlibabaCloud alibabaCloudTypes.ENIStatus `json:"alibaba-cloud,omitempty"`
+	AlibabaCloud alibabaCloudTypes.ENIStatus `json:"alibaba-cloud,omitzero"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -526,12 +544,16 @@ func (n *CiliumNode) InstanceID() (instanceID string) {
 	return
 }
 
-func (n NodeAddress) ToString() string {
-	return n.IP
-}
-
 func (n NodeAddress) AddrType() addressing.AddressType {
 	return n.Type
+}
+
+// Addr parses n.IP, implementing [addressing.Address]. The zero value is
+// returned if n.IP is not a valid IP address. The parsing goes away once the
+// CRD field itself is typed.
+func (n NodeAddress) Addr() netip.Addr {
+	addr, _ := netip.ParseAddr(n.IP)
+	return addr.Unmap()
 }
 
 // GetIP returns one of the CiliumNode's IP addresses available with the
@@ -541,6 +563,6 @@ func (n NodeAddress) AddrType() addressing.AddressType {
 // - other IP address type
 // An error is returned if GetIP fails to extract an IP from the CiliumNode
 // based on the provided address family.
-func (n *CiliumNode) GetIP(ipv6 bool) net.IP {
+func (n *CiliumNode) GetIP(ipv6 bool) netip.Addr {
 	return addressing.ExtractNodeIP[NodeAddress](n.Spec.Addresses, ipv6)
 }
