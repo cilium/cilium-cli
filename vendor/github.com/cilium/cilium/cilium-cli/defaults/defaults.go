@@ -133,6 +133,13 @@ var (
 	// SpireAgentScheduleAffinity is the node affinity to prevent the SPIRE agent from being scheduled on
 	// nodes labeled with CiliumNoScheduleLabel.
 	SpireAgentScheduleAffinity = []string{
+		"encryption.ztunnel.spire.install.agent.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key=" + CiliumNoScheduleLabel,
+		"encryption.ztunnel.spire.install.agent.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator=NotIn",
+		"encryption.ztunnel.spire.install.agent.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values[0]=true",
+	}
+
+	// LegacySpireAgentScheduleAffinity uses the SPIRE values path in charts before v1.21.
+	LegacySpireAgentScheduleAffinity = []string{
 		"authentication.mutual.spire.install.agent.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key=" + CiliumNoScheduleLabel,
 		"authentication.mutual.spire.install.agent.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator=NotIn",
 		"authentication.mutual.spire.install.agent.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values[0]=true",
@@ -173,13 +180,13 @@ var (
 		// renovate: datasource=docker
 		"ConnectivityCheckJSONMockImage": "quay.io/cilium/json-mock:v1.4.1@sha256:6a66df90808a39c02e7a9d58af7bf0e54d8f8b7d4bc528f48c891969a7049195",
 		// renovate: datasource=docker
-		"ConnectivityDNSTestServerImage": "registry.k8s.io/coredns/coredns:v1.14.7@sha256:7efd3c635b03efd68c4e8398fc45f0d993d0e9ab016f72c1cefb0fd6d01aa286",
+		"ConnectivityDNSTestServerImage": "registry.k8s.io/coredns/coredns:v1.15.0@sha256:0a9d8c8ddf34347eb59aad9a8784f0710de88d6d112726d11d271f9bc6daca26",
 		// renovate: datasource=docker
 		"ConnectivityTestConnDisruptImage": "quay.io/cilium/test-connection-disruption:v0.0.18@sha256:1666bbed3eb6f0e3074b366fbf701a5ea7206a946fa2a9fd4efff738bae2d1f9",
 		// renovate: datasource=docker
 		"ConnectivityTestFRRImage": "quay.io/frrouting/frr:10.7.1@sha256:e995beaa50fdc9edb35eadcfefa29b7f062cc06f2b812613789b68fa541554d2",
 		// renovate: datasource=docker
-		"ConnectivityTestSocatImage": "docker.io/alpine/socat:1.8.1.3@sha256:22d77becaeeea8ef56b8c4bb2312323acafe85354be6a85714ff5050e3537842",
+		"ConnectivityTestSocatImage": "docker.io/alpine/socat:1.8.1.3@sha256:e8a6e8868a8e6e01d9c2c321a8f8d4474d2d741d962462e5c5a124a8e66a0055",
 	}
 
 	ConnectivityCheckOptionalImagesTest = map[string]string{
@@ -189,7 +196,7 @@ var (
 
 	ConnectivityCheckImagesPerf = map[string]string{
 		// renovate: datasource=docker
-		"ConnectivityPerformanceImage": "quay.io/cilium/network-perf:3.22-1792662409-6f2c7c0@sha256:d30b6fc359bf515f3dcf12b204b8015b51cde09fe5cb8d4387c266f5d172b3ec",
+		"ConnectivityPerformanceImage": "quay.io/cilium/network-perf:3.22-1793546159-db4fb5f@sha256:064597d7836703ae0b5c948ad4c311e12022a7be8398e5eedd724568440aff4c",
 	}
 
 	// The following variables are set at compile time via LDFLAGS.
