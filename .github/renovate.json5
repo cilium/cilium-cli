@@ -10,6 +10,7 @@
   gitAuthor: 'renovate[bot] <bot@renovateapp.com>',
   includePaths: [
     '.github/workflows/**',
+    '.github/kind-config*.yaml',
     'action.yaml',
     'Dockerfile',
     'Makefile',
@@ -94,6 +95,16 @@
         'cilium/cilium',
       ],
     },
+    {
+      // Keep kind node images on the Kubernetes minor supported by the current Cilium release.
+      // Bump this upper bound when updating the Cilium test version to a release supporting a newer minor.
+      matchPackageNames: [
+        'kindest/node',
+      ],
+      allowedVersions: '<1.37.0',
+      groupName: 'kind node images',
+      groupSlug: 'kind-node-images',
+    },
   ],
   customManagers: [
     {
@@ -122,6 +133,18 @@
       matchStrings: [
         '# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s+.+_VERSION = (?<currentValue>.*)\\s+.+_SHA = (?<currentDigest>sha256:[a-f0-9]+)',
       ],
+    },
+    {
+      customType: 'regex',
+      fileMatch: [
+        '^\\.github/kind-config.*\\.yaml$',
+      ],
+      matchStrings: [
+        'image:\\s*kindest/node:(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)',
+      ],
+      datasourceTemplate: 'docker',
+      depNameTemplate: 'kindest/node',
+      versioningTemplate: 'semver',
     },
   ],
 }
