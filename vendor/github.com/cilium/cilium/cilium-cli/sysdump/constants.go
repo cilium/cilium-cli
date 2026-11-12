@@ -65,7 +65,6 @@ const (
 	ciliumEnvoyConfigsFileName               = "ciliumenvoyconfigs-<ts>.yaml"
 	ciliumEtcdSecretFileName                 = "cilium-etcd-secrets-secret-<ts>.yaml"
 	ciliumIdentitiesFileName                 = "ciliumidentities-<ts>.yaml"
-	ciliumCIDRGroupsFileName                 = "ciliumcidrgroups-<ts>.yaml"
 	ciliumL2AnnouncementPoliciesFileName     = "ciliuml2announcementpolicies-<ts>.yaml"
 	ciliumLocalRedirectPoliciesFileName      = "ciliumlocalredirectpolicies-<ts>.yaml"
 	ciliumLogsFileName                       = "logs-%s-%s-<ts>.log"
@@ -120,7 +119,7 @@ const (
 	httpRoutesFileName                       = "gatewayapi-httproutes-<ts>.yaml"
 	tlsRoutesFileName                        = "gatewayapi-tlsroutes-<ts>.yaml"
 	grpcRoutesFileName                       = "gatewayapi-grpcroutes-<ts>.yaml"
-	tcpRoutesFileName                        = "gatewayapi-tcroutes-<ts>.yaml"
+	tcpRoutesFileName                        = "gatewayapi-tcproutes-<ts>.yaml"
 	udpRoutesFileName                        = "gatewayapi-udproutes-<ts>.yaml"
 	backendTLSPoliciesFileName               = "gatewayapi-backendtlspolicies-<ts>.yaml"
 	referenceGrantsFileName                  = "gatewayapi-referencegrants-<ts>.yaml"
@@ -175,70 +174,60 @@ var (
 		Version:  "v1",
 	}
 
-	// Gateway API resource group versions used for sysdumping these
-	gatewayClass = schema.GroupVersionResource{
+	// Gateway API resources. Versions are selected dynamically using the cluster's
+	// preferred API version for each resource.
+	gatewayClass = schema.GroupResource{
 		Group:    "gateway.networking.k8s.io",
 		Resource: "gatewayclasses",
-		Version:  "v1",
 	}
 
-	gateway = schema.GroupVersionResource{
+	gateway = schema.GroupResource{
 		Group:    "gateway.networking.k8s.io",
 		Resource: "gateways",
-		Version:  "v1",
 	}
 
-	listenerSet = schema.GroupVersionResource{
+	listenerSet = schema.GroupResource{
 		Group:    "gateway.networking.k8s.io",
 		Resource: "listenersets",
-		Version:  "v1",
 	}
 
-	referenceGrant = schema.GroupVersionResource{
+	referenceGrant = schema.GroupResource{
 		Group:    "gateway.networking.k8s.io",
 		Resource: "referencegrants",
-		Version:  "v1beta1",
 	}
 
-	backendTLSPolicy = schema.GroupVersionResource{
+	backendTLSPolicy = schema.GroupResource{
 		Group:    "gateway.networking.k8s.io",
 		Resource: "backendtlspolicies",
-		Version:  "v1",
 	}
 
-	httpRoute = schema.GroupVersionResource{
+	httpRoute = schema.GroupResource{
 		Group:    "gateway.networking.k8s.io",
 		Resource: "httproutes",
-		Version:  "v1",
 	}
 
-	tlsRoute = schema.GroupVersionResource{
+	tlsRoute = schema.GroupResource{
 		Group:    "gateway.networking.k8s.io",
 		Resource: "tlsroutes",
-		Version:  "v1alpha2",
 	}
 
-	tcpRoute = schema.GroupVersionResource{
+	tcpRoute = schema.GroupResource{
 		Group:    "gateway.networking.k8s.io",
 		Resource: "tcproutes",
-		Version:  "v1",
 	}
 
-	udpRoute = schema.GroupVersionResource{
+	udpRoute = schema.GroupResource{
 		Group:    "gateway.networking.k8s.io",
 		Resource: "udproutes",
-		Version:  "v1",
 	}
 
-	grpcRoute = schema.GroupVersionResource{
+	grpcRoute = schema.GroupResource{
 		Group:    "gateway.networking.k8s.io",
 		Resource: "grpcroutes",
-		Version:  "v1alpha2",
 	}
 
-	ciliumGatewayClassConfig = schema.GroupVersionResource{
+	ciliumGatewayClassConfig = schema.GroupResource{
 		Group:    "cilium.io",
 		Resource: "ciliumgatewayclassconfigs",
-		Version:  "v2alpha1",
 	}
 )

@@ -47,12 +47,10 @@ var (
 	}
 
 	specPolicyVerdictNotify = Option{
-		Define:      "POLICY_VERDICT_NOTIFY",
 		Description: "Enable policy verdict notifications",
 	}
 
 	specPolicyAuditMode = Option{
-		Define:      "POLICY_AUDIT_MODE",
 		Description: "Enable audit mode for policies",
 	}
 

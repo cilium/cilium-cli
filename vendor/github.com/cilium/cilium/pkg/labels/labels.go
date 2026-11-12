@@ -473,12 +473,20 @@ func (l *Label) String() string {
 	return l.Source + SourceDelimiter + l.Key
 }
 
+func (l *Label) formatLen() int {
+	n := len(l.Source) + len(SourceDelimiter) + len(l.Key)
+	if len(l.Value) != 0 {
+		n += 1 + len(l.Value)
+	}
+	return n
+}
+
 func (l *Label) BuildString(sb *strings.Builder) {
 	sb.WriteString(l.Source)
 	sb.WriteString(SourceDelimiter)
 	sb.WriteString(l.Key)
 	if len(l.Value) != 0 {
-		sb.WriteString("=")
+		sb.WriteByte('=')
 		sb.WriteString(l.Value)
 	}
 }
@@ -488,7 +496,7 @@ func (l *Label) BuildBytes(buf *bytes.Buffer) {
 	buf.WriteString(SourceDelimiter)
 	buf.WriteString(l.Key)
 	if len(l.Value) != 0 {
-		buf.WriteString("=")
+		buf.WriteByte('=')
 		buf.WriteString(l.Value)
 	}
 }
@@ -720,7 +728,11 @@ func (l Label) formatForKVStoreInto(buf *bytes.Buffer) {
 // DO NOT BREAK THE FORMAT OF THIS. THE RETURNED STRING IS USED AS KEY IN
 // THE KEY-VALUE STORE.
 func (l Labels) SortedList() []byte {
-	keys := slices.Sorted(maps.Keys(l))
+	keys := make([]string, 0, len(l))
+	for k := range l {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
 
 	// Labels can have arbitrary size. However, when many CIDR identities are in
 	// the system, for example due to a FQDN policy matching S3, CIDR labels
